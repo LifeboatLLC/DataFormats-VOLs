@@ -29,17 +29,31 @@
 #ifndef strdup
 #define strdup _strdup
 #endif
+/* MSVC doesn't support __attribute__ */
+#ifndef __attribute__
+#define __attribute__(x)
+#endif
 #endif
 
 /* GeoTIFF VOL connector initialization */
-herr_t geotiff_init_connector(hid_t vipl_id)
+herr_t geotiff_init_connector(hid_t __attribute__((unused)) vipl_id)
 {
     return 0;
 }
 
 /* GeoTIFF VOL connector termination */
-herr_t geotiff_term_connector(hid_t vipl_id)
+herr_t geotiff_term_connector(void)
 {
+    return 0;
+}
+
+/* Simple introspect opt_query function that reports no optional operations are supported */
+herr_t geotiff_introspect_opt_query(void __attribute__((unused)) * obj, H5VL_subclass_t subcls,
+                                    int opt_type, uint64_t __attribute__((unused)) * flags)
+{
+    /* We don't support any optional operations */
+    (void) subcls;
+    (void) opt_type;
     return 0;
 }
 
@@ -137,9 +151,9 @@ static const H5VL_class_t geotiff_class_g = {
     },
     {
         /* introscpect_cls */
-        NULL, /* get_conn_cls  */
-        NULL, /* get_cap_flags */
-        NULL  /* opt_query     */
+        NULL,                        /* get_conn_cls  */
+        NULL,                        /* get_cap_flags */
+        geotiff_introspect_opt_query /* opt_query     */
     },
     {
         /* request_cls */
@@ -215,17 +229,24 @@ hid_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_
 }
 
 /* File operations */
-void *geotiff_file_create(const char *name, unsigned flags, hid_t fcpl_id, hid_t fapl_id,
-                          hid_t dxpl_id, void **req)
+void *geotiff_file_create(const char __attribute__((unused)) * name,
+                          unsigned __attribute__((unused)) flags,
+                          hid_t __attribute__((unused)) fcpl_id,
+                          hid_t __attribute__((unused)) fapl_id,
+                          hid_t __attribute__((unused)) dxpl_id,
+                          void __attribute__((unused)) * *req)
 {
     return NULL;
 }
 
-void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id, hid_t dxpl_id, void **req)
+void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id,
+                        hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     geotiff_file_t *file;
 
-    if (!(flags & H5F_ACC_RDONLY)) {
+    /* We only support read-only access for GeoTIFF files */
+    /* H5F_ACC_RDONLY is 0, so we need to check that no write flags are set */
+    if (flags & H5F_ACC_RDWR) {
         return NULL;
     }
 
@@ -256,9 +277,11 @@ void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id, hid_t d
     return file;
 }
 
-herr_t geotiff_file_get(void *file, H5VL_file_get_args_t *args, hid_t dxpl_id, void **req)
+// cppcheck-suppress constParameterCallback
+herr_t geotiff_file_get(void *file, H5VL_file_get_args_t *args,
+                        hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    geotiff_file_t *f = (geotiff_file_t *) file;
+    const geotiff_file_t *f = (const geotiff_file_t *) file;
 
     switch (args->op_type) {
         case H5VL_FILE_GET_NAME:
@@ -279,7 +302,8 @@ herr_t geotiff_file_get(void *file, H5VL_file_get_args_t *args, hid_t dxpl_id, v
     return 0;
 }
 
-herr_t geotiff_file_close(void *file, hid_t dxpl_id, void **req)
+herr_t geotiff_file_close(void *file, hid_t __attribute__((unused)) dxpl_id,
+                          void __attribute__((unused)) * *req)
 {
     geotiff_file_t *f = (geotiff_file_t *) file;
 
@@ -297,14 +321,16 @@ herr_t geotiff_file_close(void *file, hid_t dxpl_id, void **req)
 }
 
 /* Dataset operations */
-void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
-                           hid_t dapl_id, hid_t dxpl_id, void **req)
+void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
+                           const char *name, hid_t __attribute__((unused)) dapl_id,
+                           hid_t __attribute__((unused)) dxpl_id,
+                           void __attribute__((unused)) * *req)
 {
     geotiff_file_t *file = (geotiff_file_t *) obj;
     geotiff_dataset_t *dset;
     uint32_t width, height;
     uint16_t samples_per_pixel, bits_per_sample, sample_format;
-    hsize_t dims[2];
+    hsize_t dims[3];
 
     if (!file || !name)
         return NULL;
@@ -318,12 +344,22 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t *loc_params, const
     dset->data = NULL;
     dset->data_size = 0;
     dset->is_image = 0;
+    dset->space_id = H5I_INVALID_HID;
+    dset->type_id = H5I_INVALID_HID;
 
-    if (strcmp(name, "image") == 0) {
+    /* Accept both "image" and "/image" */
+    if (strcmp(name, "image") == 0 || strcmp(name, "/image") == 0) {
         dset->is_image = 1;
 
         if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width) ||
             !TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height)) {
+            free(dset->name);
+            free(dset);
+            return NULL;
+        }
+
+        /* Validate image dimensions */
+        if (width == 0 || height == 0 || width > 65535 || height > 65535) {
             free(dset->name);
             free(dset);
             return NULL;
@@ -346,35 +382,93 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t *loc_params, const
             dset->space_id = H5Screate_simple(2, dims, NULL);
         }
 
-        geotiff_read_image_data(file, dset);
+        if (dset->space_id < 0) {
+            free(dset->name);
+            free(dset);
+            return NULL;
+        }
+
+        if (geotiff_read_image_data(file, dset) < 0) {
+            H5Sclose(dset->space_id);
+            free(dset->name);
+            free(dset);
+            return NULL;
+        }
     }
 
     return dset;
 }
 
-herr_t geotiff_dataset_read(size_t count, void *dset[], hid_t mem_type_id[], hid_t mem_space_id[],
-                            hid_t file_space_id[], hid_t dxpl_id, void *buf[], void **req)
+herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[],
+                            hid_t mem_type_id[],
+                            hid_t mem_space_id[],
+                            hid_t file_space_id[],
+                            hid_t __attribute__((unused)) dxpl_id, void *buf[],
+                            void __attribute__((unused)) * *req)
 {
-    geotiff_dataset_t *d = (geotiff_dataset_t *) dset[0];
+    const geotiff_dataset_t *d = (const geotiff_dataset_t *) dset[0];
+    H5S_sel_type sel_type;
+    int ndims;
+    hsize_t file_dims[3];
+    hsize_t start[3], stride[3], count_arr[3], block[3];
 
-    if (!d || !d->data || !buf[0])
+    if (!d || !buf[0])
         return -1;
 
-    memcpy(buf[0], d->data, d->data_size);
+    /* If we have cached data and no specific selection, use the simple path */
+    if (d->data && file_space_id[0] == H5S_ALL) {
+        memcpy(buf[0], d->data, d->data_size);
+        return 0;
+    }
 
-    return 0;
+    /* Handle hyperslab selections for band reading */
+    if (file_space_id[0] != H5S_ALL && file_space_id[0] > 0) {
+        sel_type = H5Sget_select_type(file_space_id[0]);
+
+        if (sel_type == H5S_SEL_HYPERSLABS) {
+            ndims = H5Sget_simple_extent_ndims(d->space_id);
+            if (ndims < 0 || ndims > 3)
+                return -1;
+
+            H5Sget_simple_extent_dims(d->space_id, file_dims, NULL);
+
+            /* Get hyperslab selection parameters */
+            if (H5Sget_regular_hyperslab(file_space_id[0], start, stride, count_arr, block) >= 0) {
+                /* Read selected bands/region using libtiff */
+                return geotiff_read_hyperslab(d, start, stride, count_arr, block, ndims,
+                                             mem_type_id[0], buf[0]);
+            }
+        }
+    }
+
+    /* Fallback to full data read if available */
+    if (d->data) {
+        memcpy(buf[0], d->data, d->data_size);
+        return 0;
+    }
+
+    return -1;
 }
 
-herr_t geotiff_dataset_get(void *dset, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req)
+// cppcheck-suppress constParameterCallback
+herr_t geotiff_dataset_get(void *dset, H5VL_dataset_get_args_t *args,
+                           hid_t __attribute__((unused)) dxpl_id,
+                           void __attribute__((unused)) * *req)
 {
-    geotiff_dataset_t *d = (geotiff_dataset_t *) dset;
+    const geotiff_dataset_t *d = (const geotiff_dataset_t *) dset;
 
     switch (args->op_type) {
         case H5VL_DATASET_GET_SPACE:
-            args->args.get_space.space_id = d->space_id;
+            /* Return a copy of the dataspace */
+            args->args.get_space.space_id = H5Scopy(d->space_id);
+            if (args->args.get_space.space_id < 0)
+                return -1;
             break;
         case H5VL_DATASET_GET_TYPE:
-            args->args.get_type.type_id = d->type_id;
+            /* Return a copy of the datatype */
+            args->args.get_type.type_id = H5Tcopy(d->type_id);
+            if (args->args.get_type.type_id < 0)
+                return -1;
             break;
         default:
             return -1;
@@ -383,7 +477,8 @@ herr_t geotiff_dataset_get(void *dset, H5VL_dataset_get_args_t *args, hid_t dxpl
     return 0;
 }
 
-herr_t geotiff_dataset_close(void *dset, hid_t dxpl_id, void **req)
+herr_t geotiff_dataset_close(void *dset, hid_t __attribute__((unused)) dxpl_id,
+                             void __attribute__((unused)) * *req)
 {
     geotiff_dataset_t *d = (geotiff_dataset_t *) dset;
 
@@ -399,8 +494,9 @@ herr_t geotiff_dataset_close(void *dset, hid_t dxpl_id, void **req)
 }
 
 /* Group operations */
-void *geotiff_group_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
-                         hid_t gapl_id, hid_t dxpl_id, void **req)
+void *geotiff_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
+                         const char *name, hid_t __attribute__((unused)) gapl_id,
+                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     geotiff_file_t *file = (geotiff_file_t *) obj;
     geotiff_group_t *grp;
@@ -421,12 +517,15 @@ void *geotiff_group_open(void *obj, const H5VL_loc_params_t *loc_params, const c
     return grp;
 }
 
-herr_t geotiff_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl_id, void **req)
+herr_t geotiff_group_get(void __attribute__((unused)) * obj,
+                         H5VL_group_get_args_t __attribute__((unused)) * args,
+                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     return 0;
 }
 
-herr_t geotiff_group_close(void *grp, hid_t dxpl_id, void **req)
+herr_t geotiff_group_close(void *grp, hid_t __attribute__((unused)) dxpl_id,
+                           void __attribute__((unused)) * *req)
 {
     geotiff_group_t *g = (geotiff_group_t *) grp;
 
@@ -440,8 +539,9 @@ herr_t geotiff_group_close(void *grp, hid_t dxpl_id, void **req)
 }
 
 /* Attribute operations */
-void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
-                        hid_t aapl_id, hid_t dxpl_id, void **req)
+void *geotiff_attr_open(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
+                        const char *name, hid_t __attribute__((unused)) aapl_id,
+                        hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     geotiff_file_t *file = (geotiff_file_t *) obj;
     geotiff_attr_t *attr;
@@ -463,9 +563,11 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
     return attr;
 }
 
-herr_t geotiff_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req)
+// cppcheck-suppress constParameterCallback
+herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, void *buf,
+                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    geotiff_attr_t *a = (geotiff_attr_t *) attr;
+    const geotiff_attr_t *a = (const geotiff_attr_t *) attr;
 
     if (!a || !buf)
         return -1;
@@ -477,9 +579,11 @@ herr_t geotiff_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id
     return 0;
 }
 
-herr_t geotiff_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req)
+// cppcheck-suppress constParameterCallback
+herr_t geotiff_attr_get(void *obj, H5VL_attr_get_args_t *args,
+                        hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    geotiff_attr_t *a = (geotiff_attr_t *) obj;
+    const geotiff_attr_t *a = (const geotiff_attr_t *) obj;
 
     switch (args->op_type) {
         case H5VL_ATTR_GET_SPACE:
@@ -495,7 +599,8 @@ herr_t geotiff_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, vo
     return 0;
 }
 
-herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req)
+herr_t geotiff_attr_close(void *attr, hid_t __attribute__((unused)) dxpl_id,
+                          void __attribute__((unused)) * *req)
 {
     geotiff_attr_t *a = (geotiff_attr_t *) attr;
 
@@ -510,6 +615,102 @@ herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req)
     return 0;
 }
 
+/* Helper function to read hyperslab selection (bands/regions) from GeoTIFF */
+herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *start,
+                              const hsize_t *stride, const hsize_t *count, const hsize_t *block,
+                              int ndims, hid_t __attribute__((unused)) mem_type_id, void *buf)
+{
+    geotiff_file_t *file = dset->file;
+    uint32_t width, height;
+    uint16_t samples_per_pixel, bits_per_sample, sample_format;
+    size_t elem_size;
+    tsize_t scanline_size;
+    unsigned char *scanline_buf = NULL;
+    unsigned char *output = (unsigned char *) buf;
+    hsize_t row_start, row_count, col_start, col_count, band_start, band_count;
+    uint32_t row, col;
+    hsize_t band_idx;
+
+    if (!file || !file->tiff || !buf)
+        return -1;
+
+    /* Get TIFF dimensions */
+    if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width) ||
+        !TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height)) {
+        return -1;
+    }
+
+    TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
+    TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+    TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLEFORMAT, &sample_format);
+
+    elem_size = bits_per_sample / 8;
+    scanline_size = TIFFScanlineSize(file->tiff);
+
+    if (scanline_size <= 0 || elem_size == 0)
+        return -1;
+
+    /* Parse hyperslab parameters based on dimensionality */
+    if (ndims == 2) {
+        /* 2D: [rows, cols] */
+        row_start = start[0];
+        row_count = count[0] * block[0];
+        col_start = start[1];
+        col_count = count[1] * block[1];
+        band_start = 0;
+        band_count = samples_per_pixel;
+    } else if (ndims == 3) {
+        /* 3D: [rows, cols, bands] */
+        row_start = start[0];
+        row_count = count[0] * block[0];
+        col_start = start[1];
+        col_count = count[1] * block[1];
+        band_start = start[2];
+        band_count = count[2] * block[2];
+    } else {
+        return -1;
+    }
+
+    /* Validate selection bounds */
+    if (row_start + row_count > height || col_start + col_count > width ||
+        band_start + band_count > samples_per_pixel) {
+        return -1;
+    }
+
+    /* Allocate scanline buffer */
+    scanline_buf = (unsigned char *) malloc(scanline_size);
+    if (!scanline_buf)
+        return -1;
+
+    /* Read selected region band by band */
+    {
+    size_t output_offset = 0;
+
+    for (row = (uint32_t) row_start; row < row_start + row_count; row++) {
+        /* Read the scanline */
+        if (TIFFReadScanline(file->tiff, scanline_buf, row, 0) < 0) {
+            free(scanline_buf);
+            return -1;
+        }
+
+        /* Extract selected columns and bands */
+        for (col = (uint32_t) col_start; col < col_start + col_count; col++) {
+            for (band_idx = band_start; band_idx < band_start + band_count; band_idx++) {
+                /* Calculate position in scanline buffer */
+                size_t pixel_offset = col * samples_per_pixel * elem_size + band_idx * elem_size;
+
+                /* Copy the band data */
+                memcpy(output + output_offset, scanline_buf + pixel_offset, elem_size);
+                output_offset += elem_size;
+            }
+        }
+    }
+
+    free(scanline_buf);
+    }
+    return 0;
+}
+
 /* Helper function to read image data from TIFF */
 herr_t geotiff_read_image_data(geotiff_file_t *file, geotiff_dataset_t *dset)
 {
@@ -519,8 +720,17 @@ herr_t geotiff_read_image_data(geotiff_file_t *file, geotiff_dataset_t *dset)
     uint32_t row;
     unsigned char *image_data;
 
+    if (!file || !file->tiff || !dset) {
+        return -1;
+    }
+
     if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width) ||
         !TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height)) {
+        return -1;
+    }
+
+    /* Validate reasonable image dimensions */
+    if (width == 0 || height == 0 || width > 65535 || height > 65535) {
         return -1;
     }
 
@@ -528,7 +738,17 @@ herr_t geotiff_read_image_data(geotiff_file_t *file, geotiff_dataset_t *dset)
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
 
     scanline_size = TIFFScanlineSize(file->tiff);
-    dset->data_size = height * scanline_size;
+    if (scanline_size <= 0) {
+        return -1;
+    }
+
+    /* Validate reasonable data size to prevent memory issues */
+    size_t total_size = (size_t) height * (size_t) scanline_size;
+    if (total_size > 100 * 1024 * 1024) { /* 100MB limit */
+        return -1;
+    }
+
+    dset->data_size = total_size;
     dset->data = malloc(dset->data_size);
 
     if (!dset->data)
@@ -540,6 +760,7 @@ herr_t geotiff_read_image_data(geotiff_file_t *file, geotiff_dataset_t *dset)
         if (TIFFReadScanline(file->tiff, image_data + row * scanline_size, row, 0) < 0) {
             free(dset->data);
             dset->data = NULL;
+            dset->data_size = 0;
             return -1;
         }
     }

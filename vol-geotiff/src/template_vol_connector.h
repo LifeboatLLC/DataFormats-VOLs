@@ -17,15 +17,15 @@
 #ifndef _geotiff_vol_connector_H
 #define _geotiff_vol_connector_H
 
-#if defined(__has_include)
-#if __has_include(<geotiff/geotiff.h>)
+/* Try to include geotiff headers in standard locations */
+// cppcheck-suppress preprocessorErrorDirective
+#if defined(__has_include) && __has_include(<geotiff/geotiff.h>)
 #include <geotiff/geotiff.h>
-#elif __has_include(<geotiff.h>)
+// cppcheck-suppress preprocessorErrorDirective
+#elif defined(__has_include) && __has_include(<geotiff.h>)
 #include <geotiff.h>
 #else
-#error "GeoTIFF header not found. Install libgeotiff and ensure include path is set."
-#endif
-#else
+/* Fallback to standard include */
 #include <geotiff.h>
 #endif
 #include <hdf5.h>
@@ -74,7 +74,7 @@ typedef struct geotiff_attr_t {
 
 /* Function prototypes (HDF5 develop expects hid_t vipl_id) */
 herr_t geotiff_init_connector(hid_t vipl_id);
-herr_t geotiff_term_connector(hid_t vipl_id);
+herr_t geotiff_term_connector(void);
 
 /* File operations */
 void *geotiff_file_create(const char *name, unsigned flags, hid_t fcpl_id, hid_t fapl_id,
@@ -106,6 +106,9 @@ herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req);
 
 /* Helper functions */
 herr_t geotiff_read_image_data(geotiff_file_t *file, geotiff_dataset_t *dset);
+herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *start,
+                              const hsize_t *stride, const hsize_t *count, const hsize_t *block,
+                              int ndims, hid_t mem_type_id, void *buf);
 herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file);
 hid_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample);
 
