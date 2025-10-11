@@ -29,7 +29,7 @@ The GeoTIFF VOL connector maps GeoTIFF file structure to HDF5 concepts:
 
 You will need the following to build the GeoTIFF VOL connector:
 
-- **HDF5 develop branch (1.15+/2.x)** with VOL support
+- **HDF5 develop branch (1.14+/2.x)** with VOL support
 - **libtiff** (TIFF library)
 - **libgeotiff** (GeoTIFF library)
 - **CMake 3.9 or later**
