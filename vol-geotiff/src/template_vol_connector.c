@@ -399,16 +399,13 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     return dset;
 }
 
-herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[],
-                            hid_t mem_type_id[],
-                            hid_t mem_space_id[],
-                            hid_t file_space_id[],
+herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_t mem_type_id[],
+                            hid_t __attribute__((unused)) mem_space_id[], hid_t file_space_id[],
                             hid_t __attribute__((unused)) dxpl_id, void *buf[],
                             void __attribute__((unused)) * *req)
 {
     const geotiff_dataset_t *d = (const geotiff_dataset_t *) dset[0];
     H5S_sel_type sel_type;
-    int ndims;
     hsize_t file_dims[3];
     hsize_t start[3], stride[3], count_arr[3], block[3];
 
@@ -426,7 +423,7 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[],
         sel_type = H5Sget_select_type(file_space_id[0]);
 
         if (sel_type == H5S_SEL_HYPERSLABS) {
-            ndims = H5Sget_simple_extent_ndims(d->space_id);
+            int ndims = H5Sget_simple_extent_ndims(d->space_id);
             if (ndims < 0 || ndims > 3)
                 return -1;
 
@@ -436,7 +433,7 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[],
             if (H5Sget_regular_hyperslab(file_space_id[0], start, stride, count_arr, block) >= 0) {
                 /* Read selected bands/region using libtiff */
                 return geotiff_read_hyperslab(d, start, stride, count_arr, block, ndims,
-                                             mem_type_id[0], buf[0]);
+                                              mem_type_id[0], buf[0]);
             }
         }
     }
@@ -617,8 +614,9 @@ herr_t geotiff_attr_close(void *attr, hid_t __attribute__((unused)) dxpl_id,
 
 /* Helper function to read hyperslab selection (bands/regions) from GeoTIFF */
 herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *start,
-                              const hsize_t *stride, const hsize_t *count, const hsize_t *block,
-                              int ndims, hid_t __attribute__((unused)) mem_type_id, void *buf)
+                              const hsize_t __attribute__((unused)) * stride, const hsize_t *count,
+                              const hsize_t *block, int ndims,
+                              hid_t __attribute__((unused)) mem_type_id, void *buf)
 {
     geotiff_file_t *file = dset->file;
     uint32_t width, height;
@@ -628,7 +626,6 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
     unsigned char *scanline_buf = NULL;
     unsigned char *output = (unsigned char *) buf;
     hsize_t row_start, row_count, col_start, col_count, band_start, band_count;
-    uint32_t row, col;
     hsize_t band_idx;
 
     if (!file || !file->tiff || !buf)
@@ -686,7 +683,7 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
     {
         size_t output_offset = 0;
 
-        for (row = (uint32_t) row_start; row < row_start + row_count; row++) {
+        for (uint32_t row = (uint32_t) row_start; row < row_start + row_count; row++) {
             /* Read the scanline */
             if (TIFFReadScanline(file->tiff, scanline_buf, row, 0) < 0) {
                 free(scanline_buf);
@@ -694,10 +691,11 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
             }
 
             /* Extract selected columns and bands */
-            for (col = (uint32_t) col_start; col < col_start + col_count; col++) {
+            for (uint32_t col = (uint32_t) col_start; col < col_start + col_count; col++) {
                 for (band_idx = band_start; band_idx < band_start + band_count; band_idx++) {
                     /* Calculate position in scanline buffer */
-                    size_t pixel_offset = col * samples_per_pixel * elem_size + band_idx * elem_size;
+                    size_t pixel_offset =
+                        col * samples_per_pixel * elem_size + band_idx * elem_size;
 
                     /* Copy the band data */
                     memcpy(output + output_offset, scanline_buf + pixel_offset, elem_size);
