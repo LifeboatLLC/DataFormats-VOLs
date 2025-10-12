@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install dependencies
       run: |
@@ -32,22 +32,22 @@ jobs:
 
     - name: Static analysis with cppcheck
       run: |
-        cd vol-geotiff        
+        cd vol-geotiff
         cppcheck \
           --enable=all \
           --error-exitcode=1 \
           --suppress=missingIncludeSystem \
-          --suppress=missingInclude \	  
+          --suppress=missingInclude \
           --suppress=unusedFunction \
           --suppress=unmatchedSuppression \
-          --suppress=preprocessorErrorDirective \	  
+          --suppress=preprocessorErrorDirective \
           --inline-suppr \
-          -Isrc \	  
+          -Isrc \
           src/ test/
 
     - name: Check for common issues
       run: |
-        cd vol-geotiff        
+        cd vol-geotiff
         # Check for TODO/FIXME comments
         if grep -r "TODO\|FIXME" src/ test/ --include="*.c" --include="*.h"; then
           echo "Warning: Found TODO/FIXME comments"
@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Check documentation
       run: |
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Security scan
       run: |
@@ -130,7 +130,7 @@ jobs:
         compiler: [gcc, clang]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install system dependencies
       run: |
@@ -174,7 +174,7 @@ jobs:
 
     - name: Build with ${{ matrix.compiler }}
       run: |
-        cd vol-geotiff        
+        cd vol-geotiff
         mkdir build-${{ matrix.compiler }} && cd build-${{ matrix.compiler }}
 
         if [ "${{ matrix.compiler }}" = "clang" ]; then
@@ -195,7 +195,7 @@ jobs:
 
     - name: Test with ${{ matrix.compiler }}
       run: |
-        cd vol-geotiff        
+        cd vol-geotiff
         cd build-${{ matrix.compiler }}
         export HDF5_PLUGIN_PATH=$PWD/src
         export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-develop/lib:$LD_LIBRARY_PATH
