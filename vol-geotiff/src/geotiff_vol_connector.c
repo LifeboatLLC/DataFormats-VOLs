@@ -194,39 +194,57 @@ herr_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per
             switch (bits_per_sample) {
                 case 8:
                     predef_type = H5T_NATIVE_UCHAR;
+                    break;
                 case 16:
                     predef_type = H5T_NATIVE_USHORT;
+                    break;
                 case 32:
                     predef_type = H5T_NATIVE_UINT;
+                    break;
                 case 64:
                     predef_type = H5T_NATIVE_UINT64;
+                    break;
                 default:
                     predef_type = H5T_NATIVE_UCHAR;
+                    break;
             }
+            break;
         case SAMPLEFORMAT_INT:
             switch (bits_per_sample) {
                 case 8:
                     predef_type = H5T_NATIVE_CHAR;
+                    break;
                 case 16:
                     predef_type = H5T_NATIVE_SHORT;
+                    break;
                 case 32:
                     predef_type = H5T_NATIVE_INT;
+                    break;
                 case 64:
                     predef_type = H5T_NATIVE_INT64;
+                    break;
                 default:
                     predef_type = H5T_NATIVE_CHAR;
+                    break;
             }
+            break;
         case SAMPLEFORMAT_IEEEFP:
             switch (bits_per_sample) {
                 case 32:
                     predef_type = H5T_NATIVE_FLOAT;
+                    break;
                 case 64:
                     predef_type = H5T_NATIVE_DOUBLE;
+                    break;
                 default:
                     predef_type = H5T_NATIVE_FLOAT;
+                    break;
             }
+            break;
+
         default:
             predef_type = H5T_NATIVE_UCHAR;
+            break;
     }
 
     if ((new_type = H5Tcopy(predef_type)) < 0)
@@ -559,7 +577,6 @@ herr_t geotiff_dataset_close(void *dset, hid_t __attribute__((unused)) dxpl_id,
         free(d);
     }
 
-done:
     return ret_value;
 }
 
@@ -727,7 +744,6 @@ herr_t geotiff_attr_close(void *attr, hid_t __attribute__((unused)) dxpl_id,
         free(a);
     }
 
-done:
     return ret_value;
 }
 
