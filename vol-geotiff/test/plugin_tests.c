@@ -24,21 +24,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Portable getenv helper that returns a heap-allocated copy */
-static char *get_env_dup(const char *name)
-{
-#ifdef _WIN32
-    char *value = NULL;
-    size_t len = 0;
-    if (_dupenv_s(&value, &len, name) != 0)
-        return NULL;
-    return value; /* caller must free */
-#else
-    const char *v = getenv(name);
-    return v ? strdup(v) : NULL; /* caller must free */
-#endif
-}
-
 /* herr_t values from H5private.h */
 #define SUCCEED 0
 

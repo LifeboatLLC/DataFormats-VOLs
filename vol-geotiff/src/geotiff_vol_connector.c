@@ -501,6 +501,11 @@ herr_t geotiff_dataset_get(void *dset, H5VL_dataset_get_args_t *args,
             args->args.get_type.type_id = H5Tcopy(d->type_id);
             if (args->args.get_type.type_id < 0)
                 FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to copy datatype");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL, "Unsupported dataset get operation");
+            break;
     }
 done:
     return ret_value;
@@ -980,6 +985,6 @@ herr_t geotiff_term_connector(void)
         H5_geotiff_attr_table_err_min_g = H5I_INVALID_HID;
         H5_geotiff_attr_table_iter_err_min_g = H5I_INVALID_HID;
     }
-done:
+
     return ret_value;
 }
