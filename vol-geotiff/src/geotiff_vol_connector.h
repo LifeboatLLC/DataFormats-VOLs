@@ -29,6 +29,7 @@
 #include <geotiff.h>
 #endif
 #include <hdf5.h>
+#include "geotiff_vol_err.h" /* Error reporting macros */
 #include <stdint.h>
 #include <tiffio.h>
 
@@ -53,7 +54,7 @@ typedef struct geotiff_dataset_t {
     hid_t space_id;       /* HDF5 dataspace */
     void *data;           /* Cached data */
     size_t data_size;     /* Data size in bytes */
-    int is_image;         /* Is this an image dataset */
+    bool is_image;         /* Is this an image dataset */
 } geotiff_dataset_t;
 
 /* GeoTIFF VOL group object structure */
@@ -105,11 +106,10 @@ herr_t geotiff_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, vo
 herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req);
 
 /* Helper functions */
-herr_t geotiff_read_image_data(geotiff_file_t *file, geotiff_dataset_t *dset);
 herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *start,
                               const hsize_t *stride, const hsize_t *count, const hsize_t *block,
                               int ndims, hid_t mem_type_id, void *buf);
-herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file);
-hid_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample);
 
+herr_t
+geotiff_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type, uint64_t *flags);
 #endif /* _geotiff_vol_connector_H */
