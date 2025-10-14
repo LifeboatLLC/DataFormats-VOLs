@@ -54,7 +54,8 @@ hid_t H5_geotiff_object_table_iter_err_min_g = H5I_INVALID_HID;
 /* Helper functions */
 static herr_t geotiff_read_image_data(geotiff_dataset_t *dset);
 static herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file);
-static hid_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample);
+static herr_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample,
+                                              hid_t *type_id);
 
 /* The VOL class struct */
 static const H5VL_class_t geotiff_class_g = {
@@ -180,47 +181,86 @@ static const H5VL_class_t geotiff_class_g = {
 };
 
 /* Helper function to get HDF5 type from TIFF sample format and bits per sample */
-hid_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample)
+herr_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample,
+                                       hid_t *type_id)
 {
+    herr_t ret_value = SUCCEED;
+    hid_t new_type = H5I_INVALID_HID;
+    hid_t predef_type = H5I_INVALID_HID;
+    assert(type_id);
+
     switch (sample_format) {
         case SAMPLEFORMAT_UINT:
             switch (bits_per_sample) {
                 case 8:
-                    return H5T_NATIVE_UCHAR;
+                    predef_type = H5T_NATIVE_UCHAR;
+                    break;
                 case 16:
-                    return H5T_NATIVE_USHORT;
+                    predef_type = H5T_NATIVE_USHORT;
+                    break;
                 case 32:
-                    return H5T_NATIVE_UINT;
+                    predef_type = H5T_NATIVE_UINT;
+                    break;
                 case 64:
-                    return H5T_NATIVE_UINT64;
+                    predef_type = H5T_NATIVE_UINT64;
+                    break;
                 default:
-                    return H5T_NATIVE_UCHAR;
+                    predef_type = H5T_NATIVE_UCHAR;
+                    break;
             }
+            break;
         case SAMPLEFORMAT_INT:
             switch (bits_per_sample) {
                 case 8:
-                    return H5T_NATIVE_CHAR;
+                    predef_type = H5T_NATIVE_CHAR;
+                    break;
                 case 16:
-                    return H5T_NATIVE_SHORT;
+                    predef_type = H5T_NATIVE_SHORT;
+                    break;
                 case 32:
-                    return H5T_NATIVE_INT;
+                    predef_type = H5T_NATIVE_INT;
+                    break;
                 case 64:
-                    return H5T_NATIVE_INT64;
+                    predef_type = H5T_NATIVE_INT64;
+                    break;
                 default:
-                    return H5T_NATIVE_CHAR;
+                    predef_type = H5T_NATIVE_CHAR;
+                    break;
             }
+            break;
         case SAMPLEFORMAT_IEEEFP:
             switch (bits_per_sample) {
                 case 32:
-                    return H5T_NATIVE_FLOAT;
+                    predef_type = H5T_NATIVE_FLOAT;
+                    break;
                 case 64:
-                    return H5T_NATIVE_DOUBLE;
+                    predef_type = H5T_NATIVE_DOUBLE;
+                    break;
                 default:
-                    return H5T_NATIVE_FLOAT;
+                    predef_type = H5T_NATIVE_FLOAT;
+                    break;
             }
+            break;
+
         default:
-            return H5T_NATIVE_UCHAR;
+            predef_type = H5T_NATIVE_UCHAR;
+            break;
     }
+
+    if ((new_type = H5Tcopy(predef_type)) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCOPY, FAIL, "Failed to copy predef_type datatype");
+
+    *type_id = new_type;
+
+done:
+    if (ret_value < 0 && new_type != H5I_INVALID_HID) {
+        H5E_BEGIN_TRY
+        {
+            H5Tclose(new_type);
+        }
+        H5E_END_TRY;
+    }
+    return ret_value;
 }
 
 /* File operations */
@@ -288,6 +328,7 @@ herr_t geotiff_file_get(void *file, H5VL_file_get_args_t *args,
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     const geotiff_file_t *f = (const geotiff_file_t *) file;
+    herr_t ret_value = SUCCEED;
 
     switch (args->op_type) {
         case H5VL_FILE_GET_NAME:
@@ -302,10 +343,10 @@ herr_t geotiff_file_get(void *file, H5VL_file_get_args_t *args,
             /* Some HDF5 versions may not provide buf_len. If available, setting it is optional. */
             break;
         default:
-            return -1;
+            FUNC_GOTO_ERROR(H5E_FILE, H5E_UNSUPPORTED, FAIL, "Unsupported file get operation");
     }
-
-    return 0;
+done:
+    return ret_value;
 }
 
 herr_t geotiff_file_close(void *file, hid_t __attribute__((unused)) dxpl_id,
@@ -323,7 +364,7 @@ herr_t geotiff_file_close(void *file, hid_t __attribute__((unused)) dxpl_id,
         free(f);
     }
 
-    return 0;
+    return SUCCEED;
 }
 
 /* Dataset operations */
@@ -383,7 +424,9 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
         TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
         TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLEFORMAT, &sample_format);
 
-        dset->type_id = geotiff_get_hdf5_type_from_tiff(sample_format, bits_per_sample);
+        if (geotiff_get_hdf5_type_from_tiff(sample_format, bits_per_sample, &dset->type_id) < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
+                            "Failed to get HDF5 datatype from TIFF sample format");
 
         /* Create dataspace based on samples per pixel */
         if (samples_per_pixel == 1) {
@@ -516,16 +559,25 @@ herr_t geotiff_dataset_close(void *dset, hid_t __attribute__((unused)) dxpl_id,
                              void __attribute__((unused)) * *req)
 {
     geotiff_dataset_t *d = (geotiff_dataset_t *) dset;
+    herr_t ret_value = SUCCEED;
 
     if (d) {
         if (d->name)
             free(d->name);
         if (d->data)
             free(d->data);
+        /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
+        if (d->space_id != H5I_INVALID_HID)
+            if (H5Sclose(d->space_id) < 0)
+                FUNC_DONE_ERROR(H5E_DATASET, H5E_CLOSEERROR, FAIL, "Failed to close dataspace");
+        if (d->type_id != H5I_INVALID_HID)
+            if (H5Tclose(d->type_id) < 0)
+                FUNC_DONE_ERROR(H5E_DATASET, H5E_CLOSEERROR, FAIL, "Failed to close datatype");
+
         free(d);
     }
 
-    return 0;
+    return ret_value;
 }
 
 /* Group operations */
@@ -534,22 +586,36 @@ void *geotiff_group_open(void *obj, const H5VL_loc_params_t __attribute__((unuse
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     geotiff_file_t *file = (geotiff_file_t *) obj;
-    geotiff_group_t *grp;
+    geotiff_group_t *grp = NULL;
+    geotiff_group_t *ret_value = NULL;
 
     if (!file || !name)
-        return NULL;
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or group name");
 
     if (strcmp(name, "/") != 0)
-        return NULL;
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_UNSUPPORTED, NULL,
+                        "GeoTIFF VOL connector currently only supports root group '/'");
 
-    grp = (geotiff_group_t *) malloc(sizeof(geotiff_group_t));
-    if (!grp)
-        return NULL;
+    if ((grp = (geotiff_group_t *) calloc(1, sizeof(geotiff_group_t))) == NULL)
+        FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL,
+                        "Failed to allocate memory for GeoTIFF group struct");
+
+    if ((grp->name = strdup(name)) == NULL)
+        FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL, "Failed to duplicate group name string");
 
     grp->file = file;
-    grp->name = strdup(name);
 
-    return grp;
+    ret_value = grp;
+done:
+    if (!ret_value && grp) {
+        H5E_BEGIN_TRY
+        {
+            geotiff_group_close(grp, dxpl_id, req);
+        }
+        H5E_END_TRY;
+    }
+
+    return ret_value;
 }
 
 herr_t geotiff_group_get(void __attribute__((unused)) * obj,
@@ -570,7 +636,7 @@ herr_t geotiff_group_close(void *grp, hid_t __attribute__((unused)) dxpl_id,
         free(g);
     }
 
-    return 0;
+    return SUCCEED;
 }
 
 /* Attribute operations */
@@ -579,23 +645,38 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t __attribute__((unused
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     geotiff_file_t *file = (geotiff_file_t *) obj;
-    geotiff_attr_t *attr;
+    geotiff_attr_t *attr = NULL;
+    geotiff_attr_t *ret_value = NULL;
 
     if (!file || !name)
-        return NULL;
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Invalid file or attribute name");
 
-    attr = (geotiff_attr_t *) malloc(sizeof(geotiff_attr_t));
-    if (!attr)
-        return NULL;
+    if ((attr = (geotiff_attr_t *) calloc(1, sizeof(geotiff_attr_t))) == NULL)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL,
+                        "Failed to allocate memory for GeoTIFF attribute struct");
+
+    if ((attr->name = strdup(name)) == NULL)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL, "Failed to duplicate attribute name string");
+
+    if ((attr->space_id = H5Screate(H5S_SCALAR)) < 0)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
+                        "Failed to create scalar dataspace for attribute");
 
     attr->file = file;
-    attr->name = strdup(name);
     attr->data = NULL;
     attr->data_size = 0;
     attr->type_id = H5T_NATIVE_CHAR;
-    attr->space_id = H5Screate(H5S_SCALAR);
 
-    return attr;
+    ret_value = attr;
+done:
+    if (!ret_value && attr) {
+        H5E_BEGIN_TRY
+        {
+            geotiff_attr_close(attr, dxpl_id, req);
+        }
+        H5E_END_TRY;
+    }
+    return ret_value;
 }
 
 // cppcheck-suppress constParameterCallback
@@ -603,15 +684,16 @@ herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, 
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     const geotiff_attr_t *a = (const geotiff_attr_t *) attr;
-
+    herr_t ret_value = SUCCEED;
     if (!a || !buf)
-        return -1;
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid attribute or buffer");
 
     if (a->data && a->data_size > 0) {
         memcpy(buf, a->data, a->data_size);
     }
 
-    return 0;
+done:
+    return ret_value;
 }
 
 // cppcheck-suppress constParameterCallback
@@ -619,35 +701,50 @@ herr_t geotiff_attr_get(void *obj, H5VL_attr_get_args_t *args,
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     const geotiff_attr_t *a = (const geotiff_attr_t *) obj;
+    herr_t ret_value = SUCCEED;
 
     switch (args->op_type) {
         case H5VL_ATTR_GET_SPACE:
-            args->args.get_space.space_id = a->space_id;
+            if ((args->args.get_space.space_id = H5Scopy(a->space_id)) < 0)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, FAIL, "Failed to copy attribute dataspace");
             break;
         case H5VL_ATTR_GET_TYPE:
-            args->args.get_type.type_id = a->type_id;
+            if ((args->args.get_type.type_id = H5Tcopy(a->type_id)) < 0)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, FAIL, "Failed to copy attribute datatype");
             break;
         default:
-            return -1;
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL, "Unsupported attribute get operation");
+            break;
     }
 
-    return 0;
+done:
+    return ret_value;
 }
 
 herr_t geotiff_attr_close(void *attr, hid_t __attribute__((unused)) dxpl_id,
                           void __attribute__((unused)) * *req)
 {
     geotiff_attr_t *a = (geotiff_attr_t *) attr;
+    herr_t ret_value = SUCCEED;
 
     if (a) {
         if (a->name)
             free(a->name);
         if (a->data)
             free(a->data);
+        /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
+        if (a->space_id != H5I_INVALID_HID)
+            if (H5Sclose(a->space_id) < 0)
+                FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                "Failed to close attribute dataspace");
+        if (a->type_id != H5I_INVALID_HID)
+            if (H5Tclose(a->type_id) < 0)
+                FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                "Failed to close attribute datatype");
         free(a);
     }
 
-    return 0;
+    return ret_value;
 }
 
 /* Helper function to read hyperslab selection (bands/regions) from GeoTIFF */
@@ -661,19 +758,19 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
     uint16_t samples_per_pixel, bits_per_sample, sample_format;
     size_t elem_size;
     tsize_t scanline_size;
+    herr_t ret_value = SUCCEED;
     unsigned char *scanline_buf = NULL;
     unsigned char *output = (unsigned char *) buf;
     hsize_t row_start, row_count, col_start, col_count, band_start, band_count;
     hsize_t band_idx;
 
     if (!file || !file->tiff || !buf)
-        return -1;
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL, "Invalid file or buffer");
 
     /* Get TIFF dimensions */
     if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width) ||
-        !TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height)) {
-        return -1;
-    }
+        !TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height))
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to get image dimensions from TIFF");
 
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
@@ -683,7 +780,7 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
     scanline_size = TIFFScanlineSize(file->tiff);
 
     if (scanline_size <= 0 || elem_size == 0)
-        return -1;
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid scanline or element size");
 
     /* Parse hyperslab parameters based on dimensionality */
     if (ndims == 2) {
@@ -703,19 +800,19 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
         band_start = start[2];
         band_count = count[2] * block[2];
     } else {
-        return -1;
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL, "Unsupported number of dimensions: %d",
+                        ndims);
     }
 
     /* Validate selection bounds */
     if (row_start + row_count > height || col_start + col_count > width ||
-        band_start + band_count > samples_per_pixel) {
-        return -1;
-    }
+        band_start + band_count > samples_per_pixel)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL, "Hyperslab selection out of bounds");
 
     /* Allocate scanline buffer */
-    scanline_buf = (unsigned char *) malloc(scanline_size);
-    if (!scanline_buf)
-        return -1;
+    if ((scanline_buf = (unsigned char *) malloc(scanline_size)) == NULL)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, FAIL,
+                        "Failed to allocate memory for scanline buffer");
 
     /* Read selected region band by band */
     {
@@ -723,10 +820,9 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
 
         for (uint32_t row = (uint32_t) row_start; row < row_start + row_count; row++) {
             /* Read the scanline */
-            if (TIFFReadScanline(file->tiff, scanline_buf, row, 0) < 0) {
-                free(scanline_buf);
-                return -1;
-            }
+            if (TIFFReadScanline(file->tiff, scanline_buf, row, 0) < 0)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL,
+                                "Failed to read scanline %u from TIFF", row);
 
             /* Extract selected columns and bands */
             for (uint32_t col = (uint32_t) col_start; col < col_start + col_count; col++) {
@@ -741,10 +837,12 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
                 }
             }
         }
-
-        free(scanline_buf);
     }
-    return 0;
+done:
+    if (scanline_buf)
+        free(scanline_buf);
+
+    return ret_value;
 }
 
 /* Helper function to read image data from TIFF
