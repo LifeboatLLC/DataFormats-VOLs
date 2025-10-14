@@ -811,11 +811,8 @@ static herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file)
     geocode_t pcs_code, gcs_code;
     /* Optionally read tie points / pixel scale via TIFF tags in the future */
 
-    if (!file || !file->gtif) {
-        fprintf(stderr, "Invalid file or GTIF handle\n");
-        ret_value = FAIL;
-        goto done;
-    }
+    if (!file || !file->gtif)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid file or GTIF handle\n");
 
     /* Get metadata - don't throw error, since file may not have these fields populated */
 
