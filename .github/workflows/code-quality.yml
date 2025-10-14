@@ -41,6 +41,7 @@ jobs:
           --suppress=unusedFunction \
           --suppress=unmatchedSuppression \
           --suppress=preprocessorErrorDirective \
+          --suppress=unusedLabel \
           --inline-suppr \
           -Isrc \
           src/ test/

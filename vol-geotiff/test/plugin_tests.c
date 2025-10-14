@@ -17,30 +17,15 @@
  */
 
 // cppcheck-suppress missingInclude
-#include "template_vol_connector.h"
+#include "geotiff_vol_connector.h"
+#include "test_geotiff.h"
+#include <H5PLpublic.h>
 
-#include <hdf5.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Portable getenv helper that returns a heap-allocated copy */
-static char *get_env_dup(const char *name)
-{
-#ifdef _WIN32
-    char *value = NULL;
-    size_t len = 0;
-    if (_dupenv_s(&value, &len, name) != 0)
-        return NULL;
-    return value; /* caller must free */
-#else
-    const char *v = getenv(name);
-    return v ? strdup(v) : NULL; /* caller must free */
-#endif
-}
-
 /* herr_t values from H5private.h */
 #define SUCCEED 0
-#define FAIL (-1)
 
 /* Testing macros from h5test.h
  *
@@ -53,17 +38,6 @@ static char *get_env_dup(const char *name)
  * the H5_FAILED() macro is invoked automatically when an API function fails.
  */
 
-#define AT() printf("   at %s:%d...\n", __FILE__, __LINE__);
-#define TESTING(WHAT)                                                                              \
-    {                                                                                              \
-        printf("Testing %-62s", WHAT);                                                             \
-        fflush(stdout);                                                                            \
-    }
-#define PASSED()                                                                                   \
-    {                                                                                              \
-        puts(" PASSED");                                                                           \
-        fflush(stdout);                                                                            \
-    }
 #define H5_FAILED()                                                                                \
     {                                                                                              \
         puts("*FAILED*");                                                                          \
@@ -72,11 +46,6 @@ static char *get_env_dup(const char *name)
 #define H5_WARNING()                                                                               \
     {                                                                                              \
         puts("*WARNING*");                                                                         \
-        fflush(stdout);                                                                            \
-    }
-#define SKIPPED()                                                                                  \
-    {                                                                                              \
-        puts(" -SKIP-");                                                                           \
         fflush(stdout);                                                                            \
     }
 #define PUTS_ERROR(s)                                                                              \
@@ -121,7 +90,7 @@ static char *get_env_dup(const char *name)
  *
  *-------------------------------------------------------------------------
  */
-static herr_t test_registration_by_value(void)
+herr_t test_registration_by_value(void)
 {
     htri_t is_registered = FAIL;
     hid_t vol_id = H5I_INVALID_HID;
@@ -129,13 +98,19 @@ static herr_t test_registration_by_value(void)
 
     TESTING("VOL registration by value");
 
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0)
+        TEST_ERROR;
+#endif
+
     /* Ensure connector is not pre-registered (CI/env may set defaults) */
     if ((is_registered = H5VLis_connector_registered_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
         TEST_ERROR;
     if (true == is_registered) {
         if ((pre_id = H5VLget_connector_id_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
             TEST_ERROR;
-        if (H5VLunregister_connector(pre_id) < 0)
+        if (H5VLclose(pre_id) < 0)
             TEST_ERROR;
     }
 
@@ -182,7 +157,7 @@ error:
  *
  *-------------------------------------------------------------------------
  */
-static herr_t test_registration_by_name(void)
+herr_t test_registration_by_name(void)
 {
     htri_t is_registered = FAIL;
     hid_t vol_id = H5I_INVALID_HID;
@@ -190,13 +165,19 @@ static herr_t test_registration_by_name(void)
 
     TESTING("VOL registration by name");
 
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0)
+        TEST_ERROR;
+#endif
+
     /* Ensure connector is not pre-registered */
     if ((is_registered = H5VLis_connector_registered_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
         TEST_ERROR;
     if (true == is_registered) {
         if ((pre_id = H5VLget_connector_id_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
             TEST_ERROR;
-        if (H5VLunregister_connector(pre_id) < 0)
+        if (H5VLclose(pre_id) < 0)
             TEST_ERROR;
     }
 
@@ -243,7 +224,7 @@ error:
  *-------------------------------------------------------------------------
  */
 #define N_REGISTRATIONS 10
-static herr_t test_multiple_registration(void)
+herr_t test_multiple_registration(void)
 {
     htri_t is_registered = FAIL;
     hid_t vol_ids[N_REGISTRATIONS];
@@ -252,13 +233,19 @@ static herr_t test_multiple_registration(void)
 
     TESTING("registering a VOL connector multiple times");
 
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0)
+        TEST_ERROR;
+#endif
+
     /* Ensure connector is not pre-registered */
     if ((is_registered = H5VLis_connector_registered_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
         TEST_ERROR;
     if (true == is_registered) {
         if ((pre_id = H5VLget_connector_id_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
             TEST_ERROR;
-        if (H5VLunregister_connector(pre_id) < 0)
+        if (H5VLclose(pre_id) < 0)
             TEST_ERROR;
     }
 
@@ -318,7 +305,7 @@ error:
  *
  *-------------------------------------------------------------------------
  */
-static herr_t test_getters(void)
+herr_t test_getters(void)
 {
     htri_t is_registered = FAIL;
     hid_t vol_id = H5I_INVALID_HID;
@@ -327,13 +314,19 @@ static herr_t test_getters(void)
 
     TESTING("VOL getters");
 
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0)
+        TEST_ERROR;
+#endif
+
     /* Ensure connector is not pre-registered */
     if ((is_registered = H5VLis_connector_registered_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
         TEST_ERROR;
     if (true == is_registered) {
         if ((pre_id = H5VLget_connector_id_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
             TEST_ERROR;
-        if (H5VLunregister_connector(pre_id) < 0)
+        if (H5VLclose(pre_id) < 0)
             TEST_ERROR;
     }
 
@@ -349,9 +342,20 @@ static herr_t test_getters(void)
     if (vol_id_out <= 0)
         FAIL_PUTS_ERROR("VOL connector ID (get-by-name) is invalid");
 
+    /* Close the ID we got from the getter (this decrements the reference count) */
+    if (H5VLclose(vol_id_out) < 0)
+        TEST_ERROR;
+
     /* Unregister the connector */
     if (H5VLunregister_connector(vol_id) < 0)
         TEST_ERROR;
+
+    /* Verify that connector is truly unregistered */
+    if ((is_registered = H5VLis_connector_registered_by_name(GEOTIFF_VOL_CONNECTOR_NAME)) < 0)
+        TEST_ERROR;
+
+    if (true == is_registered)
+        FAIL_PUTS_ERROR("VOL connector could not be unregistered");
 
     PASSED();
     return SUCCEED;
@@ -365,45 +369,3 @@ error:
     return FAIL;
 
 } /* end test_getters() */
-
-/*-------------------------------------------------------------------------
- * Function:    main
- *
- * Purpose:     Tests VOL connector plugin operations
- *
- * Return:      EXIT_SUCCESS/EXIT_FAILURE
- *
- *-------------------------------------------------------------------------
- */
-int main(void)
-{
-    int nerrors = 0;
-    char *path = NULL;
-
-    puts("Testing VOL connector plugin functionality.");
-
-    path = get_env_dup("HDF5_PLUGIN_PATH");
-    printf("HDF5_PLUGIN_PATH = ");
-    if (path)
-        printf("%s\n", path);
-    else
-        printf("NULL\n");
-    if (path)
-        free(path);
-
-    nerrors += test_registration_by_name() < 0 ? 1 : 0;
-    nerrors += test_registration_by_value() < 0 ? 1 : 0;
-    nerrors += test_multiple_registration() < 0 ? 1 : 0;
-    nerrors += test_getters() < 0 ? 1 : 0;
-
-    if (nerrors) {
-        printf("***** %d VOL connector plugin TEST%s FAILED! *****\n", nerrors,
-               nerrors > 1 ? "S" : "");
-        exit(EXIT_FAILURE);
-    }
-
-    puts("All VOL connector plugin tests passed.");
-
-    exit(EXIT_SUCCESS);
-
-} /* end main() */

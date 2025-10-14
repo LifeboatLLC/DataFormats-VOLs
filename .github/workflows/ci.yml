@@ -101,27 +101,7 @@ jobs:
           export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
           export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
           ctest -D Experimental
-#          make test
-
-      - name: Test VOL plugin registration
-        run: |
-          cd vol-geotiff
-          cd build
-          export HDF5_PLUGIN_PATH=$PWD/src
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
-          ./test/vol_plugin
-
-      - name: Test GeoTIFF reading
-        run: |
-          cd vol-geotiff
-          cd build
-          export HDF5_PLUGIN_PATH=$PWD/src
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
-          if [ -f ../test/sample.tif ]; then
-            ./test/test_geotiff_read ../test/sample.tif
-          else
-            echo "No sample.tif found, skipping GeoTIFF read test"
-          fi
+          make test
 
       - name: Test HDF5 tools integration
         run: |
