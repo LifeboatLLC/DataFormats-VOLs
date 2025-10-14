@@ -174,9 +174,6 @@ int ReadGeoTIFFTest(const char *filename)
         goto error;
     }
 
-    H5T_class_t type_class = H5Tget_class(type_id);
-    size_t type_size = H5Tget_size(type_id);
-
     /* Verify dimensions match expected */
     if (is_grayscale) {
         if (ndims != 2 || dims[0] != HEIGHT || dims[1] != WIDTH) {
