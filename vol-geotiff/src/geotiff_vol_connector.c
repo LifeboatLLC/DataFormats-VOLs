@@ -504,7 +504,8 @@ herr_t geotiff_dataset_get(void *dset, H5VL_dataset_get_args_t *args,
             break;
 
         default:
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL, "Unsupported dataset get operation");
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL,
+                            "Unsupported dataset get operation");
             break;
     }
 done:
