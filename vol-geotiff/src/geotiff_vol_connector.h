@@ -28,8 +28,8 @@
 /* Fallback to standard include */
 #include <geotiff.h>
 #endif
-#include <hdf5.h>
 #include "geotiff_vol_err.h" /* Error reporting macros */
+#include <hdf5.h>
 #include <stdint.h>
 #include <tiffio.h>
 
@@ -54,7 +54,7 @@ typedef struct geotiff_dataset_t {
     hid_t space_id;       /* HDF5 dataspace */
     void *data;           /* Cached data */
     size_t data_size;     /* Data size in bytes */
-    bool is_image;         /* Is this an image dataset */
+    bool is_image;        /* Is this an image dataset */
 } geotiff_dataset_t;
 
 /* GeoTIFF VOL group object structure */
@@ -110,6 +110,6 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
                               const hsize_t *stride, const hsize_t *count, const hsize_t *block,
                               int ndims, hid_t mem_type_id, void *buf);
 
-herr_t
-geotiff_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type, uint64_t *flags);
+herr_t geotiff_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type,
+                                    uint64_t *flags);
 #endif /* _geotiff_vol_connector_H */

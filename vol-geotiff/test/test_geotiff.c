@@ -3,8 +3,8 @@
  * Tests reading a GeoTIFF file through HDF5 interface
  */
 
-#include "geotiff_vol_connector.h"
 #include "test_geotiff.h"
+#include "geotiff_vol_connector.h"
 #include <geotiff/geotiffio.h>
 #include <geotiff/xtiffio.h>
 #include <stdio.h>
@@ -79,7 +79,6 @@ error:
 
 /* Helper function implementations */
 
-
 static int CreateGrayscaleGeoTIFF(const char *filename)
 {
     TIFF *tif = NULL;
@@ -152,7 +151,7 @@ static int CreateRGBGeoTIFF(const char *filename)
     TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
 
     SetUpGeoKeys(gtif);
-    
+
     /* Write to RGB image.
      * Create a color pattern:
      * R = row * 8

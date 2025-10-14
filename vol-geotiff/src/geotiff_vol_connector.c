@@ -17,9 +17,9 @@
 /* This connector's header */
 #include "geotiff_vol_connector.h"
 
-#include <geotiff/xtiffio.h>
 #include <H5PLextern.h>
 #include <assert.h>
+#include <geotiff/xtiffio.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,21 +35,20 @@
 #endif
 #endif
 
-
 #define SUCCEED 0
 
-static hbool_t H5_geotiff_initialized_g      = FALSE;
+static hbool_t H5_geotiff_initialized_g = FALSE;
 
 /* Identifiers for HDF5's error API */
-hid_t H5_geotiff_err_stack_g                 = H5I_INVALID_HID;
-hid_t H5_geotiff_err_class_g                 = H5I_INVALID_HID;
-hid_t H5_geotiff_obj_err_maj_g               = H5I_INVALID_HID;
-hid_t H5_geotiff_parse_err_min_g             = H5I_INVALID_HID;
-hid_t H5_geotiff_link_table_err_min_g        = H5I_INVALID_HID;
-hid_t H5_geotiff_link_table_iter_err_min_g   = H5I_INVALID_HID;
-hid_t H5_geotiff_attr_table_err_min_g        = H5I_INVALID_HID;
-hid_t H5_geotiff_attr_table_iter_err_min_g   = H5I_INVALID_HID;
-hid_t H5_geotiff_object_table_err_min_g      = H5I_INVALID_HID;
+hid_t H5_geotiff_err_stack_g = H5I_INVALID_HID;
+hid_t H5_geotiff_err_class_g = H5I_INVALID_HID;
+hid_t H5_geotiff_obj_err_maj_g = H5I_INVALID_HID;
+hid_t H5_geotiff_parse_err_min_g = H5I_INVALID_HID;
+hid_t H5_geotiff_link_table_err_min_g = H5I_INVALID_HID;
+hid_t H5_geotiff_link_table_iter_err_min_g = H5I_INVALID_HID;
+hid_t H5_geotiff_attr_table_err_min_g = H5I_INVALID_HID;
+hid_t H5_geotiff_attr_table_iter_err_min_g = H5I_INVALID_HID;
+hid_t H5_geotiff_object_table_err_min_g = H5I_INVALID_HID;
 hid_t H5_geotiff_object_table_iter_err_min_g = H5I_INVALID_HID;
 
 /* Helper functions */
@@ -240,7 +239,7 @@ void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id,
 {
     geotiff_file_t *file = NULL;
     geotiff_file_t *ret_value = NULL;
-    
+
     /* We only support read-only access for GeoTIFF files */
     if (flags != H5F_ACC_RDONLY)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_UNSUPPORTED, NULL,
@@ -251,16 +250,14 @@ void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id,
                         "Failed to allocate memory for GeoTIFF file struct");
 
     if ((file->tiff = XTIFFOpen(name, "r")) == NULL)
-        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL,
-                        "Failed to open GeoTIFF file: %s", name);
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL, "Failed to open GeoTIFF file: %s", name);
 
     if ((file->gtif = GTIFNew(file->tiff)) == NULL)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL,
                         "Failed to create GeoTIFF handle for file: %s", name);
 
     if ((file->filename = strdup(name)) == NULL)
-        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTALLOC, NULL,
-                        "Failed to duplicate filename string");
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTALLOC, NULL, "Failed to duplicate filename string");
 
     file->flags = flags;
     file->plist_id = fapl_id;
@@ -275,9 +272,11 @@ void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id,
 done:
     if (!ret_value) {
         if (file) {
-            H5E_BEGIN_TRY {
+            H5E_BEGIN_TRY
+            {
                 geotiff_file_close(file, dxpl_id, req);
-            } H5E_END_TRY;
+            }
+            H5E_END_TRY;
         }
     }
 
@@ -342,11 +341,10 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     uint16_t samples_per_pixel = 0;
     uint16_t bits_per_sample = 0;
     uint16_t sample_format = 0;
-    hsize_t dims[3] = {0,0, 0};
+    hsize_t dims[3] = {0, 0, 0};
 
     if (!file || !name) {
-        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL,
-                        "Invalid file or dataset name");
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or dataset name");
     }
 
     if ((dset = (geotiff_dataset_t *) malloc(sizeof(geotiff_dataset_t))) == NULL) {
@@ -374,11 +372,9 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
 
         /* Read image metadata from TIFF tags */
         if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width))
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
-                            "Failed to get image width from TIFF");
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get image width from TIFF");
         if (!TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height))
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
-                            "Failed to get image height from TIFF");
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get image height from TIFF");
 
         if (width == 0 || height == 0 || width > 65535 || height > 65535)
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Invalid image dimensions");
@@ -422,9 +418,11 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
 done:
     if (!ret_value) {
         if (dset)
-            H5E_BEGIN_TRY {
+            H5E_BEGIN_TRY
+            {
                 geotiff_dataset_close(dset, dxpl_id, req);
-            } H5E_END_TRY;
+            }
+        H5E_END_TRY;
     }
 
     return ret_value;
@@ -748,8 +746,7 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
  * TODO: Currently reads entire image into memory. For large images, this may
  *       exceed available memory.
  */
-static herr_t
-geotiff_read_image_data(geotiff_dataset_t *dset)
+static herr_t geotiff_read_image_data(geotiff_dataset_t *dset)
 {
     geotiff_file_t *file = dset->file;
     uint32_t width = 0;
@@ -766,12 +763,9 @@ geotiff_read_image_data(geotiff_dataset_t *dset)
     assert(file->tiff);
 
     if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width))
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
-                        "Failed to get image width from TIFF");
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to get image width from TIFF");
     if (!TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height))
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
-                        "Failed to get image height from TIFF");
-
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to get image height from TIFF");
 
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
@@ -799,7 +793,6 @@ geotiff_read_image_data(geotiff_dataset_t *dset)
                             "Failed to read scanline %u from TIFF", row);
     }
 
-
 done:
     if (ret_value < 0) {
         free(dset->data);
@@ -811,8 +804,7 @@ done:
 }
 
 /* Helper function to parse GeoTIFF tags */
-static herr_t
-geotiff_parse_geotiff_tags(geotiff_file_t *file)
+static herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file)
 {
     herr_t ret_value = SUCCEED;
     geocode_t model_type;
@@ -864,8 +856,7 @@ const void *H5PLget_plugin_info(void)
  *
  *---------------------------------------------------------------------------
  */
-herr_t
-geotiff_introspect_opt_query(void __attribute__((unused)) * obj, H5VL_subclass_t subcls,
+herr_t geotiff_introspect_opt_query(void __attribute__((unused)) * obj, H5VL_subclass_t subcls,
                                     int opt_type, uint64_t __attribute__((unused)) * flags)
 {
     /* We don't support any optional operations */
@@ -875,12 +866,14 @@ geotiff_introspect_opt_query(void __attribute__((unused)) * obj, H5VL_subclass_t
     return SUCCEED;
 }
 
-herr_t geotiff_init_connector(hid_t __attribute__((unused)) vipl_id) {
+herr_t geotiff_init_connector(hid_t __attribute__((unused)) vipl_id)
+{
     herr_t ret_value = SUCCEED;
 
     /* Register the connector with HDF5's error reporting API */
-    if ((H5_geotiff_err_class_g = H5Eregister_class(HDF5_VOL_GEOTIFF_ERR_CLS_NAME, HDF5_VOL_GEOTIFF_LIB_NAME,
-                                                 HDF5_VOL_GEOTIFF_LIB_VER)) < 0)
+    if ((H5_geotiff_err_class_g =
+             H5Eregister_class(HDF5_VOL_GEOTIFF_ERR_CLS_NAME, HDF5_VOL_GEOTIFF_LIB_NAME,
+                               HDF5_VOL_GEOTIFF_LIB_VER)) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't register with HDF5 error API");
 
     /* Create a separate error stack for the GEOTIFF VOL to report errors with */
@@ -888,32 +881,39 @@ herr_t geotiff_init_connector(hid_t __attribute__((unused)) vipl_id) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error stack");
 
     /* Set up a few GEOTIFF VOL-specific error API message classes */
-    if ((H5_geotiff_obj_err_maj_g = H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MAJOR, "Object interface")) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error message for object interface");
-    if ((H5_geotiff_parse_err_min_g =
-             H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR, "Error occurred while parsing JSON")) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error message for JSON parsing failures");
-    if ((H5_geotiff_link_table_err_min_g =
-             H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR, "Can't build table of links for iteration")) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error message for link table build error");
-    if ((H5_geotiff_link_table_iter_err_min_g =
-             H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR, "Can't iterate through link table")) < 0)
+    if ((H5_geotiff_obj_err_maj_g =
+             H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MAJOR, "Object interface")) < 0)
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
+                        "can't create error message for object interface");
+    if ((H5_geotiff_parse_err_min_g = H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR,
+                                                    "Error occurred while parsing JSON")) < 0)
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
+                        "can't create error message for JSON parsing failures");
+    if ((H5_geotiff_link_table_err_min_g = H5Ecreate_msg(
+             H5_geotiff_err_class_g, H5E_MINOR, "Can't build table of links for iteration")) < 0)
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
+                        "can't create error message for link table build error");
+    if ((H5_geotiff_link_table_iter_err_min_g = H5Ecreate_msg(
+             H5_geotiff_err_class_g, H5E_MINOR, "Can't iterate through link table")) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
                         "can't create error message for link table iteration error");
-    if ((H5_geotiff_attr_table_err_min_g = H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR,
-                                                      "Can't build table of attributes for iteration")) < 0)
+    if ((H5_geotiff_attr_table_err_min_g =
+             H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR,
+                           "Can't build table of attributes for iteration")) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
                         "can't create error message for attribute table build error");
-    if ((H5_geotiff_attr_table_iter_err_min_g =
-             H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR, "Can't iterate through attribute table")) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create message for attribute iteration error");
-    if ((H5_geotiff_object_table_err_min_g =
-             H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR, "Can't build table of objects for iteration")) < 0)
+    if ((H5_geotiff_attr_table_iter_err_min_g = H5Ecreate_msg(
+             H5_geotiff_err_class_g, H5E_MINOR, "Can't iterate through attribute table")) < 0)
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
+                        "can't create message for attribute iteration error");
+    if ((H5_geotiff_object_table_err_min_g = H5Ecreate_msg(
+             H5_geotiff_err_class_g, H5E_MINOR, "Can't build table of objects for iteration")) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
                         "can't create error message for object table build error");
-    if ((H5_geotiff_object_table_iter_err_min_g =
-             H5Ecreate_msg(H5_geotiff_err_class_g, H5E_MINOR, "Can't iterate through object table")) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create message for object iteration error");
+    if ((H5_geotiff_object_table_iter_err_min_g = H5Ecreate_msg(
+             H5_geotiff_err_class_g, H5E_MINOR, "Can't iterate through object table")) < 0)
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
+                        "can't create message for object iteration error");
 
     /* Initialized */
     H5_geotiff_initialized_g = TRUE;
@@ -925,7 +925,8 @@ done:
     return ret_value;
 }
 
-herr_t geotiff_term_connector(void) {
+herr_t geotiff_term_connector(void)
+{
     herr_t ret_value = SUCCEED;
 
     /* Unregister from the HDF5 error API */
@@ -936,22 +937,28 @@ herr_t geotiff_term_connector(void) {
         if (H5_geotiff_parse_err_min_g >= 0 && H5Eclose_msg(H5_geotiff_parse_err_min_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL,
                             "can't unregister error message for JSON parsing error");
-        if (H5_geotiff_link_table_err_min_g >= 0 && H5Eclose_msg(H5_geotiff_link_table_err_min_g) < 0)
+        if (H5_geotiff_link_table_err_min_g >= 0 &&
+            H5Eclose_msg(H5_geotiff_link_table_err_min_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL,
                             "can't unregister error message for building link table");
-        if (H5_geotiff_link_table_iter_err_min_g >= 0 && H5Eclose_msg(H5_geotiff_link_table_iter_err_min_g) < 0)
+        if (H5_geotiff_link_table_iter_err_min_g >= 0 &&
+            H5Eclose_msg(H5_geotiff_link_table_iter_err_min_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL,
                             "can't unregister error message for iterating over link table");
-        if (H5_geotiff_attr_table_err_min_g >= 0 && H5Eclose_msg(H5_geotiff_attr_table_err_min_g) < 0)
+        if (H5_geotiff_attr_table_err_min_g >= 0 &&
+            H5Eclose_msg(H5_geotiff_attr_table_err_min_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL,
                             "can't unregister error message for building attribute table");
-        if (H5_geotiff_attr_table_iter_err_min_g >= 0 && H5Eclose_msg(H5_geotiff_attr_table_iter_err_min_g) < 0)
+        if (H5_geotiff_attr_table_iter_err_min_g >= 0 &&
+            H5Eclose_msg(H5_geotiff_attr_table_iter_err_min_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL,
                             "can't unregister error message for iterating over attribute table");
-        if (H5_geotiff_object_table_iter_err_min_g >= 0 && H5Eclose_msg(H5_geotiff_object_table_err_min_g) < 0)
+        if (H5_geotiff_object_table_iter_err_min_g >= 0 &&
+            H5Eclose_msg(H5_geotiff_object_table_err_min_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL,
                             "can't unregister error message for build object table");
-        if (H5_geotiff_object_table_iter_err_min_g >= 0 && H5Eclose_msg(H5_geotiff_object_table_iter_err_min_g) < 0)
+        if (H5_geotiff_object_table_iter_err_min_g >= 0 &&
+            H5Eclose_msg(H5_geotiff_object_table_iter_err_min_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL,
                             "can't unregister error message for iterating over object table");
 
@@ -965,15 +972,15 @@ herr_t geotiff_term_connector(void) {
         if (H5Eclose_stack(H5_geotiff_err_stack_g) < 0) {
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't close error stack");
             PRINT_ERROR_STACK;
-        } 
+        }
 
-        H5_geotiff_err_stack_g               = H5I_INVALID_HID;
-        H5_geotiff_err_class_g               = H5I_INVALID_HID;
-        H5_geotiff_obj_err_maj_g             = H5I_INVALID_HID;
-        H5_geotiff_parse_err_min_g           = H5I_INVALID_HID;
-        H5_geotiff_link_table_err_min_g      = H5I_INVALID_HID;
+        H5_geotiff_err_stack_g = H5I_INVALID_HID;
+        H5_geotiff_err_class_g = H5I_INVALID_HID;
+        H5_geotiff_obj_err_maj_g = H5I_INVALID_HID;
+        H5_geotiff_parse_err_min_g = H5I_INVALID_HID;
+        H5_geotiff_link_table_err_min_g = H5I_INVALID_HID;
         H5_geotiff_link_table_iter_err_min_g = H5I_INVALID_HID;
-        H5_geotiff_attr_table_err_min_g      = H5I_INVALID_HID;
+        H5_geotiff_attr_table_err_min_g = H5I_INVALID_HID;
         H5_geotiff_attr_table_iter_err_min_g = H5I_INVALID_HID;
     }
 done:
