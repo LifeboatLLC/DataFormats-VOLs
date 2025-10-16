@@ -76,3 +76,14 @@ foreach(MEM_TYPE ${DTYPE_NAMES})
         endif()
     endforeach()
 endforeach()
+add_test(NAME link_exists_grayscale COMMAND test_geotiff link_exists_grayscale)
+set_tests_properties(link_exists_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME link_exists_rgb COMMAND test_geotiff link_exists_rgb)
+set_tests_properties(link_exists_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME link_iterate_grayscale COMMAND test_geotiff link_iterate_grayscale)
+set_tests_properties(link_iterate_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME link_iterate_rgb COMMAND test_geotiff link_iterate_rgb)
+set_tests_properties(link_iterate_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")

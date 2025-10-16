@@ -133,12 +133,12 @@ static const H5VL_class_t geotiff_class_g = {
     },
     {
         /* link_cls */
-        NULL, /* create       */
-        NULL, /* copy         */
-        NULL, /* move         */
-        NULL, /* get          */
-        NULL, /* specific     */
-        NULL  /* optional     */
+        NULL,                  /* create       */
+        NULL,                  /* copy         */
+        NULL,                  /* move         */
+        NULL,                  /* get          */
+        geotiff_link_specific, /* specific     */
+        NULL                   /* optional     */
     },
     {
         /* object_cls */
@@ -1292,5 +1292,140 @@ herr_t geotiff_term_connector(void)
         H5_geotiff_attr_table_iter_err_min_g = H5I_INVALID_HID;
     }
 
+    return ret_value;
+}
+
+static herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
+                                              H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
+                                              const H5VL_class_t __attribute__((unused)) *
+                                                  *conn_cls)
+{
+    herr_t ret_value = SUCCEED;
+
+    assert(conn_cls);
+
+    /* Retrieve the VOL connector class */
+    *conn_cls = &geotiff_class_g;
+
+    return ret_value;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    geotiff_link_specific
+ *
+ * Purpose:     Handles link-specific operations for the GeoTIFF VOL connector
+ *
+ * Return:      SUCCEED/FAIL
+ *
+ * Note:        The GeoTIFF VOL has a flat structure with only image datasets
+ *              at the root level (e.g., "image0"). We pretend each image has
+ *              a hard link from the root group.
+ *
+ *---------------------------------------------------------------------------
+ */
+herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                             H5VL_link_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                             void __attribute__((unused)) * *req)
+{
+    herr_t ret_value = SUCCEED;
+    geotiff_file_t *file = NULL;
+    const char *link_name = NULL;
+
+    /* obj could be file, group, or dataset - we need the file */
+    /* For simplicity, try to extract file pointer based on common structure pattern */
+    if (!obj || !loc_params || !args)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to link_specific");
+
+    switch (args->op_type) {
+        case H5VL_LINK_EXISTS: {
+            /* Get the link name from loc_params */
+            if (loc_params->type == H5VL_OBJECT_BY_NAME) {
+                link_name = loc_params->loc_data.loc_by_name.name;
+            } else {
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
+                                "Link exists check requires name-based location");
+            }
+
+            if (!link_name)
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "No link name provided");
+
+            /* Currently only "image0" exists as a link/dataset
+             * Future: check for "image1", "image2", etc. for multi-page TIFFs
+             */
+            *args->args.exists.exists = (strcmp(link_name, "image0") == 0);
+
+            break;
+        }
+
+        case H5VL_LINK_ITER: {
+            H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
+
+            /* TODO: For now, we only have one link: "image0"
+             * Future: iterate over multiple images for multi-page TIFFs
+             */
+
+            assert(iter_args);
+            assert(iter_args->idx_p);
+
+            if (*iter_args->idx_p < 0)
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "Invalid iteration index");
+
+            /* Only iterate if we haven't reached the end */
+            if (*iter_args->idx_p > 0) {
+                /* Already past the only link we have */
+                break;
+            }
+
+            /* Call the user's callback for "image0" */
+            if (iter_args->op) {
+                H5L_info2_t link_info;
+                herr_t cb_ret;
+
+                /* Fill in minimal link info */
+                memset(&link_info, 0, sizeof(H5L_info2_t));
+                /* Consider all GeoTIFF "links" to be hard links */
+                link_info.type = H5L_TYPE_HARD;
+                link_info.corder_valid = true;
+                link_info.corder = 0;
+                link_info.cset = H5T_CSET_ASCII;
+
+                /* TODO: Fill in link_info.u.token if needed */
+                /* For now, leave token as zeros */
+
+                /* Call user's callback
+                 * Signature: herr_t (*op)(hid_t group, const char *name, const H5L_info2_t *info,
+                 * void *op_data)
+                 * Note: We pass 0 as group hid since we don't have a proper group ID
+                 */
+                cb_ret = iter_args->op(0, "image0", &link_info, iter_args->op_data);
+
+                /* Update index */
+                if (iter_args->idx_p)
+                    *iter_args->idx_p = *iter_args->idx_p + 1;
+
+                /* Check callback return value */
+                if (cb_ret < 0) {
+                    FUNC_GOTO_ERROR(H5E_LINK, H5E_BADITER, FAIL,
+                                    "Iterator callback returned error");
+                } else if (cb_ret > 0) {
+                    /* Callback requested early termination */
+                    ret_value = cb_ret;
+                    goto done;
+                }
+            }
+
+            break;
+        }
+
+        case H5VL_LINK_DELETE:
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL,
+                            "Link deletion is not supported in read-only GeoTIFF VOL connector");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL, "Unsupported link specific operation");
+    }
+
+done:
     return ret_value;
 }

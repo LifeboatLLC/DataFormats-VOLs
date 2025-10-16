@@ -106,6 +106,11 @@ int main(int argc, char **argv)
             }
         }
     }
+    if (run_all || strcmp(test_name, "link_exists_rgb") == 0)
+        num_failures += (LinkExistsTest(RGB_FILENAME) != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "link_iterate_rgb") == 0)
+        num_failures += (LinkIterateTest(RGB_FILENAME) != 0 ? 1 : 0);
 
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
@@ -142,8 +147,8 @@ static int CreateGrayscaleGeoTIFF(const char *filename)
     SetUpGeoKeys(gtif);
 
     /* Create a gradient pattern: value = (row * 8 + col / 4) % 256 */
-    for (int row = 0; row < HEIGHT; row++) {
-        for (int col = 0; col < WIDTH; col++) {
+    for (uint32_t row = 0; row < HEIGHT; row++) {
+        for (uint32_t col = 0; col < WIDTH; col++) {
             buffer[col] = (unsigned char) ((row * 8 + col / 4) % 256);
         }
         if (!TIFFWriteScanline(tif, buffer, row, 0)) {
@@ -200,9 +205,9 @@ static int CreateRGBGeoTIFF(const char *filename)
      * G = col * 8
      * B = (row + col) * 4
      */
-    for (int row = 0; row < HEIGHT; row++) {
-        for (int col = 0; col < WIDTH; col++) {
-            int idx = col * 3;
+    for (uint32_t row = 0; row < HEIGHT; row++) {
+        for (uint32_t col = 0; col < WIDTH; col++) {
+            uint32_t idx = col * 3;
             buffer[idx + 0] = (unsigned char) ((row * 8) % 256);         /* Red */
             buffer[idx + 1] = (unsigned char) ((col * 8) % 256);         /* Green */
             buffer[idx + 2] = (unsigned char) (((row + col) * 4) % 256); /* Blue */
