@@ -68,15 +68,6 @@ jobs:
           make -j$(nproc)
           make install
 
-      - name: Create sample GeoTIFF
-        run: |
-          cd vol-geotiff
-          cd test
-          # Use existing sample.tif if it exists and is valid
-          if [ -f sample.tif ] && [ -s sample.tif ]; then
-            echo "Using existing sample.tif"
-          fi
-
       - name: Configure CMake
         run: |
           cd vol-geotiff
@@ -103,42 +94,42 @@ jobs:
           ctest -D Experimental
           make test
 
-      - name: Test HDF5 tools integration
-        run: |
-          cd vol-geotiff
-          cd build
-          export HDF5_PLUGIN_PATH=$PWD/src
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
-          export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
-
+      #- name: Test HDF5 tools integration
+      #  run: |
+      #    cd vol-geotiff
+      #    cd build
+      #    export HDF5_PLUGIN_PATH=$PWD/src
+      #    export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
+      #    export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
+      #
           # Test h5ls
-          if [ -f ../test/sample.tif ] && command -v h5ls >/dev/null 2>&1; then
-            echo "Testing h5ls with GeoTIFF VOL connector..."
-            h5ls --vol-name=geotiff_vol_connector ../test/sample.tif || \
-              echo "h5ls test failed"
-          fi
+      #    if [ -f ../test/sample.tif ] && command -v h5ls >/dev/null 2>&1; then
+      #      echo "Testing h5ls with GeoTIFF VOL connector..."
+      #      h5ls --vol-name=geotiff_vol_connector ../test/sample.tif || \
+      #        echo "h5ls test failed"
+      #    fi
 
           # Test h5dump
-          if [ -f ../test/sample.tif ] && command -v h5dump >/dev/null 2>&1; then
-            echo "Testing h5dump with GeoTIFF VOL connector..."
-            h5dump --vol-name=geotiff_vol_connector ../test/sample.tif || \
-              echo "h5dump test failed"
-          fi
+      #    if [ -f ../test/sample.tif ] && command -v h5dump >/dev/null 2>&1; then
+      #      echo "Testing h5dump with GeoTIFF VOL connector..."
+      #      h5dump --vol-name=geotiff_vol_connector ../test/sample.tif || \
+      #        echo "h5dump test failed"
+      #    fi
 
-      - name: Install netCDF-C and test
-        run: |
-          # Install netCDF-C
-          sudo apt-get install -y libnetcdf-dev netcdf-bin || \
-            echo "netCDF not available"
-          cd vol-geotiff
-          cd build
-          export HDF5_PLUGIN_PATH=$PWD/src
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
+      # - name: Install netCDF-C and test
+      #  run: |
+      #    # Install netCDF-C
+      #    sudo apt-get install -y libnetcdf-dev netcdf-bin || \
+      #      echo "netCDF not available"
+      #    cd vol-geotiff
+      #    cd build
+      #    export HDF5_PLUGIN_PATH=$PWD/src
+      #    export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
           # Test ncdump if available
-          if [ -f ../test/sample.tif ] && command -v ncdump >/dev/null 2>&1; then
-            echo "Testing ncdump with GeoTIFF VOL connector..."
-            ncdump -h ../test/sample.tif || echo "ncdump test failed"
-          fi
+      #    if [ -f ../test/sample.tif ] && command -v ncdump >/dev/null 2>&1; then
+      #      echo "Testing ncdump with GeoTIFF VOL connector..."
+      #      ncdump -h ../test/sample.tif || echo "ncdump test failed"
+      #    fi
 
       - name: Upload build artifacts
         if: failure()

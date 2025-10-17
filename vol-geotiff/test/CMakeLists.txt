@@ -13,11 +13,6 @@ else()
     target_link_libraries (test_geotiff PRIVATE HDF5::HDF5 ${TIFF_LIBRARIES} ${GEOTIFF_LIBRARIES})
 endif()
 
-# Build the h5dump-like VOL connector test
-add_executable (test_h5dump_vol test_h5dump_vol.c)
-target_include_directories (test_h5dump_vol PRIVATE "${PROJECT_SOURCE_DIR}/src" ${HDF5_INCLUDE_DIRS} ${GEOTIFF_INCLUDE_DIRS})
-target_link_libraries (test_h5dump_vol PRIVATE HDF5::HDF5)
-
 # Add the GeoTIFF test (if a sample GeoTIFF file exists)
 if(EXISTS "${PROJECT_SOURCE_DIR}/test/sample.tif")
     add_test (test_geotiff_read test_geotiff_read "${PROJECT_SOURCE_DIR}/test/sample.tif")
