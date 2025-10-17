@@ -172,7 +172,7 @@ int create_demo_image(void) {
     return 0;
 }
 
-int main(int argc, char **argv)
+int main(void)
 {
     hid_t vol_id, fapl_id, file_id;
     hid_t dset_id, space_id, type_id;
