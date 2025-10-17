@@ -408,53 +408,55 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     /* Future-proof: require "image0" for now, designed for multiple images later
      * TODO: Support image1, image2, etc. when multi-image TIFFs are implemented
      */
-    if (strcmp(name, "image0") == 0) {
-        dset->is_image = 1;
+    if (strcmp(name, "/image0") != 0 && strcmp(name, "image0") != 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                        "GeoTIFF VOL connector currently only supports dataset '/image0'");
 
-        /* Read image metadata from TIFF tags */
-        if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width))
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get image width from TIFF");
-        if (!TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height))
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get image height from TIFF");
+    dset->is_image = true;
 
-        if (width == 0 || height == 0 || width > 65535 || height > 65535)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Invalid image dimensions");
+    /* Read image metadata from TIFF tags */
+    if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width))
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get image width from TIFF");
+    if (!TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height))
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get image height from TIFF");
 
-        TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
-        TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
-        TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLEFORMAT, &sample_format);
+    if (width == 0 || height == 0 || width > 65535 || height > 65535)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Invalid image dimensions");
 
-        if (geotiff_get_hdf5_type_from_tiff(sample_format, bits_per_sample, &dset->type_id) < 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
-                            "Failed to get HDF5 datatype from TIFF sample format");
+    TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
+    TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+    TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLEFORMAT, &sample_format);
 
-        /* Create dataspace based on samples per pixel */
-        if (samples_per_pixel == 1) {
-            /* Grayscale: 2D dataspace [height, width] */
-            dims[0] = height;
-            dims[1] = width;
-            if ((dset->space_id = H5Screate_simple(2, dims, NULL)) < 0) {
-                FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
-                                "Failed to create dataspace for grayscale dataset");
-            }
-        } else if (samples_per_pixel == 3 || samples_per_pixel == 4) {
-            /* RGB or RGBA: 3D dataspace [height, width, samples] */
-            dims[0] = height;
-            dims[1] = width;
-            dims[2] = samples_per_pixel;
-            if ((dset->space_id = H5Screate_simple(3, dims, NULL)) < 0) {
-                FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
-                                "Failed to create dataspace for RGB/RGBA dataset");
-            }
-        } else {
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
-                            "Unsupported samples per pixel: %d (only 1, 3, or 4 supported)",
-                            samples_per_pixel);
+    if (geotiff_get_hdf5_type_from_tiff(sample_format, bits_per_sample, &dset->type_id) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
+                        "Failed to get HDF5 datatype from TIFF sample format");
+
+    /* Create dataspace based on samples per pixel */
+    if (samples_per_pixel == 1) {
+        /* Grayscale: 2D dataspace [height, width] */
+        dims[0] = height;
+        dims[1] = width;
+        if ((dset->space_id = H5Screate_simple(2, dims, NULL)) < 0) {
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
+                            "Failed to create dataspace for grayscale dataset");
         }
-
-        if (geotiff_read_image_data(dset) < 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "failed to read image data");
+    } else if (samples_per_pixel == 3 || samples_per_pixel == 4) {
+        /* RGB or RGBA: 3D dataspace [height, width, samples] */
+        dims[0] = height;
+        dims[1] = width;
+        dims[2] = samples_per_pixel;
+        if ((dset->space_id = H5Screate_simple(3, dims, NULL)) < 0) {
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
+                            "Failed to create dataspace for RGB/RGBA dataset");
+        }
+    } else {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                        "Unsupported samples per pixel: %d (only 1, 3, or 4 supported)",
+                        samples_per_pixel);
     }
+
+    if (geotiff_read_image_data(dset) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "failed to read image data");
 
     ret_value = dset;
 
@@ -534,6 +536,8 @@ herr_t geotiff_dataset_get(void *dset, H5VL_dataset_get_args_t *args,
     switch (args->op_type) {
         case H5VL_DATASET_GET_SPACE:
             /* Return a copy of the dataspace */
+            assert(d->space_id != H5I_INVALID_HID);
+
             args->args.get_space.space_id = H5Scopy(d->space_id);
             if (args->args.get_space.space_id < 0)
                 FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to copy dataspace");
