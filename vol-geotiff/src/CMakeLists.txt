@@ -30,6 +30,21 @@ endif()
 
 if (NOT _have_config)
     message(STATUS "Falling back to alternate discovery for TIFF/geotiff (vcpkg HINTS, pkg-config last)")
+
+    # Add Homebrew paths for macOS
+    set(_HOMEBREW_PATHS "")
+    if(APPLE)
+        # Try common Homebrew locations
+        foreach(_prefix /opt/homebrew /usr/local)
+            if(EXISTS "${_prefix}/include")
+                list(APPEND _HOMEBREW_PATHS ${_prefix}/include)
+            endif()
+            if(EXISTS "${_prefix}/lib")
+                list(APPEND _HOMEBREW_PATHS ${_prefix}/lib)
+            endif()
+        endforeach()
+    endif()
+
     # Try to find TIFF without pkg-config to support Windows easily
     if (NOT TARGET TIFF::TIFF)
         set(_TIFF_INC_HINT "")
@@ -38,8 +53,12 @@ if (NOT _have_config)
             set(_TIFF_INC_HINT "${VCPKG_ROOT}/installed/${VCPKG_TARGET_TRIPLET}/include")
             set(_TIFF_LIB_HINT "${VCPKG_ROOT}/installed/${VCPKG_TARGET_TRIPLET}/lib")
         endif()
-        find_path(TIFF_INCLUDE_DIR tiffio.h HINTS ${_TIFF_INC_HINT})
-        find_library(TIFF_LIBRARY NAMES tiff HINTS ${_TIFF_LIB_HINT})
+        find_path(TIFF_INCLUDE_DIR tiffio.h
+                  HINTS ${_TIFF_INC_HINT}
+                  PATHS ${_HOMEBREW_PATHS})
+        find_library(TIFF_LIBRARY NAMES tiff
+                     HINTS ${_TIFF_LIB_HINT}
+                     PATHS ${_HOMEBREW_PATHS})
         if (TIFF_INCLUDE_DIR AND TIFF_LIBRARY)
             set(TIFF_INCLUDE_DIRS ${TIFF_INCLUDE_DIR})
             set(TIFF_LIBRARIES ${TIFF_LIBRARY})
@@ -60,12 +79,13 @@ if (NOT _have_config)
     if (EXISTS "${_VCPKG_INC_HINT}/geotiff/geotiff.h")
         set(GEOTIFF_INCLUDE_DIR "${_VCPKG_INC_HINT}")
     endif()
+
     find_path(GEOTIFF_INCLUDE_DIR geotiff/geotiff.h
               HINTS ${_VCPKG_INC_HINT}
-              PATHS /usr/include)
+              PATHS /usr/include ${_HOMEBREW_PATHS})
     find_library(GEOTIFF_LIBRARY NAMES geotiff
                  HINTS ${_VCPKG_LIB_HINT}
-                 PATHS /usr/lib /usr/lib/x86_64-linux-gnu)
+                 PATHS /usr/lib /usr/lib/x86_64-linux-gnu ${_HOMEBREW_PATHS})
 
     if(NOT GEOTIFF_INCLUDE_DIR OR NOT GEOTIFF_LIBRARY)
         message(FATAL_ERROR "libgeotiff not found. Ensure GeoTIFF is installed (e.g., via vcpkg) or provide headers/libs.")

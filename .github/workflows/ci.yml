@@ -82,17 +82,31 @@ jobs:
         run: |
           cd vol-geotiff
           mkdir build && cd build
+
+          # Set CMAKE_PREFIX_PATH to include Homebrew paths on macOS
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # Detect Homebrew prefix (Apple Silicon uses /opt/homebrew, Intel uses /usr/local)
+            BREW_PREFIX=$(brew --prefix)
+            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${BREW_PREFIX}"
+          else
+            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+          fi
+
           cmake .. \
             -DSITE="ubu" -DBUILDNAME="vol-geotiff/${{ matrix.build-type }}"  \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -DHDF5_DIR=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/share/cmake \
-            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
 
       - name: Build
         run: |
           cd vol-geotiff
           cd build
-          make -j$(nproc)
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
 
       - name: Run basic tests
         run: |
