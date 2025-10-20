@@ -487,6 +487,12 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
     if (!d || !buf[0])
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid dataset buffer");
 
+    /* Check if type conversion is necessary */
+    if (mem_type_id[0] != d->type_id) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL,
+                        "datatype conversion not supported in GeoTIFF VOL connector");
+    }
+
     /* If we have cached data and no specific selection, use the simple path */
     if (d->data && file_space_id[0] == H5S_ALL) {
         memcpy(buf[0], d->data, d->data_size);
