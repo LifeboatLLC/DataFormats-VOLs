@@ -13,14 +13,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        hdf5-version: ['develop']
+        os: [ubuntu-latest, macos-latest]
+        hdf5-version: ['develop', 'hdf5_1_14_6']
         build-type: [Release, Debug]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -37,6 +38,11 @@ jobs:
             libzstd-dev \
             liblzma-dev
 
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake pkg-config libtiff libgeotiff
+
       - name: Cache HDF5
         id: cache-hdf5
         uses: actions/cache@v4
@@ -50,7 +56,7 @@ jobs:
         if: steps.cache-hdf5.outputs.cache-hit != 'true'
         run: |
           cd ${{ github.workspace }}
-          git clone --depth 1 --branch develop \
+          git clone --depth 1 --branch ${{ matrix.hdf5-version }} \
             https://github.com/HDFGroup/hdf5.git \
             hdf5-${{ matrix.hdf5-version }}
           cd hdf5-${{ matrix.hdf5-version }}
@@ -65,7 +71,11 @@ jobs:
             -DBUILD_SHARED_LIBS=ON \
             -DHDF5_ENABLE_Z_LIB_SUPPORT=ON \
             -DHDF5_ENABLE_SZIP_SUPPORT=OFF
-          make -j$(nproc)
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
           make install
 
       - name: Configure CMake
@@ -89,7 +99,11 @@ jobs:
           cd vol-geotiff
           cd build
           export HDF5_PLUGIN_PATH=$PWD/src
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
+          else
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$DYLD_LIBRARY_PATH
+          fi
           export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
           ctest -D Experimental
           make test
