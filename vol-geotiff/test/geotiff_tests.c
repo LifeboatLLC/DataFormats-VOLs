@@ -21,6 +21,7 @@
 #include <geotiff/geotiffio.h>
 #include <geotiff/xtiffio.h>
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -774,6 +775,132 @@ int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id, const char *me
     /* Attempt to read with datatype conversion */
     if (H5Dread(dset_id, mem_type_id, H5S_ALL, H5S_ALL, H5P_DEFAULT, data) < 0) {
         printf("failed to perform datatype conversion\n");
+        goto error;
+    }
+
+    /* Verify data correctness - check a sample of converted values */
+    int verification_failed = 0;
+    for (int row = 0; row < HEIGHT && row < 4; row++) {
+        for (int col = 0; col < WIDTH && col < 8; col++) {
+            int idx = row * WIDTH + col;
+            double expected_source_val = 0.0;
+            double actual_converted_val = 0.0;
+
+            /* Compute expected source value based on file type pattern */
+            if (H5Tequal(file_type_id, H5T_NATIVE_UCHAR)) {
+                expected_source_val = (double) ((row + col) % 256);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_USHORT)) {
+                expected_source_val = (double) ((row * 256 + col) % 65536);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_UINT)) {
+                expected_source_val = (double) (row * 1000 + col);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_UINT64)) {
+                expected_source_val = (double) (row * 1000 + col);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_CHAR)) {
+                expected_source_val = (double) ((row + col - 64) % 128);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_SHORT)) {
+                expected_source_val = (double) (row * 100 + col - 1000);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_INT)) {
+                expected_source_val = (double) (row * 1000 + col - 16000);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_INT64)) {
+                expected_source_val = (double) (row * 1000 + col - 16000);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_FLOAT)) {
+                expected_source_val = (double) (row + col * 0.5);
+            } else if (H5Tequal(file_type_id, H5T_NATIVE_DOUBLE)) {
+                expected_source_val = (double) (row + col * 0.5);
+            }
+
+            /* Read actual converted value based on memory type */
+            if (H5Tequal(mem_type_id, H5T_NATIVE_UCHAR)) {
+                actual_converted_val = (double) ((uint8_t *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_USHORT)) {
+                actual_converted_val = (double) ((uint16_t *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_UINT)) {
+                actual_converted_val = (double) ((uint32_t *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_UINT64)) {
+                actual_converted_val = (double) ((uint64_t *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_CHAR)) {
+                actual_converted_val = (double) ((int8_t *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_SHORT)) {
+                actual_converted_val = (double) ((int16_t *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_INT)) {
+                actual_converted_val = (double) ((int32_t *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_INT64)) {
+                actual_converted_val = (double) ((int64_t *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_FLOAT)) {
+                actual_converted_val = (double) ((float *) data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_DOUBLE)) {
+                actual_converted_val = (double) ((double *) data)[idx];
+            }
+
+            /* Verify conversion correctness with tolerance for floating point */
+            double expected_converted = expected_source_val;
+            double tolerance = 0.01;
+
+            /* Handle special conversion cases */
+            /* For conversions to unsigned types, negative values should clamp to 0 */
+            if (expected_source_val < 0 && (H5Tequal(mem_type_id, H5T_NATIVE_UCHAR) ||
+                                            H5Tequal(mem_type_id, H5T_NATIVE_USHORT) ||
+                                            H5Tequal(mem_type_id, H5T_NATIVE_UINT) ||
+                                            H5Tequal(mem_type_id, H5T_NATIVE_UINT64))) {
+                expected_converted = 0.0;
+            }
+
+            /* For float-to-integer conversions, expect truncation */
+            if ((H5Tequal(file_type_id, H5T_NATIVE_FLOAT) ||
+                 H5Tequal(file_type_id, H5T_NATIVE_DOUBLE)) &&
+                !(H5Tequal(mem_type_id, H5T_NATIVE_FLOAT) ||
+                  H5Tequal(mem_type_id, H5T_NATIVE_DOUBLE))) {
+                expected_converted = (double) ((int64_t) expected_source_val);
+            }
+
+            /* Handle overflow/underflow by clamping to destination type range */
+            if (H5Tequal(mem_type_id, H5T_NATIVE_UCHAR)) {
+                if (expected_converted > 255.0)
+                    expected_converted = 255.0;
+                if (expected_converted < 0.0)
+                    expected_converted = 0.0;
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_CHAR)) {
+                if (expected_converted > 127.0)
+                    expected_converted = 127.0;
+                if (expected_converted < -128.0)
+                    expected_converted = -128.0;
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_USHORT)) {
+                if (expected_converted > 65535.0)
+                    expected_converted = 65535.0;
+                if (expected_converted < 0.0)
+                    expected_converted = 0.0;
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_SHORT)) {
+                if (expected_converted > 32767.0)
+                    expected_converted = 32767.0;
+                if (expected_converted < -32768.0)
+                    expected_converted = -32768.0;
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_UINT)) {
+                if (expected_converted > 4294967295.0)
+                    expected_converted = 4294967295.0;
+                if (expected_converted < 0.0)
+                    expected_converted = 0.0;
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_INT)) {
+                if (expected_converted > 2147483647.0)
+                    expected_converted = 2147483647.0;
+                if (expected_converted < -2147483648.0)
+                    expected_converted = -2147483648.0;
+            }
+
+            /* Check if values match within tolerance */
+            if (fabs(actual_converted_val - expected_converted) > tolerance) {
+                printf(
+                    "VERIFICATION FAILED at [%d,%d]: expected %.2f, got %.2f (source was %.2f)\n",
+                    row, col, expected_converted, actual_converted_val, expected_source_val);
+                verification_failed = 1;
+                break;
+            }
+        }
+        if (verification_failed)
+            break;
+    }
+
+    if (verification_failed) {
+        printf("Data verification failed\n");
         goto error;
     }
 
