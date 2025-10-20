@@ -13,14 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
         hdf5_version: ['develop']
         compiler: [gcc, clang]
         build_type: [Release, Debug]
-        exclude:
-          # Reduce matrix size for macOS (clang is default)
-          - os: macos-latest
-            compiler: gcc
 
     steps:
     - uses: actions/checkout@v4
@@ -52,11 +48,6 @@ jobs:
           sudo apt-get install -y clang
         fi
 
-    - name: Install macOS dependencies
-      if: runner.os == 'macOS'
-      run: |
-        brew install cmake pkg-config libtiff libgeotiff
-
     - name: Cache HDF5
       id: cache-hdf5
       uses: actions/cache@v4
@@ -87,39 +78,12 @@ jobs:
           -DBUILD_SHARED_LIBS=ON \
           -DHDF5_ENABLE_Z_LIB_SUPPORT=ON
 
-        if [ "${{ runner.os }}" = "macOS" ]; then
-          make -j$(sysctl -n hw.ncpu)
-        else
-          make -j$(nproc)
-        fi
+        make -j$(nproc)
         make install
-
-    - name: Create comprehensive test GeoTIFFs
-      run: |
-        cd vol-geotiff        
-        cd test
-        # Create simple test TIFF files for different data types
-        # test_uint8.tif
-        dd if=/dev/zero of=test_uint8.tif bs=1024 count=5 2>/dev/null
-        printf 'II*\0\x08\0\0\0' | dd of=test_uint8.tif conv=notrunc 2>/dev/null
-
-        # test_uint16.tif
-        dd if=/dev/zero of=test_uint16.tif bs=1024 count=3 2>/dev/null
-        printf 'II*\0\x08\0\0\0' | dd of=test_uint16.tif conv=notrunc 2>/dev/null
-
-        # test_float32.tif
-        dd if=/dev/zero of=test_float32.tif bs=1024 count=2 2>/dev/null
-        printf 'II*\0\x08\0\0\0' | dd of=test_float32.tif conv=notrunc 2>/dev/null
-
-        # test_rgb.tif
-        dd if=/dev/zero of=test_rgb.tif bs=1024 count=4 2>/dev/null
-        printf 'II*\0\x08\0\0\0' | dd of=test_rgb.tif conv=notrunc 2>/dev/null
-
-        echo "Created test TIFF files"
 
     - name: Configure and build
       run: |
-        cd vol-geotiff        
+        cd vol-geotiff
         mkdir build && cd build
 
         if [ "${{ matrix.compiler }}" = "clang" ]; then
@@ -133,67 +97,29 @@ jobs:
           -DCMAKE_PREFIX_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }} \
           -DCMAKE_C_FLAGS="-Wall -Wextra"
 
-        if [ "${{ runner.os }}" = "macOS" ]; then
-          make -j$(sysctl -n hw.ncpu)
-        else
-          make -j$(nproc)
-        fi
-
-    - name: Run comprehensive tests
-      run: |
-        cd vol-geotiff        
-        cd build
-        export HDF5_PLUGIN_PATH=$PWD/src
-        if [ "${{ runner.os }}" = "Linux" ]; then
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
-        else
-          export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$DYLD_LIBRARY_PATH
-        fi
-        export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/bin:$PATH
-
-        # Run basic tests
-        make test
-
-        # Test with different GeoTIFF files
-        for tiff_file in ../test/test_*.tif; do
-          if [ -f "$tiff_file" ]; then
-            echo "Testing with $tiff_file"
-            ./test/test_geotiff_read "$tiff_file" || echo "Test failed for $tiff_file"
-          fi
-        done
+        make -j$(nproc)
 
     - name: Memory leak test (Linux only)
       if: runner.os == 'Linux' && matrix.build_type == 'Debug'
       run: |
-        cd vol-geotiff        
+        cd vol-geotiff
         cd build
         export HDF5_PLUGIN_PATH=$PWD/src
         export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
 
-        # Run valgrind on basic test
-        valgrind --leak-check=full --error-exitcode=1 ./test/vol_plugin
-
-        # Test one GeoTIFF file with valgrind
-        if [ -f ../test/test_uint8.tif ]; then
-          valgrind --leak-check=full --error-exitcode=1 ./test/test_geotiff_read ../test/test_uint8.tif
-        fi
+        echo "Testing plugin registration with valgrind..."
+        valgrind --leak-check=full --error-exitcode=1 ./test/test_geotiff
 
     - name: Performance test
       run: |
-        cd vol-geotiff        
+        cd vol-geotiff
         cd build
         export HDF5_PLUGIN_PATH=$PWD/src
-        if [ "${{ runner.os }}" = "Linux" ]; then
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
-        else
-          export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$DYLD_LIBRARY_PATH
-        fi
+        export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
 
-        # Simple performance timing
-        if [ -f ../test/test_uint16.tif ]; then
-          echo "Performance test:"
-          time ./test/test_geotiff_read ../test/test_uint16.tif
-        fi
+        # Simple performance timing - run all tests and measure time
+        echo "Performance test - running full test suite:"
+        time ./test/test_geotiff all
 
     - name: Upload test artifacts on failure
       if: failure()

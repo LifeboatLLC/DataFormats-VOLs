@@ -60,6 +60,7 @@ if (NOT _have_config)
     if (EXISTS "${_VCPKG_INC_HINT}/geotiff/geotiff.h")
         set(GEOTIFF_INCLUDE_DIR "${_VCPKG_INC_HINT}")
     endif()
+
     find_path(GEOTIFF_INCLUDE_DIR geotiff/geotiff.h
               HINTS ${_VCPKG_INC_HINT}
               PATHS /usr/include)

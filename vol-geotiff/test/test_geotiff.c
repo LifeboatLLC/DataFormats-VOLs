@@ -65,6 +65,42 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "band_read_rgb") == 0)
         num_failures += (BandReadGeoTIFFTest(RGB_FILENAME) != 0 ? 1 : 0);
 
+    if (run_all || strcmp(test_name, "point_read_grayscale") == 0)
+        num_failures += (PointReadGeoTIFFTest(GRAYSCALE_FILENAME) != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "point_read_rgb") == 0)
+        num_failures += (PointReadGeoTIFFTest(RGB_FILENAME) != 0 ? 1 : 0);
+
+    /* Datatype conversion tests */
+    hid_t test_types[] = {H5T_NATIVE_UCHAR, H5T_NATIVE_USHORT, H5T_NATIVE_UINT, H5T_NATIVE_UINT64,
+                          H5T_NATIVE_CHAR,  H5T_NATIVE_SHORT,  H5T_NATIVE_INT,  H5T_NATIVE_INT64,
+                          H5T_NATIVE_FLOAT, H5T_NATIVE_DOUBLE};
+
+    const char *type_names[] = {"UCHAR", "USHORT", "UINT",  "UINT64", "CHAR",
+                                "SHORT", "INT",    "INT64", "FLOAT",  "DOUBLE"};
+
+    int num_types = sizeof(test_types) / sizeof(test_types[0]);
+
+    for (int i = 0; i < num_types; i++) {
+        for (int j = 0; j < num_types; j++) {
+            /* Skip same-type "conversions" */
+            if (i == j)
+                continue;
+
+            /* Build test name: dtype_conv_MEMTYPE_FILETYPE */
+            char dtype_test_name[128];
+            snprintf(dtype_test_name, sizeof(dtype_test_name), "dtype_conv_%s_%s", type_names[i],
+                     type_names[j]);
+
+            if (run_all || strcmp(test_name, dtype_test_name) == 0) {
+                num_failures += (DatatypeConversionTest(test_types[i], test_types[j], type_names[i],
+                                                        type_names[j]) != 0
+                                     ? 1
+                                     : 0);
+            }
+        }
+    }
+
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
     } else {

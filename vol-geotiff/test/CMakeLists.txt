@@ -51,3 +51,22 @@ set_tests_properties(read_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
 add_test(NAME band_read_rgb COMMAND test_geotiff band_read_rgb)
 set_tests_properties(band_read_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME point_read_grayscale COMMAND test_geotiff point_read_grayscale)
+set_tests_properties(point_read_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME point_read_rgb COMMAND test_geotiff point_read_rgb)
+set_tests_properties(point_read_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+# Datatype conversion tests - all permutations
+set(DTYPE_NAMES "UCHAR" "USHORT" "UINT" "UINT64" "CHAR" "SHORT" "INT" "INT64" "FLOAT" "DOUBLE")
+
+foreach(MEM_TYPE ${DTYPE_NAMES})
+    foreach(FILE_TYPE ${DTYPE_NAMES})
+        if(NOT "${MEM_TYPE}" STREQUAL "${FILE_TYPE}")
+            set(TEST_NAME "dtype_conv_${MEM_TYPE}_${FILE_TYPE}")
+            add_test(NAME ${TEST_NAME} COMMAND test_geotiff ${TEST_NAME})
+            set_tests_properties(${TEST_NAME} PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+        endif()
+    endforeach()
+endforeach()

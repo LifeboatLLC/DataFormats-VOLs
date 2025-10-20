@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        hdf5-version: ['develop']
+        hdf5-version: ['develop', 'hdf5_1_14_6']
         build-type: [Release, Debug]
 
     steps:
@@ -50,7 +50,7 @@ jobs:
         if: steps.cache-hdf5.outputs.cache-hit != 'true'
         run: |
           cd ${{ github.workspace }}
-          git clone --depth 1 --branch develop \
+          git clone --depth 1 --branch ${{ matrix.hdf5-version }} \
             https://github.com/HDFGroup/hdf5.git \
             hdf5-${{ matrix.hdf5-version }}
           cd hdf5-${{ matrix.hdf5-version }}

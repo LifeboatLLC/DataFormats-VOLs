@@ -384,6 +384,8 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     uint16_t sample_format = 0;
     hsize_t dims[3] = {0, 0, 0};
 
+    H5T_class_t dtype_class = H5T_NO_CLASS;
+
     if (!file || !name) {
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or dataset name");
     }
@@ -431,6 +433,13 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
                         "Failed to get HDF5 datatype from TIFF sample format");
 
+    if ((dtype_class = H5Tget_class(dset->type_id)) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get datatype class");
+
+    if (dtype_class != H5T_INTEGER && dtype_class != H5T_FLOAT)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                        "Unsupported datatype class for GeoTIFF image data");
+
     /* Create dataspace based on samples per pixel */
     if (samples_per_pixel == 1) {
         /* Grayscale: 2D dataspace [height, width] */
@@ -473,55 +482,254 @@ done:
     return ret_value;
 }
 
+/* Struct for H5Dscatter's callback that allows it to scatter from a non-global response buffer */
+typedef struct response_read_info {
+    void *buffer;
+    void *read_size;
+} response_read_info;
+
+static herr_t dataset_read_scatter_op(const void **src_buf, size_t *src_buf_bytes_used,
+                                      void *op_data)
+{
+    response_read_info *resp_info = (response_read_info *) op_data;
+    *src_buf = resp_info->buffer;
+    *src_buf_bytes_used = *((size_t *) resp_info->read_size);
+
+    return 0;
+} /* end dataset_read_scatter_op() */
+
+/* Helper function: Prepare a buffer with data in the requested memory type.
+ * If conversion is needed, allocates a new buffer and performs conversion.
+ * If no conversion needed, returns pointer to original data.
+ */
+static herr_t prepare_converted_buffer(const geotiff_dataset_t *dset, hid_t mem_type_id,
+                                       size_t num_elements, void **out_buffer,
+                                       size_t *out_buffer_size, hbool_t *out_tconv_buf_allocated)
+{
+    herr_t ret_value = SUCCEED;
+    htri_t types_equal = 0;
+    size_t dataset_type_size = 0;
+    size_t mem_type_size = 0;
+    void *conversion_buf = NULL;
+
+    if (!dset || !out_buffer || !out_buffer_size || !out_tconv_buf_allocated)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
+
+    /* Check if types are equal */
+    if ((types_equal = H5Tequal(mem_type_id, dset->type_id)) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCOMPARE, FAIL, "failed to compare datatypes");
+
+    if (types_equal) {
+        /* No conversion needed - return borrowed pointer to cached data */
+        *out_buffer = dset->data;
+        *out_buffer_size = dset->data_size;
+        *out_tconv_buf_allocated = FALSE;
+        FUNC_GOTO_DONE(SUCCEED);
+    }
+
+    /* Conversion needed - allocate buffer and convert */
+    if ((dataset_type_size = H5Tget_size(dset->type_id)) == 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTGET, FAIL, "failed to get dataset type size");
+
+    if ((mem_type_size = H5Tget_size(mem_type_id)) == 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTGET, FAIL, "failed to get memory type size");
+
+    /* Allocate buffer large enough for in-place conversion (max of src/dst) */
+    size_t src_data_size = num_elements * dataset_type_size;
+    size_t dst_data_size = num_elements * mem_type_size;
+    size_t conversion_buf_size = (src_data_size > dst_data_size) ? src_data_size : dst_data_size;
+
+    if ((conversion_buf = malloc(conversion_buf_size)) == NULL)
+        FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
+                        "failed to allocate memory for datatype conversion");
+
+    /* Copy source data */
+    memcpy(conversion_buf, dset->data, src_data_size);
+
+    /* Perform in-place conversion */
+    if (H5Tconvert(dset->type_id, mem_type_id, num_elements, conversion_buf, NULL, H5P_DEFAULT) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCONVERT, FAIL,
+                        "failed to convert data from dataset type to memory type");
+
+    /* Return owned buffer */
+    *out_buffer = conversion_buf;
+    *out_buffer_size = dst_data_size;
+    *out_tconv_buf_allocated = TRUE;
+    conversion_buf = NULL; /* Transfer ownership */
+
+done:
+    if (conversion_buf)
+        free(conversion_buf);
+
+    return ret_value;
+} /* end prepare_converted_buffer() */
+
+/* Helper function: Transfer data from source buffer to user buffer.
+ * Handles both simple memcpy (when both selections are ALL) and scatter operations.
+ */
+static herr_t transfer_data_to_user(const void *source_buf, size_t source_size, hid_t mem_type_id,
+                                    hid_t mem_space_id, void *user_buf)
+{
+    herr_t ret_value = SUCCEED;
+    H5S_sel_type mem_sel_type = H5S_SEL_ERROR;
+
+    if (!source_buf || !user_buf)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
+
+    /* Determine if we can use simple memcpy or need scatter */
+    if (mem_space_id == 0 || mem_space_id == H5S_ALL) {
+        /* Simple case: copy entire buffer directly */
+        memcpy(user_buf, source_buf, source_size);
+        FUNC_GOTO_DONE(SUCCEED);
+    }
+
+    /* Check selection type */
+    if ((mem_sel_type = H5Sget_select_type(mem_space_id)) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_CANTGET, FAIL,
+                        "failed to get memory space selection type");
+
+    if (mem_sel_type == H5S_SEL_ALL) {
+        /* Simple case: copy entire buffer directly */
+        memcpy(user_buf, source_buf, source_size);
+    } else {
+        /* Use scatter for non-trivial selections */
+        response_read_info resp_info;
+        resp_info.read_size = &source_size;
+        resp_info.buffer = (void *) source_buf;
+
+        if (H5Dscatter(dataset_read_scatter_op, &resp_info, mem_type_id, mem_space_id, user_buf) <
+            0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "can't scatter data to user buffer");
+    }
+
+done:
+    return ret_value;
+} /* end transfer_data_to_user() */
+
 herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_t mem_type_id[],
                             hid_t __attribute__((unused)) mem_space_id[], hid_t file_space_id[],
                             hid_t __attribute__((unused)) dxpl_id, void *buf[],
                             void __attribute__((unused)) * *req)
 {
     const geotiff_dataset_t *d = (const geotiff_dataset_t *) dset[0];
-    H5S_sel_type sel_type;
-    hsize_t file_dims[3];
-    hsize_t start[3], stride[3], count_arr[3], block[3];
     herr_t ret_value = SUCCEED;
+    H5S_sel_type file_sel_type = H5S_SEL_ERROR;
+    H5S_sel_type mem_sel_type = H5S_SEL_ERROR;
+    hssize_t num_elements = 0;
+    void *source_buf = NULL;
+    size_t source_size = 0;
+    hbool_t tconv_buf_allocated = FALSE;
+    /* To follow H5S_ALL semantics, we set up local vars for effective values of mem/filespace */
+    hid_t effective_file_space_id = file_space_id[0];
+    hid_t effective_mem_space_id = mem_space_id[0];
+
+    void *gathered_buf = NULL;
 
     if (!d || !buf[0])
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid dataset buffer");
 
-    /* If we have cached data and no specific selection, use the simple path */
-    if (d->data && file_space_id[0] == H5S_ALL) {
-        memcpy(buf[0], d->data, d->data_size);
-        FUNC_GOTO_DONE(SUCCEED);
+    /* Set up dataspaces and element count */
+    if (file_space_id[0] == 0) {
+        file_sel_type = H5S_SEL_ALL;
+    } else if ((file_sel_type = H5Sget_select_type(file_space_id[0])) < 0) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                        "failed to get file dataspace selection type");
     }
 
-    /* Handle hyperslab selections for band reading */
-    if (file_space_id[0] != H5S_ALL && file_space_id[0] > 0) {
-        if ((sel_type = H5Sget_select_type(file_space_id[0])) < 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "failed to get dataspace selection");
+    if (mem_space_id[0] == 0) {
+        mem_sel_type = H5S_SEL_ALL;
+    } else if ((mem_sel_type = H5Sget_select_type(mem_space_id[0])) < 0) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                        "failed to get memory dataspace selection type");
+    }
 
-        if (sel_type == H5S_SEL_HYPERSLABS) {
-            int ndims = H5Sget_simple_extent_ndims(d->space_id);
-            if (ndims < 0 || ndims > 3)
-                FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid number of dimensions");
+    if (file_sel_type == H5S_SEL_ALL && mem_sel_type == H5S_SEL_ALL) {
+        num_elements = H5Sget_simple_extent_npoints(d->space_id);
+        effective_file_space_id = d->space_id;
+        effective_mem_space_id = d->space_id;
+    } else if (file_sel_type == H5S_SEL_ALL && mem_sel_type != H5S_SEL_ALL) {
+        num_elements = H5Sget_select_npoints(mem_space_id[0]);
+        effective_file_space_id = d->space_id;
+    } else if (file_sel_type != H5S_SEL_ALL && mem_sel_type == H5S_SEL_ALL) {
+        num_elements = H5Sget_select_npoints(file_space_id[0]);
+        effective_mem_space_id = d->space_id;
+    } else {
+        /* Both selections are provided - verify equivalence */
+        num_elements = H5Sget_select_npoints(file_space_id[0]);
+        if (num_elements != H5Sget_select_npoints(mem_space_id[0]))
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                            "file and memory selections have different number of points");
+    }
 
-            if (H5Sget_simple_extent_dims(d->space_id, file_dims, NULL) < 0)
-                FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid dimension extents");
+    /* Prepare source buffer with type conversion if needed.
+     * If we have a non-trivial file selection, we need the full dataset in the source buffer
+     * for H5Dgather to extract the selection from. Otherwise, we only need num_elements.
+     */
+    size_t prepare_num_elements;
+    hssize_t temp_npoints;
 
-            /* Get hyperslab selection parameters */
-            if (H5Sget_regular_hyperslab(file_space_id[0], start, stride, count_arr, block) >= 0) {
-                /* Read selected bands/region using libtiff */
-                return geotiff_read_hyperslab(d, start, stride, count_arr, block, ndims,
-                                              mem_type_id[0], buf[0]);
-            }
+    if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
+        /* Will need to gather - prepare full dataset */
+        if ((temp_npoints = H5Sget_simple_extent_npoints(d->space_id)) < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "failed to get dataset extent");
+        prepare_num_elements = (size_t) temp_npoints;
+    } else {
+        /* No gather needed - prepare only selected elements */
+        if (num_elements < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid number of elements");
+        prepare_num_elements = (size_t) num_elements;
+    }
+
+    if (prepare_converted_buffer(d, mem_type_id[0], prepare_num_elements, &source_buf, &source_size,
+                                 &tconv_buf_allocated) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "failed to prepare converted buffer");
+
+    /* If file selection is non-trivial (hyperslab, points), gather selected data first */
+    if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
+        /* Allocate buffer for gathered data */
+        if (num_elements < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                            "invalid number of elements for gather");
+        size_t gathered_size = (size_t) num_elements * H5Tget_size(mem_type_id[0]);
+
+        if ((gathered_buf = malloc(gathered_size)) == NULL)
+            FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
+                            "failed to allocate buffer for gathered data");
+
+        /* Gather selected data from source buffer according to file space selection.
+         * Note: We pass file_space_id[0] which has the selection, and source_buf which
+         * must be sized according to the full extent described by the selection's dataspace.
+         */
+        if (H5Dgather(file_space_id[0], source_buf, mem_type_id[0], gathered_size, gathered_buf,
+                      NULL, NULL) < 0) {
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "failed to gather selected data");
         }
+
+        /* Free original buffer if we allocated it for type conversion */
+        if (tconv_buf_allocated && source_buf) {
+            free(source_buf);
+            source_buf = NULL;
+        }
+
+        /* Use gathered buffer as new source */
+        source_buf = gathered_buf;
+        source_size = gathered_size;
+        tconv_buf_allocated = TRUE;
     }
 
-    /* Fallback to full data read if available */
-    if (d->data) {
-        memcpy(buf[0], d->data, d->data_size);
-        FUNC_GOTO_DONE(SUCCEED);
-    }
+    /* Transfer data to user buffer (handles selections via scatter if needed) */
+    if (transfer_data_to_user(source_buf, source_size, mem_type_id[0], effective_mem_space_id,
+                              buf[0]) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "failed to transfer data to user buffer");
 
 done:
+    /* Clean up allocated buffer if needed */
+    if (tconv_buf_allocated && source_buf)
+        free(source_buf);
+
+    if (ret_value < 0 && gathered_buf)
+        free(gathered_buf);
+
     return ret_value;
 }
 
@@ -813,8 +1021,12 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
         band_start + band_count > samples_per_pixel)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL, "Hyperslab selection out of bounds");
 
+    /* Validate scanline size before allocation */
+    if (scanline_size < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL, "Invalid scanline size");
+
     /* Allocate scanline buffer */
-    if ((scanline_buf = (unsigned char *) malloc(scanline_size)) == NULL)
+    if ((scanline_buf = (unsigned char *) malloc((size_t) scanline_size)) == NULL)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, FAIL,
                         "Failed to allocate memory for scanline buffer");
 
