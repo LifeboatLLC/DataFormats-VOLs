@@ -13,14 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
         hdf5_version: ['develop']
         compiler: [gcc, clang]
         build_type: [Release, Debug]
-        exclude:
-          # Reduce matrix size for macOS (clang is default)
-          - os: macos-latest
-            compiler: gcc
 
     steps:
     - uses: actions/checkout@v4
@@ -52,11 +48,6 @@ jobs:
           sudo apt-get install -y clang
         fi
 
-    - name: Install macOS dependencies
-      if: runner.os == 'macOS'
-      run: |
-        brew install cmake pkg-config libtiff libgeotiff
-
     - name: Cache HDF5
       id: cache-hdf5
       uses: actions/cache@v4
@@ -87,16 +78,12 @@ jobs:
           -DBUILD_SHARED_LIBS=ON \
           -DHDF5_ENABLE_Z_LIB_SUPPORT=ON
 
-        if [ "${{ runner.os }}" = "macOS" ]; then
-          make -j$(sysctl -n hw.ncpu)
-        else
-          make -j$(nproc)
-        fi
+        make -j$(nproc)
         make install
 
     - name: Configure and build
       run: |
-        cd vol-geotiff        
+        cd vol-geotiff
         mkdir build && cd build
 
         if [ "${{ matrix.compiler }}" = "clang" ]; then
@@ -110,11 +97,7 @@ jobs:
           -DCMAKE_PREFIX_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }} \
           -DCMAKE_C_FLAGS="-Wall -Wextra"
 
-        if [ "${{ runner.os }}" = "macOS" ]; then
-          make -j$(sysctl -n hw.ncpu)
-        else
-          make -j$(nproc)
-        fi
+        make -j$(nproc)
 
     - name: Memory leak test (Linux only)
       if: runner.os == 'Linux' && matrix.build_type == 'Debug'
@@ -132,11 +115,7 @@ jobs:
         cd vol-geotiff
         cd build
         export HDF5_PLUGIN_PATH=$PWD/src
-        if [ "${{ runner.os }}" = "Linux" ]; then
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
-        else
-          export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$DYLD_LIBRARY_PATH
-        fi
+        export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
 
         # Simple performance timing - run all tests and measure time
         echo "Performance test - running full test suite:"

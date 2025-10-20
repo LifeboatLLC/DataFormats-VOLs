@@ -483,10 +483,10 @@ done:
 }
 
 /* Struct for H5Dscatter's callback that allows it to scatter from a non-global response buffer */
-struct response_read_info {
+typedef struct response_read_info {
     void *buffer;
     void *read_size;
-} typedef response_read_info;
+} response_read_info;
 
 static herr_t dataset_read_scatter_op(const void **src_buf, size_t *src_buf_bytes_used,
                                       void *op_data)
@@ -615,7 +615,7 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
     herr_t ret_value = SUCCEED;
     H5S_sel_type file_sel_type = H5S_SEL_ERROR;
     H5S_sel_type mem_sel_type = H5S_SEL_ERROR;
-    size_t num_elements = 0;
+    hssize_t num_elements = 0;
     void *source_buf = NULL;
     size_t source_size = 0;
     hbool_t tconv_buf_allocated = FALSE;
@@ -666,12 +666,18 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
      * for H5Dgather to extract the selection from. Otherwise, we only need num_elements.
      */
     size_t prepare_num_elements;
+    hssize_t temp_npoints;
+
     if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
         /* Will need to gather - prepare full dataset */
-        prepare_num_elements = H5Sget_simple_extent_npoints(d->space_id);
+        if ((temp_npoints = H5Sget_simple_extent_npoints(d->space_id)) < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "failed to get dataset extent");
+        prepare_num_elements = (size_t) temp_npoints;
     } else {
         /* No gather needed - prepare only selected elements */
-        prepare_num_elements = num_elements;
+        if (num_elements < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid number of elements");
+        prepare_num_elements = (size_t) num_elements;
     }
 
     if (prepare_converted_buffer(d, mem_type_id[0], prepare_num_elements, &source_buf, &source_size,
@@ -681,7 +687,10 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
     /* If file selection is non-trivial (hyperslab, points), gather selected data first */
     if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
         /* Allocate buffer for gathered data */
-        size_t gathered_size = num_elements * H5Tget_size(mem_type_id[0]);
+        if (num_elements < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                            "invalid number of elements for gather");
+        size_t gathered_size = (size_t) num_elements * H5Tget_size(mem_type_id[0]);
 
         if ((gathered_buf = malloc(gathered_size)) == NULL)
             FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
@@ -1012,8 +1021,12 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
         band_start + band_count > samples_per_pixel)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL, "Hyperslab selection out of bounds");
 
+    /* Validate scanline size before allocation */
+    if (scanline_size < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL, "Invalid scanline size");
+
     /* Allocate scanline buffer */
-    if ((scanline_buf = (unsigned char *) malloc(scanline_size)) == NULL)
+    if ((scanline_buf = (unsigned char *) malloc((size_t) scanline_size)) == NULL)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, FAIL,
                         "Failed to allocate memory for scanline buffer");
 
