@@ -19,5 +19,6 @@ herr_t test_registration_by_value(void);
 int OpenGeoTIFFTest(const char *filename);
 int ReadGeoTIFFTest(const char *filename);
 int BandReadGeoTIFFTest(const char *filename);
+int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id);
 
 #endif // TEST_GEOTIFF_H

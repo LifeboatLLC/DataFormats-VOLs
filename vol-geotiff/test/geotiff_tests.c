@@ -18,6 +18,8 @@
 #include "geotiff_vol_connector.h"
 #include "test_geotiff.h"
 #include <H5PLpublic.h>
+#include <geotiff/geotiffio.h>
+#include <geotiff/xtiffio.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -386,8 +388,8 @@ int BandReadGeoTIFFTest(const char *filename)
 
     /* Only test band reading for multi-band (RGB) images */
     if (ndims != 3 || dims[2] <= 1) {
-        printf("SKIPPED (not an RGB image)\n");
-        goto cleanup;
+        printf("not an RGB image\n");
+        goto error;
     }
 
     /* Select first band (red channel): all rows, all columns, band 0 */
@@ -444,7 +446,6 @@ int BandReadGeoTIFFTest(const char *filename)
     }
 
     /* Clean up */
-cleanup:
     if (band_data)
         free(band_data);
     if (mem_space_id != H5I_INVALID_HID && H5Sclose(mem_space_id) < 0) {
@@ -496,5 +497,344 @@ error:
     H5E_END_TRY;
 
     printf("FAILED\n");
+    return 1;
+}
+
+/* Helper function to create a GeoTIFF file with a specific datatype */
+static int CreateTypedGeoTIFF(const char *filename, uint16_t sample_format,
+                              uint16_t bits_per_sample)
+{
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
+    void *buffer = NULL;
+    size_t element_size = bits_per_sample / 8;
+    size_t row_size = WIDTH * element_size;
+
+    if ((tif = XTIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create %s\n", filename);
+        return -1;
+    }
+
+    if ((gtif = GTIFNew(tif)) == NULL) {
+        printf("Failed to create GeoTIFF handle for %s\n", filename);
+        TIFFClose(tif);
+        return -1;
+    }
+
+    /* Set up TIFF tags */
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, bits_per_sample);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+    TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, sample_format);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+    /* Tie points and pixel scale */
+    const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+    const double pixscale[3] = {1.0, 1.0, 0.0};
+    TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+    TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+
+    /* Set up geo keys */
+    GTIFKeySet(gtif, GTModelTypeGeoKey, TYPE_SHORT, 1, ModelGeographic);
+    GTIFKeySet(gtif, GTRasterTypeGeoKey, TYPE_SHORT, 1, RasterPixelIsArea);
+    GTIFKeySet(gtif, GTCitationGeoKey, TYPE_ASCII, 0, "Datatype Test GeoTIFF");
+    GTIFKeySet(gtif, GeographicTypeGeoKey, TYPE_SHORT, 1, GCS_WGS_84);
+
+    /* Allocate buffer for one row */
+    buffer = malloc(row_size);
+    if (!buffer) {
+        printf("Failed to allocate buffer\n");
+        GTIFFree(gtif);
+        TIFFClose(tif);
+        return -1;
+    }
+
+    /* Write test pattern data */
+    for (int row = 0; row < HEIGHT; row++) {
+        /* Fill buffer with simple pattern based on datatype */
+        switch (sample_format) {
+            case SAMPLEFORMAT_UINT:
+                if (bits_per_sample == 8) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((uint8_t *) buffer)[col] = (uint8_t) ((row + col) % 256);
+                } else if (bits_per_sample == 16) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((uint16_t *) buffer)[col] = (uint16_t) ((row * 256 + col) % 65536);
+                } else if (bits_per_sample == 32) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((uint32_t *) buffer)[col] = (uint32_t) (row * 1000 + col);
+                } else if (bits_per_sample == 64) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((uint64_t *) buffer)[col] = (uint64_t) (row * 1000 + col);
+                }
+                break;
+
+            case SAMPLEFORMAT_INT:
+                if (bits_per_sample == 8) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((int8_t *) buffer)[col] = (int8_t) ((row + col - 64) % 128);
+                } else if (bits_per_sample == 16) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((int16_t *) buffer)[col] = (int16_t) ((row * 100 + col - 1000));
+                } else if (bits_per_sample == 32) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((int32_t *) buffer)[col] = (int32_t) (row * 1000 + col - 16000);
+                } else if (bits_per_sample == 64) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((int64_t *) buffer)[col] = (int64_t) (row * 1000 + col - 16000);
+                }
+                break;
+
+            case SAMPLEFORMAT_IEEEFP:
+                if (bits_per_sample == 32) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((float *) buffer)[col] = (float) (row + col * 0.5);
+                } else if (bits_per_sample == 64) {
+                    for (int col = 0; col < WIDTH; col++)
+                        ((double *) buffer)[col] = (double) (row + col * 0.5);
+                }
+                break;
+
+            default:
+                /* For unsupported formats, write zeros */
+                memset(buffer, 0, row_size);
+                break;
+        }
+
+        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+            printf("Failed to write scanline %d\n", row);
+            free(buffer);
+            GTIFFree(gtif);
+            TIFFClose(tif);
+            return -1;
+        }
+    }
+
+    free(buffer);
+    GTIFWriteKeys(gtif);
+    GTIFFree(gtif);
+    XTIFFClose(tif);
+
+    return 0;
+}
+
+/* Test datatype conversion by reading a file with one type into a buffer of another type */
+int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t dset_type_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    void *data = NULL;
+    char filename[256];
+    uint16_t sample_format = 0;
+    uint16_t bits_per_sample = 0;
+    size_t mem_type_size = 0;
+    hsize_t dims[3];
+    int ndims = 0;
+    size_t num_elements = 0;
+    int ret_value = 0;
+
+    memset(filename, 0, sizeof(filename));
+
+    /* Map file_type_id to TIFF sample_format and bits_per_sample */
+    if (H5Tequal(file_type_id, H5T_NATIVE_UCHAR)) {
+        sample_format = SAMPLEFORMAT_UINT;
+        bits_per_sample = 8;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_USHORT)) {
+        sample_format = SAMPLEFORMAT_UINT;
+        bits_per_sample = 16;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_UINT)) {
+        sample_format = SAMPLEFORMAT_UINT;
+        bits_per_sample = 32;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_UINT64)) {
+        sample_format = SAMPLEFORMAT_UINT;
+        bits_per_sample = 64;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_CHAR)) {
+        sample_format = SAMPLEFORMAT_INT;
+        bits_per_sample = 8;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_SHORT)) {
+        sample_format = SAMPLEFORMAT_INT;
+        bits_per_sample = 16;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_INT)) {
+        sample_format = SAMPLEFORMAT_INT;
+        bits_per_sample = 32;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_INT64)) {
+        sample_format = SAMPLEFORMAT_INT;
+        bits_per_sample = 64;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_FLOAT)) {
+        sample_format = SAMPLEFORMAT_IEEEFP;
+        bits_per_sample = 32;
+    } else if (H5Tequal(file_type_id, H5T_NATIVE_DOUBLE)) {
+        sample_format = SAMPLEFORMAT_IEEEFP;
+        bits_per_sample = 64;
+    } else {
+        printf("TEST ERROR: Unsupported file datatype\n");
+        goto error;
+    }
+
+    /* Generate unique filename for this test */
+    snprintf(filename, sizeof(filename), "_tmp_dtype_test_sf%d_bps%d.tif", sample_format,
+             bits_per_sample);
+
+    /* Create GeoTIFF file with the specified datatype */
+    if (CreateTypedGeoTIFF(filename, sample_format, bits_per_sample) != 0) {
+        printf("Failed to create test GeoTIFF file with sample_format=%d, bits_per_sample=%d\n",
+               sample_format, bits_per_sample);
+        goto error;
+    }
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Open the image dataset */
+    if ((dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open image dataset\n");
+        goto error;
+    }
+
+    /* Get dataset type to verify it matches file_type_id */
+    if ((dset_type_id = H5Dget_type(dset_id)) < 0) {
+        printf("Failed to get dataset type\n");
+        goto error;
+    }
+
+    if (!H5Tequal(dset_type_id, file_type_id)) {
+        printf("Dataset type does not match the type it was created with\n");
+        goto error;
+    }
+
+    /* Get dataspace and dimensions */
+    if ((space_id = H5Dget_space(dset_id)) < 0) {
+        printf("Failed to get dataspace\n");
+        goto error;
+    }
+
+    if ((ndims = H5Sget_simple_extent_ndims(space_id)) < 0) {
+        printf("Failed to get number of dimensions\n");
+        goto error;
+    }
+
+    if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) {
+        printf("Failed to get dimensions\n");
+        goto error;
+    }
+
+    /* Allocate buffer for reading into memory type */
+    if ((mem_type_size = H5Tget_size(mem_type_id)) == 0) {
+        printf("Failed to get memory type size\n");
+        goto error;
+    }
+
+    num_elements = (size_t) (dims[0] * dims[1]);
+
+    if ((data = malloc(num_elements * mem_type_size)) == NULL) {
+        printf("Failed to allocate read buffer\n");
+        goto error;
+    }
+
+    /* Attempt to read with datatype conversion */
+    if (H5Dread(dset_id, mem_type_id, H5S_ALL, H5S_ALL, H5P_DEFAULT, data) < 0) {
+        printf("failed to perform datatype conversion\n");
+        goto error;
+    }
+
+    /* If read succeeded, this means conversion is working! */
+    printf("PASSED\n");
+    return 0;
+
+    /* Clean up resources */
+    if (data)
+        free(data);
+    if (space_id != H5I_INVALID_HID && H5Sclose(space_id) < 0) {
+        printf("Failed to close dataspace\n");
+        goto error;
+    }
+    if (dset_type_id != H5I_INVALID_HID && H5Tclose(dset_type_id) < 0) {
+        printf("Failed to close dataset datatype\n");
+        goto error;
+    }
+    if (dset_id != H5I_INVALID_HID && H5Dclose(dset_id) < 0) {
+        printf("Failed to close dataset\n");
+        goto error;
+    }
+    if (file_id != H5I_INVALID_HID && H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    if (fapl_id != H5I_INVALID_HID && H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    if (vol_id != H5I_INVALID_HID && H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+
+    /* Attempt to delete the temporary GeoTIFF file */
+    if (remove(filename) != 0) {
+        printf("WARNING: Failed to delete temporary file %s\n", filename);
+    }
+    memset(filename, 0, sizeof(filename));
+
+    return ret_value;
+
+error:
+    printf("FAILED\n");
+
+    /* Error cleanup */
+    if (data)
+        free(data);
+    H5E_BEGIN_TRY
+    {
+        H5Sclose(space_id);
+        H5Tclose(dset_type_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    /* Attempt to delete the temporary file even on error */
+    if (filename[0] != '\0')
+        remove(filename);
+
     return 1;
 }

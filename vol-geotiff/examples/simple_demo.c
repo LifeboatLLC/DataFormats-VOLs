@@ -5,13 +5,13 @@
  */
 
 #include <hdf5.h>
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <limits.h>
 #include <string.h>
-#include <math.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <geotiff/geotiffio.h>
 #include <geotiff/xtiffio.h>
@@ -55,12 +55,13 @@ void hsv_to_rgb(float h, float s, float v, unsigned char *r, unsigned char *g, u
         b_prime = x;
     }
 
-    *r = (unsigned char)((r_prime + m) * 255.0f);
-    *g = (unsigned char)((g_prime + m) * 255.0f);
-    *b = (unsigned char)((b_prime + m) * 255.0f);
+    *r = (unsigned char) ((r_prime + m) * 255.0f);
+    *g = (unsigned char) ((g_prime + m) * 255.0f);
+    *b = (unsigned char) ((b_prime + m) * 255.0f);
 }
 
-int create_demo_image(void) {
+int create_demo_image(void)
+{
     TIFF *tif = NULL;
     GTIF *gtif = NULL;
     unsigned char *scanline = NULL;
@@ -112,7 +113,7 @@ int create_demo_image(void) {
     GTIFKeySet(gtif, GeographicTypeGeoKey, TYPE_SHORT, 1, GCS_WGS_84);
 
     /* Allocate scanline buffer */
-    scanline = (unsigned char *)malloc(IMAGE_SIZE * 3);
+    scanline = (unsigned char *) malloc(IMAGE_SIZE * 3);
     if (!scanline) {
         fprintf(stderr, "Failed to allocate memory\n");
         GTIFFree(gtif);
@@ -135,7 +136,8 @@ int create_demo_image(void) {
             /* Multiple the distance to create multiple rings */
             float hue = fmodf(normalized_dist * 720.0f, 360.0f); /* 2 full rainbow cycles */
             float saturation = 0.9f;
-            float value = 0.8f + 0.2f * sinf(normalized_dist * 12.0f * M_PI); /* Brightness variation */
+            float value =
+                0.8f + 0.2f * sinf(normalized_dist * 12.0f * M_PI); /* Brightness variation */
 
             unsigned char r, g, b;
             hsv_to_rgb(hue, saturation, value, &r, &g, &b);
@@ -165,7 +167,6 @@ int create_demo_image(void) {
     printf("Image features:\n");
     printf("  - Size: %dx%d pixels\n", IMAGE_SIZE, IMAGE_SIZE);
     printf("  - Format: RGB (3 channels)\n");
-    printf("  - Pattern: Colorful concentric rings (rainbow gradient)\n");
     printf("  - Geographic location: California area (WGS84)\n");
     printf("  - Pixel scale: 0.01 degrees/pixel\n");
 
@@ -196,7 +197,7 @@ int main(void)
     }
 
     int ret = snprintf(plugin_path, sizeof(plugin_path), "%s/src", cwd);
-    if (ret < 0 || (size_t)ret >= sizeof(plugin_path)) {
+    if (ret < 0 || (size_t) ret >= sizeof(plugin_path)) {
         printf("ERROR: Current working directory path is too long\n");
         return 1;
     }
@@ -387,10 +388,6 @@ int main(void)
     H5Fclose(file_id);
     H5Pclose(fapl_id);
     H5VLunregister_connector(vol_id);
-
-    printf("\n===========================================\n");
-    printf("Demo completed successfully\n");
-    printf("===========================================\n");
 
     return 0;
 }
