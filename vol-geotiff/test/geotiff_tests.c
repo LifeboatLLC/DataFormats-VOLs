@@ -641,7 +641,6 @@ int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id, const char *me
     hsize_t dims[3];
     int ndims = 0;
     size_t num_elements = 0;
-    int ret_value = 0;
 
     memset(filename, 0, sizeof(filename));
 
