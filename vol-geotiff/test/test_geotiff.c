@@ -65,6 +65,12 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "band_read_rgb") == 0)
         num_failures += (BandReadGeoTIFFTest(RGB_FILENAME) != 0 ? 1 : 0);
 
+    if (run_all || strcmp(test_name, "point_read_grayscale") == 0)
+        num_failures += (PointReadGeoTIFFTest(GRAYSCALE_FILENAME) != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "point_read_rgb") == 0)
+        num_failures += (PointReadGeoTIFFTest(RGB_FILENAME) != 0 ? 1 : 0);
+
     /* Datatype conversion tests */
     hid_t test_types[] = {H5T_NATIVE_UCHAR, H5T_NATIVE_USHORT, H5T_NATIVE_UINT, H5T_NATIVE_UINT64,
                           H5T_NATIVE_CHAR,  H5T_NATIVE_SHORT,  H5T_NATIVE_INT,  H5T_NATIVE_INT64,

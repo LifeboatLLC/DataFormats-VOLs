@@ -597,7 +597,8 @@ static herr_t transfer_data_to_user(const void *source_buf, size_t source_size, 
         resp_info.read_size = &source_size;
         resp_info.buffer = (void *) source_buf;
 
-        if (H5Dscatter(dataset_read_scatter_op, &resp_info, mem_type_id, mem_space_id, user_buf) < 0)
+        if (H5Dscatter(dataset_read_scatter_op, &resp_info, mem_type_id, mem_space_id, user_buf) <
+            0)
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "can't scatter data to user buffer");
     }
 
@@ -658,9 +659,21 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
                             "file and memory selections have different number of points");
     }
 
-    /* Prepare source buffer with type conversion if needed */
-    if (prepare_converted_buffer(d, mem_type_id[0], num_elements, &source_buf, &source_size,
-                                  &owns_buffer) < 0)
+    /* Prepare source buffer with type conversion if needed.
+     * If we have a non-trivial file selection, we need the full dataset in the source buffer
+     * for H5Dgather to extract the selection from. Otherwise, we only need num_elements.
+     */
+    size_t prepare_num_elements;
+    if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
+        /* Will need to gather - prepare full dataset */
+        prepare_num_elements = H5Sget_simple_extent_npoints(d->space_id);
+    } else {
+        /* No gather needed - prepare only selected elements */
+        prepare_num_elements = num_elements;
+    }
+
+    if (prepare_converted_buffer(d, mem_type_id[0], prepare_num_elements, &source_buf, &source_size,
+                                 &owns_buffer) < 0)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "failed to prepare converted buffer");
 
     /* If file selection is non-trivial (hyperslab, points), gather selected data first */
@@ -672,9 +685,12 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
             FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
                             "failed to allocate buffer for gathered data");
 
-        /* Gather selected data from source buffer according to file space selection */
-        if (H5Dgather(effective_file_space_id, source_buf, mem_type_id[0], gathered_size,
-                      gathered_buf, NULL, NULL) < 0) {
+        /* Gather selected data from source buffer according to file space selection.
+         * Note: We pass file_space_id[0] which has the selection, and source_buf which
+         * must be sized according to the full extent described by the selection's dataspace.
+         */
+        if (H5Dgather(file_space_id[0], source_buf, mem_type_id[0], gathered_size, gathered_buf,
+                      NULL, NULL) < 0) {
             free(gathered_buf);
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "failed to gather selected data");
         }

@@ -973,3 +973,230 @@ error:
 
     return 1;
 }
+
+/* Test point selection reading - verify only selected points are read */
+int PointReadGeoTIFFTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t mem_space_id = H5I_INVALID_HID;
+    hid_t file_space_id = H5I_INVALID_HID;
+    hsize_t dims[3];
+    int ndims;
+    unsigned char *buffer = NULL;
+    size_t buffer_size;
+    const hsize_t NUM_POINTS = 5;
+    hsize_t coords[5 * 3]; /* Flat array: max 5 points × 3 dimensions */
+
+    printf("Testing GeoTIFF VOL connector point selection reading with file: %s  ", filename);
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Open the image dataset */
+    if ((dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open image dataset\n");
+        goto error;
+    }
+
+    /* Get dataspace */
+    if ((space_id = H5Dget_space(dset_id)) < 0) {
+        printf("Failed to get dataspace\n");
+        goto error;
+    }
+
+    if ((ndims = H5Sget_simple_extent_ndims(space_id)) < 0) {
+        printf("Failed to get number of dimensions\n");
+        goto error;
+    }
+
+    if (ndims <= 0 || ndims > 3) {
+        printf("Invalid number of dimensions: %d\n", ndims);
+        goto error;
+    }
+
+    if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) {
+        printf("Failed to get dimensions\n");
+        goto error;
+    }
+
+    /* Select 5 specific points based on dimensionality */
+    /* Pack coordinates as flat array: coord[0], coord[1], ..., coord[ndims-1] for each point */
+    if (ndims == 2) {
+        /* Grayscale image: select points (0,0), (5,5), (10,15), (20,20), (31,31) */
+        coords[0] = 0;
+        coords[1] = 0;
+        coords[2] = 5;
+        coords[3] = 5;
+        coords[4] = 10;
+        coords[5] = 15;
+        coords[6] = 20;
+        coords[7] = 20;
+        coords[8] = 31;
+        coords[9] = 31;
+    } else if (ndims == 3) {
+        /* RGB image: select points from different bands */
+        coords[0] = 0;
+        coords[1] = 0;
+        coords[2] = 0; /* Red channel */
+        coords[3] = 5;
+        coords[4] = 5;
+        coords[5] = 1; /* Green channel */
+        coords[6] = 10;
+        coords[7] = 15;
+        coords[8] = 2; /* Blue channel */
+        coords[9] = 20;
+        coords[10] = 20;
+        coords[11] = 0; /* Red channel */
+        coords[12] = 31;
+        coords[13] = 31;
+        coords[14] = 1; /* Green channel */
+    } else {
+        printf("Unsupported number of dimensions: %d\n", ndims);
+        goto error;
+    }
+
+    /* Create file space selection for the points */
+    if ((file_space_id = H5Scopy(space_id)) < 0) {
+        printf("Failed to copy dataspace\n");
+        goto error;
+    }
+
+    if (H5Sselect_elements(file_space_id, H5S_SELECT_SET, NUM_POINTS, coords) < 0) {
+        printf("Failed to select points\n");
+        goto error;
+    }
+
+    /* Allocate buffer large enough to hold more than just the selected points */
+    buffer_size = NUM_POINTS * 2; /* Double the size to test sentinel values */
+    buffer = (unsigned char *) malloc(buffer_size);
+    if (!buffer) {
+        printf("Failed to allocate memory for buffer\n");
+        goto error;
+    }
+
+    /* Initialize entire buffer with sentinel value (0xAA) */
+    memset(buffer, 0xAA, buffer_size);
+
+    /* Create memory dataspace for the selected points */
+    hsize_t mem_dims[1] = {NUM_POINTS};
+    if ((mem_space_id = H5Screate_simple(1, mem_dims, NULL)) < 0) {
+        printf("Failed to create memory dataspace\n");
+        goto error;
+    }
+
+    /* Read the selected points */
+    if (H5Dread(dset_id, H5T_NATIVE_UCHAR, mem_space_id, file_space_id, H5P_DEFAULT, buffer) < 0) {
+        printf("Failed to read selected points\n");
+        goto error;
+    }
+
+    /* Verify the selected points contain expected data */
+    for (hsize_t i = 0; i < NUM_POINTS; i++) {
+        unsigned char expected;
+
+        if (ndims == 2) {
+            /* Grayscale pattern: value = (row * 8 + col / 4) % 256 */
+            hsize_t row = coords[i * 2 + 0];
+            hsize_t col = coords[i * 2 + 1];
+            expected = (unsigned char) ((row * 8 + col / 4) % 256);
+        } else {
+            /* RGB pattern depends on channel:
+             * R = (row * 8) % 256
+             * G = (col * 8) % 256
+             * B = ((row + col) * 4) % 256
+             */
+            hsize_t row = coords[i * 3 + 0];
+            hsize_t col = coords[i * 3 + 1];
+            hsize_t band = coords[i * 3 + 2];
+
+            if (band == 0) {
+                expected = (unsigned char) ((row * 8) % 256);
+            } else if (band == 1) {
+                expected = (unsigned char) ((col * 8) % 256);
+            } else {
+                expected = (unsigned char) (((row + col) * 4) % 256);
+            }
+        }
+
+        if (buffer[i] != expected) {
+            printf("VERIFICATION FAILED: Point %llu expected %u, got %u\n", (unsigned long long) i,
+                   expected, buffer[i]);
+            goto error;
+        }
+    }
+
+    /* Verify that buffer locations beyond the selected points retain sentinel value */
+    for (hsize_t i = NUM_POINTS; i < buffer_size; i++) {
+        if (buffer[i] != 0xAA) {
+            printf("VERIFICATION FAILED: Buffer position %llu beyond selected points was modified "
+                   "(expected 0xAA, got 0x%02X)\n",
+                   (unsigned long long) i, buffer[i]);
+            goto error;
+        }
+    }
+
+    /* Clean up */
+    free(buffer);
+    H5Sclose(mem_space_id);
+    H5Sclose(file_space_id);
+    H5Sclose(space_id);
+    H5Dclose(dset_id);
+    H5Fclose(file_id);
+    H5Pclose(fapl_id);
+    H5VLunregister_connector(vol_id);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        if (buffer)
+            free(buffer);
+        H5Sclose(mem_space_id);
+        H5Sclose(file_space_id);
+        H5Sclose(space_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+}
