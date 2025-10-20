@@ -87,7 +87,10 @@ int main(int argc, char **argv)
                      type_names[j]);
 
             if (run_all || strcmp(test_name, dtype_test_name) == 0) {
-                num_failures += (DatatypeConversionTest(test_types[i], test_types[j]) != 0 ? 1 : 0);
+                num_failures += (DatatypeConversionTest(test_types[i], test_types[j], type_names[i],
+                                                        type_names[j]) != 0
+                                     ? 1
+                                     : 0);
             }
         }
     }

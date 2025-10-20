@@ -623,7 +623,8 @@ static int CreateTypedGeoTIFF(const char *filename, uint16_t sample_format,
 }
 
 /* Test datatype conversion by reading a file with one type into a buffer of another type */
-int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id)
+int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id, const char *mem_type_name,
+                           const char *file_type_name)
 {
     hid_t vol_id = H5I_INVALID_HID;
     hid_t fapl_id = H5I_INVALID_HID;
@@ -642,6 +643,8 @@ int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id)
     int ret_value = 0;
 
     memset(filename, 0, sizeof(filename));
+
+    printf("Testing conversion of %s to %s on dataset read  ", file_type_name, mem_type_name);
 
     /* Map file_type_id to TIFF sample_format and bits_per_sample */
     if (H5Tequal(file_type_id, H5T_NATIVE_UCHAR)) {
@@ -774,37 +777,40 @@ int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id)
         goto error;
     }
 
-    /* If read succeeded, this means conversion is working! */
-    printf("PASSED\n");
-    return 0;
-
     /* Clean up resources */
     if (data)
         free(data);
+    data = NULL;
     if (space_id != H5I_INVALID_HID && H5Sclose(space_id) < 0) {
         printf("Failed to close dataspace\n");
         goto error;
     }
+    space_id = H5I_INVALID_HID;
     if (dset_type_id != H5I_INVALID_HID && H5Tclose(dset_type_id) < 0) {
         printf("Failed to close dataset datatype\n");
         goto error;
     }
+    dset_type_id = H5I_INVALID_HID;
     if (dset_id != H5I_INVALID_HID && H5Dclose(dset_id) < 0) {
         printf("Failed to close dataset\n");
         goto error;
     }
+    dset_id = H5I_INVALID_HID;
     if (file_id != H5I_INVALID_HID && H5Fclose(file_id) < 0) {
         printf("Failed to close file\n");
         goto error;
     }
+    file_id = H5I_INVALID_HID;
     if (fapl_id != H5I_INVALID_HID && H5Pclose(fapl_id) < 0) {
         printf("Failed to close FAPL\n");
         goto error;
     }
+    fapl_id = H5I_INVALID_HID;
     if (vol_id != H5I_INVALID_HID && H5VLunregister_connector(vol_id) < 0) {
         printf("Failed to unregister VOL connector\n");
         goto error;
     }
+    vol_id = H5I_INVALID_HID;
 
     /* Attempt to delete the temporary GeoTIFF file */
     if (remove(filename) != 0) {
@@ -812,7 +818,9 @@ int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id)
     }
     memset(filename, 0, sizeof(filename));
 
-    return ret_value;
+    /* If read succeeded, this means conversion is working! */
+    printf("PASSED\n");
+    return 0;
 
 error:
     printf("FAILED\n");
