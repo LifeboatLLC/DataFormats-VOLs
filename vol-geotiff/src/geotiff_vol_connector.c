@@ -504,7 +504,7 @@ static herr_t dataset_read_scatter_op(const void **src_buf, size_t *src_buf_byte
  */
 static herr_t prepare_converted_buffer(const geotiff_dataset_t *dset, hid_t mem_type_id,
                                        size_t num_elements, void **out_buffer,
-                                       size_t *out_buffer_size, hbool_t *out_owns_buffer)
+                                       size_t *out_buffer_size, hbool_t *out_tconv_buf_allocated)
 {
     herr_t ret_value = SUCCEED;
     htri_t types_equal = 0;
@@ -512,7 +512,7 @@ static herr_t prepare_converted_buffer(const geotiff_dataset_t *dset, hid_t mem_
     size_t mem_type_size = 0;
     void *conversion_buf = NULL;
 
-    if (!dset || !out_buffer || !out_buffer_size || !out_owns_buffer)
+    if (!dset || !out_buffer || !out_buffer_size || !out_tconv_buf_allocated)
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
 
     /* Check if types are equal */
@@ -523,7 +523,7 @@ static herr_t prepare_converted_buffer(const geotiff_dataset_t *dset, hid_t mem_
         /* No conversion needed - return borrowed pointer to cached data */
         *out_buffer = dset->data;
         *out_buffer_size = dset->data_size;
-        *out_owns_buffer = FALSE;
+        *out_tconv_buf_allocated = FALSE;
         FUNC_GOTO_DONE(SUCCEED);
     }
 
@@ -554,7 +554,7 @@ static herr_t prepare_converted_buffer(const geotiff_dataset_t *dset, hid_t mem_
     /* Return owned buffer */
     *out_buffer = conversion_buf;
     *out_buffer_size = dst_data_size;
-    *out_owns_buffer = TRUE;
+    *out_tconv_buf_allocated = TRUE;
     conversion_buf = NULL; /* Transfer ownership */
 
 done:
@@ -618,10 +618,12 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
     size_t num_elements = 0;
     void *source_buf = NULL;
     size_t source_size = 0;
-    hbool_t owns_buffer = FALSE;
+    hbool_t tconv_buf_allocated = FALSE;
     /* To follow H5S_ALL semantics, we set up local vars for effective values of mem/filespace */
     hid_t effective_file_space_id = file_space_id[0];
     hid_t effective_mem_space_id = mem_space_id[0];
+
+    void *gathered_buf = NULL;
 
     if (!d || !buf[0])
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid dataset buffer");
@@ -673,15 +675,15 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
     }
 
     if (prepare_converted_buffer(d, mem_type_id[0], prepare_num_elements, &source_buf, &source_size,
-                                 &owns_buffer) < 0)
+                                 &tconv_buf_allocated) < 0)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "failed to prepare converted buffer");
 
     /* If file selection is non-trivial (hyperslab, points), gather selected data first */
     if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
-        /* Allocate buffer for gathered data (size based on num_elements) */
+        /* Allocate buffer for gathered data */
         size_t gathered_size = num_elements * H5Tget_size(mem_type_id[0]);
-        void *gathered_buf = malloc(gathered_size);
-        if (!gathered_buf)
+
+        if ((gathered_buf = malloc(gathered_size)) == NULL)
             FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
                             "failed to allocate buffer for gathered data");
 
@@ -691,12 +693,11 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
          */
         if (H5Dgather(file_space_id[0], source_buf, mem_type_id[0], gathered_size, gathered_buf,
                       NULL, NULL) < 0) {
-            free(gathered_buf);
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "failed to gather selected data");
         }
 
-        /* Free original buffer if we owned it */
-        if (owns_buffer && source_buf) {
+        /* Free original buffer if we allocated it for type conversion */
+        if (tconv_buf_allocated && source_buf) {
             free(source_buf);
             source_buf = NULL;
         }
@@ -704,7 +705,7 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
         /* Use gathered buffer as new source */
         source_buf = gathered_buf;
         source_size = gathered_size;
-        owns_buffer = TRUE;
+        tconv_buf_allocated = TRUE;
     }
 
     /* Transfer data to user buffer (handles selections via scatter if needed) */
@@ -713,9 +714,12 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "failed to transfer data to user buffer");
 
 done:
-    /* Clean up owned buffer if allocated */
-    if (owns_buffer && source_buf)
+    /* Clean up allocated buffer if needed */
+    if (tconv_buf_allocated && source_buf)
         free(source_buf);
+
+    if (ret_value < 0 && gathered_buf)
+        free(gathered_buf);
 
     return ret_value;
 }
