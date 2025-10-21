@@ -10,9 +10,7 @@ Each distinct image within the GeoTIFF file is considered an HDF5 dataset. Each 
 
 ### Dataset Naming
 
-Images are exposed as HDF5 datasets using a zero-indexed naming convention: `image0`, `image1`, `image2`, etc. The first image in a GeoTIFF file is accessible as the dataset named `"image0"`. This naming scheme is designed to support multi-image TIFF files in the future, where each image directory would correspond to a sequentially numbered dataset. Currently, only `image0` is implemented.
-
-Within an application using the GeoTIFF VOL connector, dataset names provided to `H5Dopen` and other operations must be of the form `imageN`. Any other name will fail due to not precisely specifying an image within the GeoTIFF file.
+Images are exposed as HDF5 datasets using a zero-indexed naming convention: `image0`, `image1`, `image2`, etc. Dataset names provided to `H5Dopen` and other operations must be of the form `imageN`. Any other name will fail due to not precisely specifying an image within the GeoTIFF file.
 
 This system will need to be expanded if support for multi-resolution images wihtin GeoTIFF is added. This will likely be done by replacing the single name for a multi-resolution image with multiple dataset names of the form `imageN_<resolution_information>`.
 

@@ -53,7 +53,6 @@ hid_t H5_geotiff_object_table_iter_err_min_g = H5I_INVALID_HID;
 
 /* Helper functions */
 static herr_t geotiff_read_image_data(geotiff_dataset_t *dset);
-static herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file);
 static herr_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample,
                                               hid_t *type_id);
 
@@ -292,20 +291,11 @@ void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id,
     if ((file->tiff = XTIFFOpen(name, "r")) == NULL)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL, "Failed to open GeoTIFF file: %s", name);
 
-    if ((file->gtif = GTIFNew(file->tiff)) == NULL)
-        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL,
-                        "Failed to create GeoTIFF handle for file: %s", name);
-
     if ((file->filename = strdup(name)) == NULL)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTALLOC, NULL, "Failed to duplicate filename string");
 
     file->flags = flags;
     file->plist_id = fapl_id;
-
-    /* Parse GeoTIFF metadata */
-    if (geotiff_parse_geotiff_tags(file) < 0)
-        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL,
-                        "Failed to parse GeoTIFF tags for file: %s", name);
 
     ret_value = file;
 
@@ -355,8 +345,6 @@ herr_t geotiff_file_close(void *file, hid_t __attribute__((unused)) dxpl_id,
     geotiff_file_t *f = (geotiff_file_t *) file;
 
     if (f) {
-        if (f->gtif)
-            GTIFFree(f->gtif);
         if (f->tiff)
             TIFFClose(f->tiff);
         if (f->filename)
@@ -382,6 +370,8 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     uint16_t samples_per_pixel = 0;
     uint16_t bits_per_sample = 0;
     uint16_t sample_format = 0;
+
+    uint16_t num_dirs = 0;
     hsize_t dims[3] = {0, 0, 0};
 
     H5T_class_t dtype_class = H5T_NO_CLASS;
@@ -406,17 +396,46 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     dset->is_image = false;
     dset->space_id = H5I_INVALID_HID;
     dset->type_id = H5I_INVALID_HID;
+    dset->gtif = NULL;
+    dset->directory_index = -1;
 
-    /* Future-proof: require "image0" for now, designed for multiple images later
-     * TODO: Support image1, image2, etc. when multi-image TIFFs are implemented
-     */
-    if (strcmp(name, "/image0") != 0 && strcmp(name, "image0") != 0)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
-                        "GeoTIFF VOL connector currently only supports dataset '/image0'");
+    /* Parse dataset name to extract image index (e.g., "image0", "/image1", etc.) */
+    int image_index = 0;
+    if (sscanf(name, "/image%d", &image_index) == 1 || sscanf(name, "image%d", &image_index) == 1) {
+        if (image_index < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL,
+                            "Invalid image index %d (must be non-negative)", image_index);
+    } else {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL,
+                        "Invalid dataset name '%s', expected 'imageN' format", name);
+    }
+
+    /* Check if this image directory exists in the TIFF file */
+    num_dirs = TIFFNumberOfDirectories(file->tiff);
+    if (image_index >= num_dirs) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_NOTFOUND, NULL,
+                        "Image %d does not exist (file has %d image%s)", image_index, num_dirs,
+                        num_dirs == 1 ? "" : "s");
+    }
+
+    /* Navigate to the correct TIFF directory for this image */
+    if (!TIFFSetDirectory(file->tiff, (uint16_t) image_index)) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to set TIFF directory to %d",
+                        image_index);
+    }
+
+    /* Create GeoTIFF handle for this directory's geo keys
+     * GTIF handles are per-dataset to support multi-image
+     * files where each image may have different geo keys */
+    if ((dset->gtif = GTIFNew(file->tiff)) == NULL) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
+                        "Failed to create GeoTIFF handle for image %d", image_index);
+    }
 
     dset->is_image = true;
+    dset->directory_index = image_index;
 
-    /* Read image metadata from TIFF tags */
+    /* Read image metadata from TIFF tags (for this directory) */
     if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width))
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get image width from TIFF");
     if (!TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height))
@@ -774,6 +793,8 @@ herr_t geotiff_dataset_close(void *dset, hid_t __attribute__((unused)) dxpl_id,
     herr_t ret_value = SUCCEED;
 
     if (d) {
+        if (d->gtif)
+            GTIFFree(d->gtif);
         if (d->name)
             free(d->name);
         if (d->data)
@@ -1120,36 +1141,6 @@ done:
         dset->data_size = 0;
     }
 
-    return ret_value;
-}
-
-/* Helper function to parse GeoTIFF tags */
-static herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file)
-{
-    herr_t ret_value = SUCCEED;
-    geocode_t model_type;
-    geocode_t pcs_code, gcs_code;
-    /* Optionally read tie points / pixel scale via TIFF tags in the future */
-
-    if (!file || !file->gtif)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid file or GTIF handle\n");
-
-    /* Get metadata - don't throw error, since file may not have these fields populated */
-
-    /* Get model type */
-    GTIFKeyGet(file->gtif, GTModelTypeGeoKey, &model_type, 0, 1);
-
-    /* Get PCS code */
-    GTIFKeyGet(file->gtif, ProjectedCSTypeGeoKey, &pcs_code, 0, 1);
-
-    /* Get GCS code */
-    GTIFKeyGet(file->gtif, GeographicTypeGeoKey, &gcs_code, 0, 1);
-
-    /* Skipping citation retrieval for portability */
-
-    /* Skipping tie points and pixel scale retrieval here due to tag differences across platforms */
-
-done:
     return ret_value;
 }
 

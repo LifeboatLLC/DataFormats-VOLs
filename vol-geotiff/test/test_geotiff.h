@@ -20,6 +20,8 @@ int OpenGeoTIFFTest(const char *filename);
 int ReadGeoTIFFTest(const char *filename);
 int BandReadGeoTIFFTest(const char *filename);
 int PointReadGeoTIFFTest(const char *filename);
+int MultiImageReadGeoTIFFTest(void);
+int DatasetErrorHandlingTest(const char *filename);
 int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id, const char *mem_type_name,
                            const char *file_type_name);
 

@@ -58,6 +58,12 @@ set_tests_properties(point_read_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIRON
 add_test(NAME point_read_rgb COMMAND test_geotiff point_read_rgb)
 set_tests_properties(point_read_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
+add_test(NAME multi_image_read COMMAND test_geotiff multi_image_read)
+set_tests_properties(multi_image_read PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME dataset_error_handling COMMAND test_geotiff dataset_error_handling)
+set_tests_properties(dataset_error_handling PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
 # Datatype conversion tests - all permutations
 set(DTYPE_NAMES "UCHAR" "USHORT" "UINT" "UINT64" "CHAR" "SHORT" "INT" "INT64" "FLOAT" "DOUBLE")
 

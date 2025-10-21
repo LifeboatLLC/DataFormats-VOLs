@@ -39,17 +39,20 @@
 
 /* GeoTIFF VOL file object structure */
 typedef struct geotiff_file_t {
-    TIFF *tiff;         /* TIFF file handle */
-    GTIF *gtif;         /* GeoTIFF handle */
+    TIFF *tiff;         /* TIFF file handle - shared across datasets */
     char *filename;     /* File name */
     unsigned int flags; /* File access flags */
     hid_t plist_id;     /* Property list ID */
+    /* NOTE: For thread safety with multi-image files, each dataset should
+     * have its own TIFF handle via TIFFOpen(). Currently using shared handle. */
 } geotiff_file_t;
 
 /* GeoTIFF VOL dataset object structure */
 typedef struct geotiff_dataset_t {
     geotiff_file_t *file; /* Parent file */
     char *name;           /* Dataset name */
+    int directory_index;  /* TIFF directory index for multi-image files */
+    GTIF *gtif;           /* GeoTIFF handle for this directory's geo keys */
     hid_t type_id;        /* HDF5 datatype */
     hid_t space_id;       /* HDF5 dataspace */
     void *data;           /* Cached data */
