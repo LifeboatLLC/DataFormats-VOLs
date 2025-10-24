@@ -12,7 +12,7 @@ Each distinct image within the GeoTIFF file is considered an HDF5 dataset. Each 
 
 Images are exposed as HDF5 datasets using a zero-indexed naming convention: `image0`, `image1`, `image2`, etc. Dataset names provided to `H5Dopen` and other operations must be of the form `imageN`. Any other name will fail due to not precisely specifying an image within the GeoTIFF file.
 
-This system will need to be expanded if support for multi-resolution images wihtin GeoTIFF is added. This will likely be done by replacing the single name for a multi-resolution image with multiple dataset names of the form `imageN_<resolution_information>`.
+This system will need to be expanded if support for multi-resolution images within GeoTIFF is added. This will likely be done by replacing the single name for a multi-resolution image with multiple dataset names of the form `imageN_<resolution_information>`.
 
 ### RGB(A) Images
 
