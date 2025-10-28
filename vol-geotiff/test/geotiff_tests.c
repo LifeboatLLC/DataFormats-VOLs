@@ -555,47 +555,47 @@ static int CreateTypedGeoTIFF(const char *filename, uint16_t sample_format,
     }
 
     /* Write test pattern data */
-    for (uint32_t row = 0; row < HEIGHT; row++) {
+    for (int row = 0; row < HEIGHT; row++) {
         /* Fill buffer with simple pattern based on datatype */
         switch (sample_format) {
             case SAMPLEFORMAT_UINT:
                 if (bits_per_sample == 8) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((uint8_t *) buffer)[col] = (uint8_t) ((row + col) % 256);
                 } else if (bits_per_sample == 16) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((uint16_t *) buffer)[col] = (uint16_t) ((row * 256 + col) % 65536);
                 } else if (bits_per_sample == 32) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((uint32_t *) buffer)[col] = (uint32_t) (row * 1000 + col);
                 } else if (bits_per_sample == 64) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((uint64_t *) buffer)[col] = (uint64_t) (row * 1000 + col);
                 }
                 break;
 
             case SAMPLEFORMAT_INT:
                 if (bits_per_sample == 8) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((int8_t *) buffer)[col] = (int8_t) ((row + col - 64) % 128);
                 } else if (bits_per_sample == 16) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((int16_t *) buffer)[col] = (int16_t) ((row * 100 + col - 1000));
                 } else if (bits_per_sample == 32) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((int32_t *) buffer)[col] = (int32_t) (row * 1000 + col - 16000);
                 } else if (bits_per_sample == 64) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((int64_t *) buffer)[col] = (int64_t) (row * 1000 + col - 16000);
                 }
                 break;
 
             case SAMPLEFORMAT_IEEEFP:
                 if (bits_per_sample == 32) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((float *) buffer)[col] = (float) (row + col * 0.5);
                 } else if (bits_per_sample == 64) {
-                    for (uint32_t col = 0; col < WIDTH; col++)
+                    for (int col = 0; col < WIDTH; col++)
                         ((double *) buffer)[col] = (double) (row + col * 0.5);
                 }
                 break;
