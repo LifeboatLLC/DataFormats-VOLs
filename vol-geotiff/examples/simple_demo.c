@@ -125,8 +125,8 @@ int create_demo_image(void)
     for (int row = 0; row < IMAGE_SIZE; row++) {
         for (int col = 0; col < IMAGE_SIZE; col++) {
             /* Calculate distance from center */
-            float dx = col - center_x;
-            float dy = row - center_y;
+            float dx = (float)col - center_x;
+            float dy = (float)row - center_y;
             float distance = sqrtf(dx * dx + dy * dy);
 
             /* Normalize distance to 0-1 range */
@@ -137,7 +137,7 @@ int create_demo_image(void)
             float hue = fmodf(normalized_dist * 720.0f, 360.0f); /* 2 full rainbow cycles */
             float saturation = 0.9f;
             float value =
-                0.8f + 0.2f * sinf(normalized_dist * 12.0f * M_PI); /* Brightness variation */
+                0.8f + 0.2f * sinf(normalized_dist * 12.0f * (float)M_PI); /* Brightness variation */
 
             unsigned char r, g, b;
             hsv_to_rgb(hue, saturation, value, &r, &g, &b);
@@ -148,7 +148,7 @@ int create_demo_image(void)
             scanline[idx + 2] = b;
         }
 
-        if (!TIFFWriteScanline(tif, scanline, row, 0)) {
+        if (!TIFFWriteScanline(tif, scanline, (uint32_t)row, 0)) {
             fprintf(stderr, "Failed to write scanline %d\n", row);
             free(scanline);
             GTIFFree(gtif);
