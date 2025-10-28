@@ -555,47 +555,47 @@ static int CreateTypedGeoTIFF(const char *filename, uint16_t sample_format,
     }
 
     /* Write test pattern data */
-    for (int row = 0; row < HEIGHT; row++) {
+    for (uint32_t row = 0; row < HEIGHT; row++) {
         /* Fill buffer with simple pattern based on datatype */
         switch (sample_format) {
             case SAMPLEFORMAT_UINT:
                 if (bits_per_sample == 8) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((uint8_t *) buffer)[col] = (uint8_t) ((row + col) % 256);
                 } else if (bits_per_sample == 16) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((uint16_t *) buffer)[col] = (uint16_t) ((row * 256 + col) % 65536);
                 } else if (bits_per_sample == 32) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((uint32_t *) buffer)[col] = (uint32_t) (row * 1000 + col);
                 } else if (bits_per_sample == 64) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((uint64_t *) buffer)[col] = (uint64_t) (row * 1000 + col);
                 }
                 break;
 
             case SAMPLEFORMAT_INT:
                 if (bits_per_sample == 8) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((int8_t *) buffer)[col] = (int8_t) ((row + col - 64) % 128);
                 } else if (bits_per_sample == 16) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((int16_t *) buffer)[col] = (int16_t) ((row * 100 + col - 1000));
                 } else if (bits_per_sample == 32) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((int32_t *) buffer)[col] = (int32_t) (row * 1000 + col - 16000);
                 } else if (bits_per_sample == 64) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((int64_t *) buffer)[col] = (int64_t) (row * 1000 + col - 16000);
                 }
                 break;
 
             case SAMPLEFORMAT_IEEEFP:
                 if (bits_per_sample == 32) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((float *) buffer)[col] = (float) (row + col * 0.5);
                 } else if (bits_per_sample == 64) {
-                    for (int col = 0; col < WIDTH; col++)
+                    for (uint32_t col = 0; col < WIDTH; col++)
                         ((double *) buffer)[col] = (double) (row + col * 0.5);
                 }
                 break;
@@ -974,7 +974,7 @@ error:
 }
 
 /* Helper function to create a multi-image GeoTIFF file with distinct RGB data */
-static int CreateMultiImageGeoTIFF(const char *filename, int num_images)
+static int CreateMultiImageGeoTIFF(const char *filename, uint32_t num_images)
 {
     TIFF *tif = NULL;
 
@@ -983,7 +983,7 @@ static int CreateMultiImageGeoTIFF(const char *filename, int num_images)
         return -1;
     }
 
-    for (int img_idx = 0; img_idx < num_images; img_idx++) {
+    for (uint32_t img_idx = 0; img_idx < num_images; img_idx++) {
         GTIF *gtif = NULL;
 
         if ((gtif = GTIFNew(tif)) == NULL) {
@@ -1030,11 +1030,11 @@ static int CreateMultiImageGeoTIFF(const char *filename, int num_images)
          * Image 2: R=(row*8+100)%256,    G=(col*8+100)%256,    B=((row+col)*4+100)%256
          * etc.
          */
-        int offset = img_idx * 50;
+        uint32_t offset = img_idx * 50;
 
-        for (int row = 0; row < HEIGHT; row++) {
-            for (int col = 0; col < WIDTH; col++) {
-                int idx = col * 3;
+        for (uint32_t row = 0; row < HEIGHT; row++) {
+            for (uint32_t col = 0; col < WIDTH; col++) {
+                uint32_t idx = col * 3;
                 scanline[idx + 0] = (unsigned char) ((row * 8 + offset) % 256);
                 scanline[idx + 1] = (unsigned char) ((col * 8 + offset) % 256);
                 scanline[idx + 2] = (unsigned char) (((row + col) * 4 + offset) % 256);
@@ -1071,7 +1071,7 @@ static int CreateMultiImageGeoTIFF(const char *filename, int num_images)
 int MultiImageReadGeoTIFFTest(void)
 {
     const char *filename = "_tmp_multi_image.tif";
-    const int NUM_IMAGES = 3;
+    const uint32_t NUM_IMAGES = 3;
     hid_t vol_id = H5I_INVALID_HID;
     hid_t fapl_id = H5I_INVALID_HID;
     hid_t file_id = H5I_INVALID_HID;
@@ -1131,7 +1131,7 @@ int MultiImageReadGeoTIFFTest(void)
     }
 
     /* Test reading each image as a separate dataset */
-    for (int img_idx = 0; img_idx < NUM_IMAGES; img_idx++) {
+    for (uint32_t img_idx = 0; img_idx < NUM_IMAGES; img_idx++) {
         char dset_name[32];
         snprintf(dset_name, sizeof(dset_name), "image%d", img_idx);
 
@@ -1177,10 +1177,10 @@ int MultiImageReadGeoTIFFTest(void)
         }
 
         /* Verify the data matches the expected pattern for this image */
-        int offset = img_idx * 50;
-        for (int row = 0; row < HEIGHT; row++) {
-            for (int col = 0; col < WIDTH; col++) {
-                int idx = (row * WIDTH + col) * 3;
+        uint32_t offset = img_idx * 50;
+        for (uint32_t row = 0; row < HEIGHT; row++) {
+            for (uint32_t col = 0; col < WIDTH; col++) {
+                uint32_t idx = (row * WIDTH + col) * 3;
                 unsigned char expected_r = (unsigned char) ((row * 8 + offset) % 256);
                 unsigned char expected_g = (unsigned char) ((col * 8 + offset) % 256);
                 unsigned char expected_b = (unsigned char) (((row + col) * 4 + offset) % 256);

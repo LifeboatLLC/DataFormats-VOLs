@@ -119,4 +119,8 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
 
 herr_t geotiff_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type,
                                     uint64_t *flags);
+
+herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
+                                       H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
+                                       const H5VL_class_t __attribute__((unused)) * *conn_cls);
 #endif /* _geotiff_vol_connector_H */

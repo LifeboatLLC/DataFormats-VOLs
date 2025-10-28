@@ -150,9 +150,9 @@ static const H5VL_class_t geotiff_class_g = {
     },
     {
         /* introscpect_cls */
-        NULL,                        /* get_conn_cls  */
-        NULL,                        /* get_cap_flags */
-        geotiff_introspect_opt_query /* opt_query     */
+        geotiff_introspect_get_conn_cls, /* get_conn_cls  */
+        NULL,                            /* get_cap_flags */
+        geotiff_introspect_opt_query     /* opt_query     */
     },
     {
         /* request_cls */
@@ -1295,10 +1295,9 @@ herr_t geotiff_term_connector(void)
     return ret_value;
 }
 
-static herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
-                                              H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
-                                              const H5VL_class_t __attribute__((unused)) *
-                                                  *conn_cls)
+herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
+                                       H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
+                                       const H5VL_class_t __attribute__((unused)) * *conn_cls)
 {
     herr_t ret_value = SUCCEED;
 
@@ -1328,7 +1327,6 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                              void __attribute__((unused)) * *req)
 {
     herr_t ret_value = SUCCEED;
-    geotiff_file_t *file = NULL;
     const char *link_name = NULL;
 
     /* obj could be file, group, or dataset - we need the file */
@@ -1366,9 +1364,6 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
             assert(iter_args);
             assert(iter_args->idx_p);
-
-            if (*iter_args->idx_p < 0)
-                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "Invalid iteration index");
 
             /* Only iterate if we haven't reached the end */
             if (*iter_args->idx_p > 0) {
