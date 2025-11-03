@@ -1128,10 +1128,65 @@ static herr_t geotiff_read_image_data(geotiff_dataset_t *dset)
 
     image_data = (unsigned char *) dset->data;
 
-    for (row = 0; row < height; row++) {
-        if (TIFFReadScanline(file->tiff, image_data + row * scanline_size, row, 0) < 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL,
-                            "Failed to read scanline %u from TIFF", row);
+    /* Check if this is a tiled or striped TIFF and read accordingly */
+    if (TIFFIsTiled(file->tiff)) {
+        /* Tiled TIFF - read tile by tile */
+        uint32_t tile_width = 0, tile_height = 0;
+        unsigned char *tile_buf = NULL;
+        tsize_t tile_size = 0;
+
+        /* Get tile dimensions */
+        if (!TIFFGetField(file->tiff, TIFFTAG_TILEWIDTH, &tile_width))
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to get tile width from TIFF");
+        if (!TIFFGetField(file->tiff, TIFFTAG_TILELENGTH, &tile_height))
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to get tile height from TIFF");
+
+        tile_size = TIFFTileSize(file->tiff);
+        if (tile_size <= 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Invalid tile size");
+
+        /* Allocate buffer for reading tiles */
+        if ((tile_buf = (unsigned char *) malloc(tile_size)) == NULL)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, FAIL, "Failed to allocate tile buffer");
+
+        /* Read tiles and copy into image buffer */
+        for (uint32_t tile_row = 0; tile_row < height; tile_row += tile_height) {
+            for (uint32_t tile_col = 0; tile_col < width; tile_col += tile_width) {
+                /* Read the tile */
+                if (TIFFReadTile(file->tiff, tile_buf, tile_col, tile_row, 0, 0) < 0) {
+                    free(tile_buf);
+                    FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL,
+                                    "Failed to read tile at row=%u, col=%u", tile_row, tile_col);
+                }
+
+                /* Calculate actual tile dimensions (may be partial at edges) */
+                uint32_t actual_tile_height =
+                    (tile_row + tile_height > height) ? height - tile_row : tile_height;
+                uint32_t actual_tile_width =
+                    (tile_col + tile_width > width) ? width - tile_col : tile_width;
+
+                /* Copy tile data into image buffer, row by row */
+                for (uint32_t ty = 0; ty < actual_tile_height; ty++) {
+                    uint32_t image_row = tile_row + ty;
+                    size_t tile_row_offset = ty * tile_width * samples_per_pixel;
+                    size_t image_row_offset =
+                        image_row * scanline_size + tile_col * samples_per_pixel;
+                    size_t copy_bytes =
+                        actual_tile_width * samples_per_pixel * (bits_per_sample / 8);
+
+                    memcpy(image_data + image_row_offset, tile_buf + tile_row_offset, copy_bytes);
+                }
+            }
+        }
+
+        free(tile_buf);
+    } else {
+        /* Striped TIFF - read scanline by scanline */
+        for (row = 0; row < height; row++) {
+            if (TIFFReadScanline(file->tiff, image_data + row * scanline_size, row, 0) < 0)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL,
+                                "Failed to read scanline %u from TIFF", row);
+        }
     }
 
 done:
