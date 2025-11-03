@@ -87,3 +87,10 @@ set_tests_properties(link_iterate_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIR
 
 add_test(NAME link_iterate_rgb COMMAND test_geotiff link_iterate_rgb)
 set_tests_properties(link_iterate_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+# Tiled TIFF tests
+add_test(NAME tiled_read_grayscale COMMAND test_geotiff tiled_read_grayscale)
+set_tests_properties(tiled_read_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME tiled_read_rgb COMMAND test_geotiff tiled_read_rgb)
+set_tests_properties(tiled_read_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")

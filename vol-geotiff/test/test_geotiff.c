@@ -112,6 +112,13 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "link_iterate_rgb") == 0)
         num_failures += (LinkIterateTest(RGB_FILENAME) != 0 ? 1 : 0);
 
+    /* Tiled TIFF tests */
+    if (run_all || strcmp(test_name, "tiled_read_grayscale") == 0)
+        num_failures += (TiledTIFFReadTest("test_tiled_grayscale.tif", 0) != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "tiled_read_rgb") == 0)
+        num_failures += (TiledTIFFReadTest("test_tiled_rgb.tif", 1) != 0 ? 1 : 0);
+
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
     } else {
@@ -250,4 +257,101 @@ static void SetUpGeoKeys(GTIF *gtif)
     GTIFKeySet(gtif, GTRasterTypeGeoKey, TYPE_SHORT, 1, RasterPixelIsArea);
     GTIFKeySet(gtif, GTCitationGeoKey, TYPE_ASCII, 0, "Test GeoTIFF");
     GTIFKeySet(gtif, GeographicTypeGeoKey, TYPE_SHORT, 1, GCS_WGS_84);
+}
+
+/* Generate a tiled TIFF with a predictable pattern for testing */
+int generate_tiled_tiff(const char *filename, int is_rgb, uint32_t width, uint32_t height,
+                        uint32_t tile_width, uint32_t tile_height)
+{
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
+    unsigned char *tile_buf = NULL;
+    uint32_t samples_per_pixel = is_rgb ? 3 : 1;
+    uint32_t tile_size = tile_width * tile_height * samples_per_pixel;
+    int ret = 0;
+
+    /* Open TIFF for writing */
+    if ((tif = XTIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create tiled TIFF %s\n", filename);
+        return -1;
+    }
+
+    /* Create GeoTIFF handle */
+    if ((gtif = GTIFNew(tif)) == NULL) {
+        printf("Failed to create GeoTIFF handle for %s\n", filename);
+        XTIFFClose(tif);
+        return -1;
+    }
+
+    /* Set TIFF tags */
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, is_rgb ? PHOTOMETRIC_RGB : PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel);
+    TIFFSetField(tif, TIFFTAG_TILEWIDTH, tile_width);
+    TIFFSetField(tif, TIFFTAG_TILELENGTH, tile_height);
+
+    /* Set GeoTIFF metadata */
+    const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+    const double pixscale[3] = {1.0, 1.0, 0.0};
+    TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+    TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+    SetUpGeoKeys(gtif);
+
+    /* Allocate tile buffer */
+    tile_buf = (unsigned char *) malloc(tile_size);
+    if (!tile_buf) {
+        printf("Failed to allocate tile buffer\n");
+        ret = -1;
+        goto cleanup;
+    }
+
+    /* Write tiles with predictable pattern */
+    for (uint32_t row = 0; row < height; row += tile_height) {
+        for (uint32_t col = 0; col < width; col += tile_width) {
+            /* Fill tile with pattern data */
+            uint32_t tile_h = (row + tile_height > height) ? height - row : tile_height;
+            uint32_t tile_w = (col + tile_width > width) ? width - col : tile_width;
+
+            for (uint32_t ty = 0; ty < tile_h; ty++) {
+                for (uint32_t tx = 0; tx < tile_w; tx++) {
+                    uint32_t global_row = row + ty;
+                    uint32_t global_col = col + tx;
+                    uint32_t idx = (ty * tile_width + tx) * samples_per_pixel;
+
+                    if (is_rgb) {
+                        /* RGB pattern: R=row*8, G=col*8, B=(row+col)*4 */
+                        tile_buf[idx + 0] = (unsigned char) ((global_row * 8) % 256);
+                        tile_buf[idx + 1] = (unsigned char) ((global_col * 8) % 256);
+                        tile_buf[idx + 2] = (unsigned char) (((global_row + global_col) * 4) % 256);
+                    } else {
+                        /* Grayscale pattern: value = (row * 8 + col / 4) % 256 */
+                        tile_buf[idx] = (unsigned char) ((global_row * 8 + global_col / 4) % 256);
+                    }
+                }
+            }
+
+            /* Write the tile */
+            if (TIFFWriteTile(tif, tile_buf, col, row, 0, 0) < 0) {
+                printf("Failed to write tile at row=%u, col=%u\n", row, col);
+                ret = -1;
+                goto cleanup;
+            }
+        }
+    }
+
+cleanup:
+    if (tile_buf)
+        free(tile_buf);
+    if (gtif) {
+        GTIFWriteKeys(gtif);
+        GTIFFree(gtif);
+    }
+    if (tif)
+        XTIFFClose(tif);
+
+    return ret;
 }

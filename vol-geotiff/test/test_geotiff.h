@@ -9,6 +9,10 @@
 #define WIDTH 32
 #define HEIGHT 32
 
+/* Helper function to generate tiled TIFFs */
+int generate_tiled_tiff(const char *filename, int is_rgb, uint32_t width, uint32_t height,
+                        uint32_t tile_width, uint32_t tile_height);
+
 /* Plugin-handling tests */
 herr_t test_getters(void);
 herr_t test_multiple_registration(void);
@@ -26,5 +30,6 @@ int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id, const char *me
                            const char *file_type_name);
 int LinkExistsTest(const char *filename);
 int LinkIterateTest(const char *filename);
+int TiledTIFFReadTest(const char *filename, int is_rgb);
 
 #endif // TEST_GEOTIFF_H

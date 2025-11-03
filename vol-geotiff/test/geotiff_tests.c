@@ -24,6 +24,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* Verify that GeoTIFF file open/close operations work properly */
 int OpenGeoTIFFTest(const char *filename)
@@ -606,7 +607,7 @@ static int CreateTypedGeoTIFF(const char *filename, uint16_t sample_format,
                 break;
         }
 
-        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+        if (!TIFFWriteScanline(tif, buffer, (uint32_t) row, 0)) {
             printf("Failed to write scanline %d\n", row);
             free(buffer);
             GTIFFree(gtif);
@@ -1815,6 +1816,217 @@ int LinkIterateTest(const char *filename)
 error:
     H5E_BEGIN_TRY
     {
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test reading tiled TIFF files through the VOL connector */
+int TiledTIFFReadTest(const char *filename, int is_rgb)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    unsigned char *data = NULL;
+    hsize_t dims[3];
+    int ndims;
+    uint32_t width = 512;
+    uint32_t height = 512;
+    uint32_t tile_width = 128;
+    uint32_t tile_height = 128;
+
+    printf("Testing tiled TIFF read (%s) with file: %s  ", is_rgb ? "RGB" : "grayscale", filename);
+
+    /* Check if file exists, if not generate it */
+    if (access(filename, F_OK) != 0) {
+        printf("\nGenerating tiled TIFF file...\n");
+        if (generate_tiled_tiff(filename, is_rgb, width, height, tile_width, tile_height) != 0) {
+            printf("Failed to generate tiled TIFF file\n");
+            goto error;
+        }
+    }
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Open the image dataset */
+    if ((dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open image dataset\n");
+        goto error;
+    }
+
+    /* Get dataspace */
+    if ((space_id = H5Dget_space(dset_id)) < 0) {
+        printf("Failed to get dataspace\n");
+        goto error;
+    }
+
+    /* Get dimensions */
+    if ((ndims = H5Sget_simple_extent_ndims(space_id)) < 0) {
+        printf("Failed to get number of dimensions\n");
+        goto error;
+    }
+
+    if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) {
+        printf("Failed to get dimensions\n");
+        goto error;
+    }
+
+    /* Verify dimensions */
+    if (is_rgb) {
+        if (ndims != 3 || dims[0] != height || dims[1] != width || dims[2] != 3) {
+            printf("VERIFICATION FAILED: Expected dimensions %ux%ux3, got ", height, width);
+            for (int i = 0; i < ndims; i++) {
+                printf("%llu%s", (unsigned long long) dims[i], (i < ndims - 1) ? "x" : "");
+            }
+            printf("\n");
+            goto error;
+        }
+    } else {
+        if (ndims != 2 || dims[0] != height || dims[1] != width) {
+            printf("VERIFICATION FAILED: Expected dimensions %ux%u, got ", height, width);
+            for (int i = 0; i < ndims; i++) {
+                printf("%llu%s", (unsigned long long) dims[i], (i < ndims - 1) ? "x" : "");
+            }
+            printf("\n");
+            goto error;
+        }
+    }
+
+    /* Allocate buffer and read data */
+    size_t data_size = is_rgb ? (width * height * 3) : (width * height);
+    data = (unsigned char *) malloc(data_size);
+    if (!data) {
+        printf("Failed to allocate read buffer\n");
+        goto error;
+    }
+
+    if (H5Dread(dset_id, H5T_NATIVE_UCHAR, H5S_ALL, H5S_ALL, H5P_DEFAULT, data) < 0) {
+        printf("Failed to read dataset\n");
+        goto error;
+    }
+
+    /* Verify pixel data matches expected pattern (sample a few pixels) */
+    int verification_failures = 0;
+    for (uint32_t row = 0; row < height && verification_failures < 5; row += 64) {
+        for (uint32_t col = 0; col < width && verification_failures < 5; col += 64) {
+            if (is_rgb) {
+                /* RGB pattern: R=row*8, G=col*8, B=(row+col)*4 */
+                size_t idx = (row * width + col) * 3;
+                unsigned char expected_r = (unsigned char) ((row * 8) % 256);
+                unsigned char expected_g = (unsigned char) ((col * 8) % 256);
+                unsigned char expected_b = (unsigned char) (((row + col) * 4) % 256);
+                unsigned char actual_r = data[idx + 0];
+                unsigned char actual_g = data[idx + 1];
+                unsigned char actual_b = data[idx + 2];
+
+                if (actual_r != expected_r || actual_g != expected_g || actual_b != expected_b) {
+                    printf("VERIFICATION FAILED: Pixel[%u,%u] expected RGB(%u,%u,%u), got "
+                           "RGB(%u,%u,%u)\n",
+                           row, col, expected_r, expected_g, expected_b, actual_r, actual_g,
+                           actual_b);
+                    verification_failures++;
+                }
+            } else {
+                /* Grayscale pattern: value = (row * 8 + col / 4) % 256 */
+                size_t idx = row * width + col;
+                unsigned char expected = (unsigned char) ((row * 8 + col / 4) % 256);
+                unsigned char actual = data[idx];
+                if (actual != expected) {
+                    printf("VERIFICATION FAILED: Pixel[%u,%u] expected %u, got %u\n", row, col,
+                           expected, actual);
+                    verification_failures++;
+                }
+            }
+        }
+    }
+
+    if (verification_failures > 0) {
+        goto error;
+    }
+
+    /* Clean up - check return values */
+    free(data);
+    data = NULL;
+
+    if (H5Sclose(space_id) < 0) {
+        printf("Failed to close dataspace\n");
+        goto error;
+    }
+    space_id = H5I_INVALID_HID;
+
+    if (H5Dclose(dset_id) < 0) {
+        printf("Failed to close dataset\n");
+        goto error;
+    }
+    dset_id = H5I_INVALID_HID;
+
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    file_id = H5I_INVALID_HID;
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    /* Clean up in reverse order - no error checks */
+    if (data)
+        free(data);
+    H5E_BEGIN_TRY
+    {
+        H5Sclose(space_id);
+        H5Dclose(dset_id);
         H5Fclose(file_id);
         H5Pclose(fapl_id);
         if (vol_id != H5I_INVALID_HID)
