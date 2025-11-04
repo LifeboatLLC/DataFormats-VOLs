@@ -112,6 +112,9 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "link_iterate_rgb") == 0)
         num_failures += (LinkIterateTest(RGB_FILENAME) != 0 ? 1 : 0);
 
+    if (run_all || strcmp(test_name, "unsupported_features") == 0)
+        num_failures += (UnsupportedFeaturesTest() != 0 ? 1 : 0);
+
     if (run_all || strcmp(test_name, "group_get_info") == 0)
         num_failures += (GroupGetInfoTest() != 0 ? 1 : 0);
 

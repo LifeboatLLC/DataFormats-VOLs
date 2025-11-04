@@ -1892,6 +1892,241 @@ error:
     return 1;
 }
 
+/* Test that unsupported TIFF features are properly rejected */
+int UnsupportedFeaturesTest(void)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    const char *planar_separate_file = "_tmp_planar_separate.tif";
+    const char *palette_file = "_tmp_palette.tif";
+    const char *nonbyte_aligned_file = "_tmp_4bit.tif";
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
+
+    printf("Testing rejection of unsupported TIFF features  ");
+
+    /* Test 1: Create a TIFF with PLANARCONFIG_SEPARATE (RGB planes stored separately) */
+    if ((tif = XTIFFOpen(planar_separate_file, "w")) != NULL) {
+        if ((gtif = GTIFNew(tif)) != NULL) {
+            TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+            TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+            TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+            TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+            TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_SEPARATE);
+            TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+            TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 3);
+            TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+            const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+            const double pixscale[3] = {1.0, 1.0, 0.0};
+            TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+            TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+            SetUpGeoKeys(gtif);
+
+            /* Write dummy data for each plane */
+            unsigned char buffer[WIDTH];
+            memset(buffer, 128, WIDTH);
+            for (int plane = 0; plane < 3; plane++) {
+                for (uint32_t row = 0; row < HEIGHT; row++) {
+                    TIFFWriteScanline(tif, buffer, row, (uint16_t) plane);
+                }
+            }
+
+            GTIFWriteKeys(gtif);
+            GTIFFree(gtif);
+        }
+        XTIFFClose(tif);
+    }
+
+    /* Test 2: Create a TIFF with palette color (unsupported photometric) */
+    if ((tif = XTIFFOpen(palette_file, "w")) != NULL) {
+        if ((gtif = GTIFNew(tif)) != NULL) {
+            TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+            TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+            TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+            TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_PALETTE);
+            TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+            TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+            TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+            TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+            /* Set up a dummy color map */
+            uint16_t colormap[3][256];
+            for (int i = 0; i < 256; i++) {
+                colormap[0][i] = (uint16_t) (i << 8);
+                colormap[1][i] = (uint16_t) (i << 8);
+                colormap[2][i] = (uint16_t) (i << 8);
+            }
+            TIFFSetField(tif, TIFFTAG_COLORMAP, colormap[0], colormap[1], colormap[2]);
+
+            const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+            const double pixscale[3] = {1.0, 1.0, 0.0};
+            TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+            TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+            SetUpGeoKeys(gtif);
+
+            unsigned char buffer[WIDTH];
+            memset(buffer, 0, WIDTH);
+            for (uint32_t row = 0; row < HEIGHT; row++) {
+                TIFFWriteScanline(tif, buffer, row, 0);
+            }
+
+            GTIFWriteKeys(gtif);
+            GTIFFree(gtif);
+        }
+        XTIFFClose(tif);
+    }
+
+    /* Test 3: Create a TIFF with 4-bit samples (non-byte-aligned) */
+    if ((tif = XTIFFOpen(nonbyte_aligned_file, "w")) != NULL) {
+        if ((gtif = GTIFNew(tif)) != NULL) {
+            TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+            TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+            TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+            TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+            TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+            TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 4);
+            TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+            TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+            const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+            const double pixscale[3] = {1.0, 1.0, 0.0};
+            TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+            TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+            SetUpGeoKeys(gtif);
+
+            /* 4-bit data: 2 pixels per byte */
+            unsigned char buffer[WIDTH / 2];
+            memset(buffer, 0x55, WIDTH / 2);
+            for (uint32_t row = 0; row < HEIGHT; row++) {
+                TIFFWriteScanline(tif, buffer, row, 0);
+            }
+
+            GTIFWriteKeys(gtif);
+            GTIFFree(gtif);
+        }
+        XTIFFClose(tif);
+    }
+
+    /* Now test that opening these files fails with appropriate errors */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Test that PLANARCONFIG_SEPARATE is rejected */
+    if ((file_id = H5Fopen(planar_separate_file, H5F_ACC_RDONLY, fapl_id)) >= 0) {
+        H5E_BEGIN_TRY
+        {
+            dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT);
+        }
+        H5E_END_TRY;
+
+        if (dset_id >= 0) {
+            printf("VERIFICATION FAILED: PLANARCONFIG_SEPARATE should have been rejected\n");
+            H5Dclose(dset_id);
+            H5Fclose(file_id);
+            goto error;
+        }
+        H5Fclose(file_id);
+        file_id = H5I_INVALID_HID;
+    }
+
+    /* Test that PHOTOMETRIC_PALETTE is rejected */
+    if ((file_id = H5Fopen(palette_file, H5F_ACC_RDONLY, fapl_id)) >= 0) {
+        H5E_BEGIN_TRY
+        {
+            dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT);
+        }
+        H5E_END_TRY;
+
+        if (dset_id >= 0) {
+            printf("VERIFICATION FAILED: PHOTOMETRIC_PALETTE should have been rejected\n");
+            H5Dclose(dset_id);
+            H5Fclose(file_id);
+            goto error;
+        }
+        H5Fclose(file_id);
+        file_id = H5I_INVALID_HID;
+    }
+
+    /* Test that non-byte-aligned bit depths are rejected */
+    if ((file_id = H5Fopen(nonbyte_aligned_file, H5F_ACC_RDONLY, fapl_id)) >= 0) {
+        H5E_BEGIN_TRY
+        {
+            dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT);
+        }
+        H5E_END_TRY;
+
+        if (dset_id >= 0) {
+            printf("VERIFICATION FAILED: 4-bit samples should have been rejected\n");
+            H5Dclose(dset_id);
+            H5Fclose(file_id);
+            goto error;
+        }
+        H5Fclose(file_id);
+        file_id = H5I_INVALID_HID;
+    }
+
+    /* Clean up */
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+    vol_id = H5I_INVALID_HID;
+
+    /* Delete temporary test files */
+    remove(planar_separate_file);
+    remove(palette_file);
+    remove(nonbyte_aligned_file);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    remove(planar_separate_file);
+    remove(palette_file);
+    remove(nonbyte_aligned_file);
+
+    printf("FAILED\n");
+    return 1;
+}
+
 /* Test H5Gget_info on single and multi-image GeoTIFF files */
 int GroupGetInfoTest(void)
 {

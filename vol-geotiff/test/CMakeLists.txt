@@ -88,6 +88,9 @@ set_tests_properties(link_iterate_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIR
 add_test(NAME link_iterate_rgb COMMAND test_geotiff link_iterate_rgb)
 set_tests_properties(link_iterate_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
+add_test(NAME unsupported_features COMMAND test_geotiff unsupported_features)
+set_tests_properties(unsupported_features PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
 add_test(NAME group_get_info COMMAND test_geotiff group_get_info)
 set_tests_properties(group_get_info PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 

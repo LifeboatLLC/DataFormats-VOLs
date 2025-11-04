@@ -448,6 +448,57 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLEFORMAT, &sample_format);
 
+    /* Validate TIFF configuration - check for unsupported features */
+    {
+        uint16_t planar_config = 0;
+        uint16_t photometric = 0;
+        uint16_t *extra_samples = NULL;
+        uint16_t extra_sample_count = 0;
+
+        /* Check planar configuration - we only support contiguous (interleaved) data */
+        TIFFGetFieldDefaulted(file->tiff, TIFFTAG_PLANARCONFIG, &planar_config);
+        if (planar_config != PLANARCONFIG_CONTIG)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                            "Unsupported planar configuration: %d (only PLANARCONFIG_CONTIG is "
+                            "supported)",
+                            planar_config);
+
+        /* Check photometric interpretation - validate we support this color space */
+        if (TIFFGetField(file->tiff, TIFFTAG_PHOTOMETRIC, &photometric)) {
+            if (photometric != PHOTOMETRIC_MINISBLACK && photometric != PHOTOMETRIC_RGB &&
+                photometric != PHOTOMETRIC_MINISWHITE)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                                "Unsupported photometric interpretation: %d (only MINISBLACK, "
+                                "MINISWHITE, and RGB "
+                                "are supported)",
+                                photometric);
+        }
+
+        /* Check for extra samples that would complicate interpretation */
+        if (TIFFGetField(file->tiff, TIFFTAG_EXTRASAMPLES, &extra_sample_count, &extra_samples)) {
+            /* Allow alpha channel (extra_sample_count == 1) for RGBA, but warn about others */
+            if (samples_per_pixel == 4 && extra_sample_count == 1) {
+                /* This is likely RGBA with alpha channel - acceptable */
+                if (extra_samples[0] != EXTRASAMPLE_ASSOCALPHA &&
+                    extra_samples[0] != EXTRASAMPLE_UNASSALPHA)
+                    FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                                    "Unsupported extra sample type: %d (expected alpha channel)",
+                                    extra_samples[0]);
+            } else if (extra_sample_count > 0) {
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                                "Unsupported configuration: %d extra samples found (only alpha "
+                                "channel for RGBA is supported)",
+                                extra_sample_count);
+            }
+        }
+
+        /* Validate bits per sample is byte-aligned */
+        if (bits_per_sample % 8 != 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                            "Unsupported bits per sample: %d (must be a multiple of 8)",
+                            bits_per_sample);
+    }
+
     if (geotiff_get_hdf5_type_from_tiff(sample_format, bits_per_sample, &dset->type_id) < 0)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
                         "Failed to get HDF5 datatype from TIFF sample format");
