@@ -851,11 +851,49 @@ done:
     return ret_value;
 }
 
-herr_t geotiff_group_get(void __attribute__((unused)) * obj,
-                         H5VL_group_get_args_t __attribute__((unused)) * args,
+herr_t geotiff_group_get(void *obj, H5VL_group_get_args_t *args,
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    return 0;
+    herr_t ret_value = SUCCEED;
+
+    if (!args)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
+
+    switch (args->op_type) {
+        case H5VL_GROUP_GET_INFO: {
+            geotiff_group_t *grp = (geotiff_group_t *) obj;
+            H5G_info_t *ginfo = args->args.get_info.ginfo;
+            uint16_t num_dirs = 0;
+
+            if (!grp || !ginfo)
+                FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid group or info pointer");
+
+            if (!grp->file || !grp->file->tiff)
+                FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid file object");
+
+            /* Get number of TIFF directories (images) in the file */
+            num_dirs = TIFFNumberOfDirectories(grp->file->tiff);
+
+            /* Fill in group info structure */
+            ginfo->storage_type = H5G_STORAGE_TYPE_COMPACT;
+            ginfo->nlinks = num_dirs; /* Number of image links (image0, image1, ...) */
+            ginfo->max_corder = -1;   /* No creation order tracking */
+            ginfo->mounted = false;   /* No files mounted on this group */
+
+            break;
+        }
+
+        case H5VL_GROUP_GET_GCPL: {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "GCPL get operation not supported");
+        }
+
+        default: {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "unknown group get operation");
+        }
+    }
+
+done:
+    return ret_value;
 }
 
 herr_t geotiff_group_close(void *grp, hid_t __attribute__((unused)) dxpl_id,
@@ -1146,7 +1184,7 @@ static herr_t geotiff_read_image_data(geotiff_dataset_t *dset)
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Invalid tile size");
 
         /* Allocate buffer for reading tiles */
-        if ((tile_buf = (unsigned char *) malloc(tile_size)) == NULL)
+        if ((tile_buf = (unsigned char *) malloc((size_t) tile_size)) == NULL)
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, FAIL, "Failed to allocate tile buffer");
 
         /* Read tiles and copy into image buffer */
@@ -1170,7 +1208,7 @@ static herr_t geotiff_read_image_data(geotiff_dataset_t *dset)
                     uint32_t image_row = tile_row + ty;
                     size_t tile_row_offset = ty * tile_width * samples_per_pixel;
                     size_t image_row_offset =
-                        image_row * scanline_size + tile_col * samples_per_pixel;
+                        (size_t) image_row * (size_t) scanline_size + tile_col * samples_per_pixel;
                     size_t copy_bytes =
                         actual_tile_width * samples_per_pixel * (bits_per_sample / 8);
 

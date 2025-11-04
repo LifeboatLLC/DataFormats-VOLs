@@ -112,6 +112,9 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "link_iterate_rgb") == 0)
         num_failures += (LinkIterateTest(RGB_FILENAME) != 0 ? 1 : 0);
 
+    if (run_all || strcmp(test_name, "group_get_info") == 0)
+        num_failures += (GroupGetInfoTest() != 0 ? 1 : 0);
+
     /* Tiled TIFF tests */
     if (run_all || strcmp(test_name, "tiled_read_grayscale") == 0)
         num_failures += (TiledTIFFReadTest("test_tiled_grayscale.tif", 0) != 0 ? 1 : 0);

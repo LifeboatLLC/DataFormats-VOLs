@@ -30,6 +30,7 @@ int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id, const char *me
                            const char *file_type_name);
 int LinkExistsTest(const char *filename);
 int LinkIterateTest(const char *filename);
+int GroupGetInfoTest(void);
 int TiledTIFFReadTest(const char *filename, int is_rgb);
 
 #endif // TEST_GEOTIFF_H

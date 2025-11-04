@@ -26,6 +26,71 @@
 #include <string.h>
 #include <unistd.h>
 
+/* Helper function to set up GeoTIFF keys */
+static void SetUpGeoKeys(GTIF *gtif)
+{
+    GTIFKeySet(gtif, GTModelTypeGeoKey, TYPE_SHORT, 1, ModelGeographic);
+    GTIFKeySet(gtif, GTRasterTypeGeoKey, TYPE_SHORT, 1, RasterPixelIsArea);
+    GTIFKeySet(gtif, GTCitationGeoKey, TYPE_ASCII, 0, "Test GeoTIFF");
+    GTIFKeySet(gtif, GeographicTypeGeoKey, TYPE_SHORT, 1, GCS_WGS_84);
+}
+
+/* Helper function to create a grayscale GeoTIFF file */
+static int CreateGrayscaleGeoTIFF(const char *filename)
+{
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
+    unsigned char buffer[WIDTH];
+
+    if ((tif = XTIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create %s\n", filename);
+        return -1;
+    }
+
+    if ((gtif = GTIFNew(tif)) == NULL) {
+        printf("Failed to create GeoTIFF handle for %s\n", filename);
+        TIFFClose(tif);
+        return -1;
+    }
+
+    /* Set up TIFF tags */
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+    /* Tie points and pixel scale */
+    const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+    const double pixscale[3] = {1.0, 1.0, 0.0};
+    TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+    TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+
+    SetUpGeoKeys(gtif);
+
+    /* Create a gradient pattern: value = (row * 8 + col / 4) % 256 */
+    for (uint32_t row = 0; row < HEIGHT; row++) {
+        for (uint32_t col = 0; col < WIDTH; col++) {
+            buffer[col] = (unsigned char) ((row * 8 + col / 4) % 256);
+        }
+        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+            printf("Failed to write scanline %d\n", row);
+            GTIFFree(gtif);
+            TIFFClose(tif);
+            return -1;
+        }
+    }
+
+    GTIFWriteKeys(gtif);
+    GTIFFree(gtif);
+    XTIFFClose(tif);
+
+    return 0;
+}
+
 /* Verify that GeoTIFF file open/close operations work properly */
 int OpenGeoTIFFTest(const char *filename)
 {
@@ -1822,6 +1887,178 @@ error:
             H5VLunregister_connector(vol_id);
     }
     H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test H5Gget_info on single and multi-image GeoTIFF files */
+int GroupGetInfoTest(void)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t group_id = H5I_INVALID_HID;
+    H5G_info_t group_info;
+    const char *single_image_file = "_tmp_single_image_groupinfo.tif";
+    const char *multi_image_file = "_tmp_multi_image_groupinfo.tif";
+    const uint32_t NUM_IMAGES = 3;
+
+    printf("Testing H5Gget_info on GeoTIFF files  ");
+
+    /* Create single-image test file */
+    if (CreateGrayscaleGeoTIFF(single_image_file) != 0) {
+        printf("Failed to create single-image test file\n");
+        goto error;
+    }
+
+    /* Create multi-image test file */
+    if (CreateMultiImageGeoTIFF(multi_image_file, NUM_IMAGES) != 0) {
+        printf("Failed to create multi-image test file\n");
+        goto error;
+    }
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Test 1: Single-image file - should report 1 link (image0) */
+    if ((file_id = H5Fopen(single_image_file, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open single-image GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Open root group */
+    if ((group_id = H5Gopen2(file_id, "/", H5P_DEFAULT)) < 0) {
+        printf("Failed to open root group in single-image file\n");
+        goto error;
+    }
+
+    /* Get group info */
+    if (H5Gget_info(group_id, &group_info) < 0) {
+        printf("Failed to get group info for single-image file\n");
+        goto error;
+    }
+
+    /* Verify single-image file has 1 link */
+    if (group_info.nlinks != 1) {
+        printf("VERIFICATION FAILED: Single-image file expected 1 link, got %llu\n",
+               (unsigned long long) group_info.nlinks);
+        goto error;
+    }
+
+    /* Close group and file */
+    if (H5Gclose(group_id) < 0) {
+        printf("Failed to close group in single-image file\n");
+        goto error;
+    }
+    group_id = H5I_INVALID_HID;
+
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close single-image file\n");
+        goto error;
+    }
+    file_id = H5I_INVALID_HID;
+
+    /* Test 2: Multi-image file - should report NUM_IMAGES links (image0, image1, image2, ...) */
+    if ((file_id = H5Fopen(multi_image_file, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open multi-image GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Open root group */
+    if ((group_id = H5Gopen2(file_id, "/", H5P_DEFAULT)) < 0) {
+        printf("Failed to open root group in multi-image file\n");
+        goto error;
+    }
+
+    /* Get group info */
+    if (H5Gget_info(group_id, &group_info) < 0) {
+        printf("Failed to get group info for multi-image file\n");
+        goto error;
+    }
+
+    /* Verify multi-image file has NUM_IMAGES links */
+    if (group_info.nlinks != NUM_IMAGES) {
+        printf("VERIFICATION FAILED: Multi-image file expected %u links, got %llu\n", NUM_IMAGES,
+               (unsigned long long) group_info.nlinks);
+        goto error;
+    }
+
+    /* Clean up */
+    if (H5Gclose(group_id) < 0) {
+        printf("Failed to close group in multi-image file\n");
+        goto error;
+    }
+    group_id = H5I_INVALID_HID;
+
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close multi-image file\n");
+        goto error;
+    }
+    file_id = H5I_INVALID_HID;
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+    vol_id = H5I_INVALID_HID;
+
+    /* Delete temporary test files */
+    if (remove(single_image_file) != 0) {
+        printf("WARNING: Failed to delete temporary file %s\n", single_image_file);
+    }
+    if (remove(multi_image_file) != 0) {
+        printf("WARNING: Failed to delete temporary file %s\n", multi_image_file);
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    /* Clean up on error */
+    H5E_BEGIN_TRY
+    {
+        H5Gclose(group_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    /* Attempt to delete temporary files */
+    remove(single_image_file);
+    remove(multi_image_file);
 
     printf("FAILED\n");
     return 1;
