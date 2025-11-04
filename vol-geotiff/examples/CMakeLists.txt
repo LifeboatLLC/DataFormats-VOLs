@@ -25,10 +25,5 @@ else()
 endif()
 
 # Install the example programs
-install(TARGETS simple_demo
+install(TARGETS simple_demo gnuplot_demo
         RUNTIME DESTINATION bin)
-
-# Install the demo scripts
-install(FILES visualize_demo.py run_demo.sh
-        DESTINATION share/geotiff-vol/examples
-        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
