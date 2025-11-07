@@ -5,14 +5,13 @@
 [![Documentation](https://github.com/LifeBoatLLC/DataFormats-VOLS/workflows/Documentation/badge.svg)](https://github.com/LifeBoatLLC/DataFormats-VOLS/actions/workflows/docs.yml)
 [![License](https://img.shields.io/badge/License-Lifeboat-blue.svg)](COPYING)
 
-This project implements an HDF5 Virtual Object Layer (VOL) connector that enables read-only operations on GeoTIFF files through HDF5 tools and netCDF-C. This allows users to access GeoTIFF data using familiar HDF5 tools like h5dump, h5ls, and netCDF tools like ncdump.
+This project implements an HDF5 Virtual Object Layer (VOL) connector that enables read-only operations on GeoTIFF files through HDF5.
 
 ## Features
 
 - **GeoTIFF File Access**: Read GeoTIFF files through the HDF5 API
 - **Image Data Access**: Access raster image data as HDF5 datasets
-- **HDF5 Tool Compatibility**: Use h5dump, h5ls, h5stat with GeoTIFF files
-- **netCDF-C Compatibility**: Use ncdump and other netCDF tools with GeoTIFF files
+- **(TBD) HDF5 Tool Compatibility**: Use h5dump, h5ls, h5stat with GeoTIFF files
 
 - **(TBD) Metadata Extraction**: Parse and expose GeoTIFF spatial metadata
 
@@ -100,40 +99,6 @@ Set the HDF5 plugin path to include the built connector:
 export HDF5_PLUGIN_PATH=/path/to/DataFormats-VOLS/build/src
 ```
 
-### Using with HDF5 Tools
-
-List contents of a GeoTIFF file:
-```bash
-h5ls --vol-name=geotiff_vol_connector sample.tif
-```
-
-Dump GeoTIFF structure and data:
-```bash
-h5dump --vol-name=geotiff_vol_connector sample.tif
-```
-
-Get statistics:
-```bash
-h5stat --vol-name=geotiff_vol_connector sample.tif
-```
-
-### Using with netCDF Tools
-
-Set the VOL connector environment variable:
-```bash
-export HDF5_VOL_CONNECTOR=geotiff_vol_connector
-```
-
-Dump header information:
-```bash
-ncdump -h sample.tif
-```
-
-Extract image data:
-```bash
-ncdump -v image sample.tif
-```
-
 ### Programming Interface
 
 ```c
@@ -193,15 +158,13 @@ int main() {
 The project includes several test programs:
 
 1. **test_runner**: GeoTIFF-specific functionality tests, run by make test/ctest
-2. (WIP) **test_ncdump**: netCDF tools integration test
-3. (WIP) **test_h5tools.sh**: HDF5 tools integration test
+2. (WIP) **test_h5tools.sh**: HDF5 tools integration test
 
 Or run tests with a sample GeoTIFF file:
 ```bash
 cd test
 ./test_runner 
 (WIP) ./test_h5tools.sh <GeoTIFF filename>
-(WIP) ./test_ncdump.sh <GeoTIFF filename>
 ```
 
 ## License
