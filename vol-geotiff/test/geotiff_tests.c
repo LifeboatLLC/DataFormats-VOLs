@@ -2043,8 +2043,6 @@ int UnsupportedFeaturesTest(void)
 
         if (dset_id >= 0) {
             printf("VERIFICATION FAILED: PLANARCONFIG_SEPARATE should have been rejected\n");
-            H5Dclose(dset_id);
-            H5Fclose(file_id);
             goto error;
         }
         H5Fclose(file_id);
@@ -2060,8 +2058,6 @@ int UnsupportedFeaturesTest(void)
 
         if (dset_id >= 0) {
             printf("VERIFICATION FAILED: PHOTOMETRIC_PALETTE should have been rejected\n");
-            H5Dclose(dset_id);
-            H5Fclose(file_id);
             goto error;
         }
         H5Fclose(file_id);
@@ -2077,8 +2073,6 @@ int UnsupportedFeaturesTest(void)
 
         if (dset_id >= 0) {
             printf("VERIFICATION FAILED: 4-bit samples should have been rejected\n");
-            H5Dclose(dset_id);
-            H5Fclose(file_id);
             goto error;
         }
         H5Fclose(file_id);
