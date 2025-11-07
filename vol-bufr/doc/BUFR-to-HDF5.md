@@ -1,6 +1,6 @@
 # BUFR to HDF5 Mapping Specification
 
-This document details the conceptual mapping between the **BUFR (Binary Universal Form for the Representation of meteorological data)** format and the **HDF5 (Hierarchical Data Format, Version 5)**, often implemented according to **NetCDF-4/CF conventions**.
+This document details the conceptual mapping between the **BUFR (Binary Universal Form for the Representation of meteorological data)** format and the **HDF5 (Hierarchical Data Format, Version 5)**.
 
 ---
 
