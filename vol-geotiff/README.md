@@ -192,14 +192,14 @@ int main() {
 
 The project includes several test programs:
 
-1. **test_geotiff**: GeoTIFF-specific functionality tests, run by make test/ctest
+1. **test_runner**: GeoTIFF-specific functionality tests, run by make test/ctest
 2. (WIP) **test_ncdump**: netCDF tools integration test
 3. (WIP) **test_h5tools.sh**: HDF5 tools integration test
 
 Or run tests with a sample GeoTIFF file:
 ```bash
 cd test
-./test_geotiff 
+./test_runner 
 (WIP) ./test_h5tools.sh <GeoTIFF filename>
 (WIP) ./test_ncdump.sh <GeoTIFF filename>
 ```

@@ -16,7 +16,7 @@
  */
 
 #include "geotiff_vol_connector.h"
-#include "test_geotiff.h"
+#include "test_runner.h"
 #include <H5PLpublic.h>
 #include <geotiff/geotiffio.h>
 #include <geotiff/xtiffio.h>
@@ -24,6 +24,72 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
+/* Helper function to set up GeoTIFF keys */
+static void SetUpGeoKeys(GTIF *gtif)
+{
+    GTIFKeySet(gtif, GTModelTypeGeoKey, TYPE_SHORT, 1, ModelGeographic);
+    GTIFKeySet(gtif, GTRasterTypeGeoKey, TYPE_SHORT, 1, RasterPixelIsArea);
+    GTIFKeySet(gtif, GTCitationGeoKey, TYPE_ASCII, 0, "Test GeoTIFF");
+    GTIFKeySet(gtif, GeographicTypeGeoKey, TYPE_SHORT, 1, GCS_WGS_84);
+}
+
+/* Helper function to create a grayscale GeoTIFF file */
+static int CreateGrayscaleGeoTIFF(const char *filename)
+{
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
+    unsigned char buffer[WIDTH];
+
+    if ((tif = XTIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create %s\n", filename);
+        return -1;
+    }
+
+    if ((gtif = GTIFNew(tif)) == NULL) {
+        printf("Failed to create GeoTIFF handle for %s\n", filename);
+        TIFFClose(tif);
+        return -1;
+    }
+
+    /* Set up TIFF tags */
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+    /* Tie points and pixel scale */
+    const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+    const double pixscale[3] = {1.0, 1.0, 0.0};
+    TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+    TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+
+    SetUpGeoKeys(gtif);
+
+    /* Create a gradient pattern: value = (row * 8 + col / 4) % 256 */
+    for (uint32_t row = 0; row < HEIGHT; row++) {
+        for (uint32_t col = 0; col < WIDTH; col++) {
+            buffer[col] = (unsigned char) ((row * 8 + col / 4) % 256);
+        }
+        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+            printf("Failed to write scanline %u\n", row);
+            GTIFFree(gtif);
+            TIFFClose(tif);
+            return -1;
+        }
+    }
+
+    GTIFWriteKeys(gtif);
+    GTIFFree(gtif);
+    XTIFFClose(tif);
+
+    return 0;
+}
 
 /* Verify that GeoTIFF file open/close operations work properly */
 int OpenGeoTIFFTest(const char *filename)
@@ -606,7 +672,7 @@ static int CreateTypedGeoTIFF(const char *filename, uint16_t sample_format,
                 break;
         }
 
-        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+        if (!TIFFWriteScanline(tif, buffer, (uint32_t) row, 0)) {
             printf("Failed to write scanline %d\n", row);
             free(buffer);
             GTIFFree(gtif);
@@ -973,6 +1039,412 @@ error:
     return 1;
 }
 
+/* Helper function to create a multi-image GeoTIFF file with distinct RGB data */
+static int CreateMultiImageGeoTIFF(const char *filename, uint32_t num_images)
+{
+    TIFF *tif = NULL;
+
+    if ((tif = XTIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create multi-image GeoTIFF %s\n", filename);
+        return -1;
+    }
+
+    for (uint32_t img_idx = 0; img_idx < num_images; img_idx++) {
+        GTIF *gtif = NULL;
+
+        if ((gtif = GTIFNew(tif)) == NULL) {
+            printf("Failed to create GeoTIFF handle for image %u\n", img_idx);
+            TIFFClose(tif);
+            return -1;
+        }
+
+        /* Set up TIFF tags for RGB image */
+        TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+        TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+        TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+        TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+        TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+        TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+        TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 3);
+        TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+        /* Tie points and pixel scale */
+        const double tiepoints[6] = {0, 0, 0, 100.0 + img_idx * 10, 50.0 + img_idx * 10, 0.0};
+        const double pixscale[3] = {1.0, 1.0, 0.0};
+        TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+        TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+
+        /* Set up geo keys */
+        GTIFKeySet(gtif, GTModelTypeGeoKey, TYPE_SHORT, 1, ModelGeographic);
+        GTIFKeySet(gtif, GTRasterTypeGeoKey, TYPE_SHORT, 1, RasterPixelIsArea);
+        GTIFKeySet(gtif, GTCitationGeoKey, TYPE_ASCII, 0, "Multi-image Test GeoTIFF");
+        GTIFKeySet(gtif, GeographicTypeGeoKey, TYPE_SHORT, 1, GCS_WGS_84);
+
+        /* Allocate buffer for one scanline (row) */
+        size_t scanline_size = WIDTH * 3;
+        unsigned char *scanline = (unsigned char *) malloc(scanline_size);
+        if (!scanline) {
+            printf("Failed to allocate scanline buffer for image %u\n", img_idx);
+            GTIFFree(gtif);
+            TIFFClose(tif);
+            return -1;
+        }
+
+        /* Write RGB data with pattern unique to this image
+         * Image 0: R=(row*8)%256,        G=(col*8)%256,        B=((row+col)*4)%256
+         * Image 1: R=(row*8+50)%256,     G=(col*8+50)%256,     B=((row+col)*4+50)%256
+         * Image 2: R=(row*8+100)%256,    G=(col*8+100)%256,    B=((row+col)*4+100)%256
+         * etc.
+         */
+        uint32_t offset = img_idx * 50;
+
+        for (uint32_t row = 0; row < HEIGHT; row++) {
+            for (uint32_t col = 0; col < WIDTH; col++) {
+                uint32_t idx = col * 3;
+                scanline[idx + 0] = (unsigned char) ((row * 8 + offset) % 256);
+                scanline[idx + 1] = (unsigned char) ((col * 8 + offset) % 256);
+                scanline[idx + 2] = (unsigned char) (((row + col) * 4 + offset) % 256);
+            }
+
+            if (!TIFFWriteScanline(tif, scanline, row, 0)) {
+                printf("Failed to write scanline %u for image %u\n", row, img_idx);
+                free(scanline);
+                GTIFFree(gtif);
+                TIFFClose(tif);
+                return -1;
+            }
+        }
+
+        free(scanline);
+        GTIFWriteKeys(gtif);
+        GTIFFree(gtif);
+
+        /* Write directory for this image (except for the last one) */
+        if (img_idx < num_images - 1) {
+            if (!TIFFWriteDirectory(tif)) {
+                printf("Failed to write directory for image %u\n", img_idx);
+                TIFFClose(tif);
+                return -1;
+            }
+        }
+    }
+
+    XTIFFClose(tif);
+    return 0;
+}
+
+/* Test reading multiple images from a single GeoTIFF file */
+int MultiImageReadGeoTIFFTest(void)
+{
+    const char *filename = "_tmp_multi_image.tif";
+    const uint32_t NUM_IMAGES = 3;
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hsize_t dims[3];
+    int ndims;
+    unsigned char *data = NULL;
+    size_t data_size;
+
+    printf("Testing multi-image GeoTIFF reading  ");
+
+    /* Create test file with multiple RGB images */
+    if (CreateMultiImageGeoTIFF(filename, NUM_IMAGES) != 0) {
+        printf("Failed to create multi-image test file\n");
+        goto error;
+    }
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Allocate buffer for reading image data */
+    data_size = WIDTH * HEIGHT * 3;
+    data = (unsigned char *) malloc(data_size);
+    if (!data) {
+        printf("Failed to allocate read buffer\n");
+        goto error;
+    }
+
+    /* Test reading each image as a separate dataset */
+    for (uint32_t img_idx = 0; img_idx < NUM_IMAGES; img_idx++) {
+        char dset_name[32];
+        snprintf(dset_name, sizeof(dset_name), "image%u", img_idx);
+
+        /* Open the image dataset */
+        if ((dset_id = H5Dopen2(file_id, dset_name, H5P_DEFAULT)) < 0) {
+            printf("Failed to open dataset %s\n", dset_name);
+            goto error;
+        }
+
+        /* Get dataspace */
+        if ((space_id = H5Dget_space(dset_id)) < 0) {
+            printf("Failed to get dataspace for %s\n", dset_name);
+            goto error;
+        }
+
+        if ((ndims = H5Sget_simple_extent_ndims(space_id)) < 0) {
+            printf("Failed to get number of dimensions for %s\n", dset_name);
+            goto error;
+        }
+
+        if (ndims != 3) {
+            printf("VERIFICATION FAILED: Expected 3 dimensions for %s, got %d\n", dset_name, ndims);
+            goto error;
+        }
+
+        if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) {
+            printf("Failed to get dimensions for %s\n", dset_name);
+            goto error;
+        }
+
+        /* Verify dimensions */
+        if (dims[0] != HEIGHT || dims[1] != WIDTH || dims[2] != 3) {
+            printf("VERIFICATION FAILED: Expected dimensions %dx%dx3 for %s, got %llux%llux%llu\n",
+                   HEIGHT, WIDTH, dset_name, (unsigned long long) dims[0],
+                   (unsigned long long) dims[1], (unsigned long long) dims[2]);
+            goto error;
+        }
+
+        /* Read the dataset */
+        if (H5Dread(dset_id, H5T_NATIVE_UCHAR, H5S_ALL, H5S_ALL, H5P_DEFAULT, data) < 0) {
+            printf("Failed to read dataset %s\n", dset_name);
+            goto error;
+        }
+
+        /* Verify the data matches the expected pattern for this image */
+        uint32_t offset = img_idx * 50;
+        for (uint32_t row = 0; row < HEIGHT; row++) {
+            for (uint32_t col = 0; col < WIDTH; col++) {
+                uint32_t idx = (row * WIDTH + col) * 3;
+                unsigned char expected_r = (unsigned char) ((row * 8 + offset) % 256);
+                unsigned char expected_g = (unsigned char) ((col * 8 + offset) % 256);
+                unsigned char expected_b = (unsigned char) (((row + col) * 4 + offset) % 256);
+                unsigned char actual_r = data[idx + 0];
+                unsigned char actual_g = data[idx + 1];
+                unsigned char actual_b = data[idx + 2];
+
+                if (actual_r != expected_r || actual_g != expected_g || actual_b != expected_b) {
+                    printf("VERIFICATION FAILED: %s pixel[%u,%u] expected RGB(%u,%u,%u), got "
+                           "RGB(%u,%u,%u)\n",
+                           dset_name, row, col, expected_r, expected_g, expected_b, actual_r,
+                           actual_g, actual_b);
+                    goto error;
+                }
+            }
+        }
+
+        /* Close dataset and dataspace for this image */
+        if (H5Sclose(space_id) < 0) {
+            printf("Failed to close dataspace for %s\n", dset_name);
+            goto error;
+        }
+        space_id = H5I_INVALID_HID;
+
+        if (H5Dclose(dset_id) < 0) {
+            printf("Failed to close dataset %s\n", dset_name);
+            goto error;
+        }
+        dset_id = H5I_INVALID_HID;
+    }
+
+    /* Clean up */
+    free(data);
+    data = NULL;
+
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    file_id = H5I_INVALID_HID;
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+    vol_id = H5I_INVALID_HID;
+
+    /* Delete temporary test file */
+    if (remove(filename) != 0) {
+        printf("WARNING: Failed to delete temporary file %s\n", filename);
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    /* Clean up on error */
+    if (data)
+        free(data);
+    H5E_BEGIN_TRY
+    {
+        H5Sclose(space_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    /* Attempt to delete temporary file */
+    remove(filename);
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test dataset error handling - verify proper errors for invalid dataset access */
+int DatasetErrorHandlingTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+
+    printf("Testing dataset error handling with file: %s  ", filename);
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Test 1: Try to access image1 in a single-image file (should fail) */
+    H5E_BEGIN_TRY
+    {
+        dset_id = H5Dopen2(file_id, "image1", H5P_DEFAULT);
+    }
+    H5E_END_TRY;
+
+    if (dset_id >= 0) {
+        printf("VERIFICATION FAILED: Opening image1 in single-image file should have failed\n");
+        H5Dclose(dset_id);
+        goto error;
+    }
+    /* Expected failure - this is correct */
+
+    /* Test 2: Try to open a dataset with invalid name (not "imageN" format) */
+    const char *invalid_names[] = {"data", "/dataset", "image", "img0", "0image", "image_0"};
+    int num_invalid_names = sizeof(invalid_names) / sizeof(invalid_names[0]);
+
+    for (int i = 0; i < num_invalid_names; i++) {
+        H5E_BEGIN_TRY
+        {
+            dset_id = H5Dopen2(file_id, invalid_names[i], H5P_DEFAULT);
+        }
+        H5E_END_TRY;
+
+        if (dset_id >= 0) {
+            printf("VERIFICATION FAILED: Opening dataset '%s' should have failed\n",
+                   invalid_names[i]);
+            H5Dclose(dset_id);
+            goto error;
+        }
+        /* Expected failure - this is correct */
+    }
+
+    /* Clean up */
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    file_id = H5I_INVALID_HID;
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+    vol_id = H5I_INVALID_HID;
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+}
+
 /* Test point selection reading - verify only selected points are read */
 int PointReadGeoTIFFTest(const char *filename)
 {
@@ -1187,6 +1659,835 @@ error:
             free(buffer);
         H5Sclose(mem_space_id);
         H5Sclose(file_space_id);
+        H5Sclose(space_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Verify that link existence check works properly */
+int LinkExistsTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    htri_t exists;
+
+    printf("Testing GeoTIFF VOL connector link exists with file: %s  ", filename);
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Check that "image0" exists */
+    if ((exists = H5Lexists(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to check link existence for 'image0'\n");
+        goto error;
+    }
+
+    if (!exists) {
+        printf("VERIFICATION FAILED: Link 'image0' should exist but doesn't\n");
+        goto error;
+    }
+
+    /* Check that a non-existent link doesn't exist */
+    if ((exists = H5Lexists(file_id, "nonexistent", H5P_DEFAULT)) < 0) {
+        printf("Failed to check link existence for 'nonexistent'\n");
+        goto error;
+    }
+
+    if (exists) {
+        printf("VERIFICATION FAILED: Link 'nonexistent' should not exist but does\n");
+        goto error;
+    }
+
+    /* Clean up */
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Callback for link iteration */
+static herr_t link_iterate_callback(hid_t group, const char *name, const H5L_info2_t *info,
+                                    void *op_data)
+{
+    int *count = (int *) op_data;
+
+    (void) group; /* Unused */
+    (void) info;  /* Unused */
+
+    /* Verify we got the expected link name */
+    if (strcmp(name, "image0") != 0) {
+        printf("VERIFICATION FAILED: Expected link name 'image0', got '%s'\n", name);
+        return -1;
+    }
+
+    /* Verify link info */
+    if (info->type != H5L_TYPE_HARD) {
+        printf("VERIFICATION FAILED: Expected hard link, got type %d\n", info->type);
+        return -1;
+    }
+
+    (*count)++;
+    return 0;
+}
+
+/* Verify that link iteration works properly */
+int LinkIterateTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    int link_count = 0;
+    hsize_t idx = 0;
+
+    printf("Testing GeoTIFF VOL connector link iteration with file: %s  ", filename);
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Iterate over links in root group */
+    if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, link_iterate_callback, &link_count) <
+        0) {
+        printf("Failed to iterate over links\n");
+        goto error;
+    }
+
+    /* Verify we found exactly one link */
+    if (link_count != 1) {
+        printf("VERIFICATION FAILED: Expected 1 link, found %d\n", link_count);
+        goto error;
+    }
+
+    /* Verify index was updated */
+    if (idx != 1) {
+        printf("VERIFICATION FAILED: Expected index 1 after iteration, got %llu\n",
+               (unsigned long long) idx);
+        goto error;
+    }
+
+    /* Clean up */
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test that unsupported TIFF features are properly rejected */
+int UnsupportedFeaturesTest(void)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    const char *planar_separate_file = "_tmp_planar_separate.tif";
+    const char *palette_file = "_tmp_palette.tif";
+    const char *nonbyte_aligned_file = "_tmp_4bit.tif";
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
+
+    printf("Testing rejection of unsupported TIFF features  ");
+
+    /* Test 1: Create a TIFF with PLANARCONFIG_SEPARATE (RGB planes stored separately) */
+    if ((tif = XTIFFOpen(planar_separate_file, "w")) != NULL) {
+        if ((gtif = GTIFNew(tif)) != NULL) {
+            TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+            TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+            TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+            TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+            TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_SEPARATE);
+            TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+            TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 3);
+            TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+            const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+            const double pixscale[3] = {1.0, 1.0, 0.0};
+            TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+            TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+            SetUpGeoKeys(gtif);
+
+            /* Write dummy data for each plane */
+            unsigned char buffer[WIDTH];
+            memset(buffer, 128, WIDTH);
+            for (int plane = 0; plane < 3; plane++) {
+                for (uint32_t row = 0; row < HEIGHT; row++) {
+                    TIFFWriteScanline(tif, buffer, row, (uint16_t) plane);
+                }
+            }
+
+            GTIFWriteKeys(gtif);
+            GTIFFree(gtif);
+        }
+        XTIFFClose(tif);
+    }
+
+    /* Test 2: Create a TIFF with palette color (unsupported photometric) */
+    if ((tif = XTIFFOpen(palette_file, "w")) != NULL) {
+        if ((gtif = GTIFNew(tif)) != NULL) {
+            TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+            TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+            TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+            TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_PALETTE);
+            TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+            TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+            TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+            TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+            /* Set up a dummy color map */
+            uint16_t colormap[3][256];
+            for (int i = 0; i < 256; i++) {
+                colormap[0][i] = (uint16_t) (i << 8);
+                colormap[1][i] = (uint16_t) (i << 8);
+                colormap[2][i] = (uint16_t) (i << 8);
+            }
+            TIFFSetField(tif, TIFFTAG_COLORMAP, colormap[0], colormap[1], colormap[2]);
+
+            const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+            const double pixscale[3] = {1.0, 1.0, 0.0};
+            TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+            TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+            SetUpGeoKeys(gtif);
+
+            unsigned char buffer[WIDTH];
+            memset(buffer, 0, WIDTH);
+            for (uint32_t row = 0; row < HEIGHT; row++) {
+                TIFFWriteScanline(tif, buffer, row, 0);
+            }
+
+            GTIFWriteKeys(gtif);
+            GTIFFree(gtif);
+        }
+        XTIFFClose(tif);
+    }
+
+    /* Test 3: Create a TIFF with 4-bit samples (non-byte-aligned) */
+    if ((tif = XTIFFOpen(nonbyte_aligned_file, "w")) != NULL) {
+        if ((gtif = GTIFNew(tif)) != NULL) {
+            TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, WIDTH);
+            TIFFSetField(tif, TIFFTAG_IMAGELENGTH, HEIGHT);
+            TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+            TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+            TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+            TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 4);
+            TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+            TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, HEIGHT);
+
+            const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+            const double pixscale[3] = {1.0, 1.0, 0.0};
+            TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+            TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+            SetUpGeoKeys(gtif);
+
+            /* 4-bit data: 2 pixels per byte */
+            unsigned char buffer[WIDTH / 2];
+            memset(buffer, 0x55, WIDTH / 2);
+            for (uint32_t row = 0; row < HEIGHT; row++) {
+                TIFFWriteScanline(tif, buffer, row, 0);
+            }
+
+            GTIFWriteKeys(gtif);
+            GTIFFree(gtif);
+        }
+        XTIFFClose(tif);
+    }
+
+    /* Now test that opening these files fails with appropriate errors */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Test that PLANARCONFIG_SEPARATE is rejected */
+    if ((file_id = H5Fopen(planar_separate_file, H5F_ACC_RDONLY, fapl_id)) >= 0) {
+        H5E_BEGIN_TRY
+        {
+            dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT);
+        }
+        H5E_END_TRY;
+
+        if (dset_id >= 0) {
+            printf("VERIFICATION FAILED: PLANARCONFIG_SEPARATE should have been rejected\n");
+            goto error;
+        }
+        H5Fclose(file_id);
+    }
+
+    /* Test that PHOTOMETRIC_PALETTE is rejected */
+    if ((file_id = H5Fopen(palette_file, H5F_ACC_RDONLY, fapl_id)) >= 0) {
+        H5E_BEGIN_TRY
+        {
+            dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT);
+        }
+        H5E_END_TRY;
+
+        if (dset_id >= 0) {
+            printf("VERIFICATION FAILED: PHOTOMETRIC_PALETTE should have been rejected\n");
+            goto error;
+        }
+        H5Fclose(file_id);
+    }
+
+    /* Test that non-byte-aligned bit depths are rejected */
+    if ((file_id = H5Fopen(nonbyte_aligned_file, H5F_ACC_RDONLY, fapl_id)) >= 0) {
+        H5E_BEGIN_TRY
+        {
+            dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT);
+        }
+        H5E_END_TRY;
+
+        if (dset_id >= 0) {
+            printf("VERIFICATION FAILED: 4-bit samples should have been rejected\n");
+            goto error;
+        }
+        H5Fclose(file_id);
+        file_id = H5I_INVALID_HID;
+    }
+
+    /* Clean up */
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+    vol_id = H5I_INVALID_HID;
+
+    /* Delete temporary test files */
+    remove(planar_separate_file);
+    remove(palette_file);
+    remove(nonbyte_aligned_file);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    remove(planar_separate_file);
+    remove(palette_file);
+    remove(nonbyte_aligned_file);
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test H5Gget_info on single and multi-image GeoTIFF files */
+int GroupGetInfoTest(void)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t group_id = H5I_INVALID_HID;
+    H5G_info_t group_info;
+    const char *single_image_file = "_tmp_single_image_groupinfo.tif";
+    const char *multi_image_file = "_tmp_multi_image_groupinfo.tif";
+    const uint32_t NUM_IMAGES = 3;
+
+    printf("Testing H5Gget_info on GeoTIFF files  ");
+
+    /* Create single-image test file */
+    if (CreateGrayscaleGeoTIFF(single_image_file) != 0) {
+        printf("Failed to create single-image test file\n");
+        goto error;
+    }
+
+    /* Create multi-image test file */
+    if (CreateMultiImageGeoTIFF(multi_image_file, NUM_IMAGES) != 0) {
+        printf("Failed to create multi-image test file\n");
+        goto error;
+    }
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Test 1: Single-image file - should report 1 link (image0) */
+    if ((file_id = H5Fopen(single_image_file, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open single-image GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Open root group */
+    if ((group_id = H5Gopen2(file_id, "/", H5P_DEFAULT)) < 0) {
+        printf("Failed to open root group in single-image file\n");
+        goto error;
+    }
+
+    /* Get group info */
+    if (H5Gget_info(group_id, &group_info) < 0) {
+        printf("Failed to get group info for single-image file\n");
+        goto error;
+    }
+
+    /* Verify single-image file has 1 link */
+    if (group_info.nlinks != 1) {
+        printf("VERIFICATION FAILED: Single-image file expected 1 link, got %llu\n",
+               (unsigned long long) group_info.nlinks);
+        goto error;
+    }
+
+    /* Close group and file */
+    if (H5Gclose(group_id) < 0) {
+        printf("Failed to close group in single-image file\n");
+        goto error;
+    }
+    group_id = H5I_INVALID_HID;
+
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close single-image file\n");
+        goto error;
+    }
+
+    /* Test 2: Multi-image file - should report NUM_IMAGES links (image0, image1, image2, ...) */
+    if ((file_id = H5Fopen(multi_image_file, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open multi-image GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Open root group */
+    if ((group_id = H5Gopen2(file_id, "/", H5P_DEFAULT)) < 0) {
+        printf("Failed to open root group in multi-image file\n");
+        goto error;
+    }
+
+    /* Get group info */
+    if (H5Gget_info(group_id, &group_info) < 0) {
+        printf("Failed to get group info for multi-image file\n");
+        goto error;
+    }
+
+    /* Verify multi-image file has NUM_IMAGES links */
+    if (group_info.nlinks != NUM_IMAGES) {
+        printf("VERIFICATION FAILED: Multi-image file expected %u links, got %llu\n", NUM_IMAGES,
+               (unsigned long long) group_info.nlinks);
+        goto error;
+    }
+
+    /* Clean up */
+    if (H5Gclose(group_id) < 0) {
+        printf("Failed to close group in multi-image file\n");
+        goto error;
+    }
+    group_id = H5I_INVALID_HID;
+
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close multi-image file\n");
+        goto error;
+    }
+    file_id = H5I_INVALID_HID;
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+    vol_id = H5I_INVALID_HID;
+
+    /* Delete temporary test files */
+    if (remove(single_image_file) != 0) {
+        printf("WARNING: Failed to delete temporary file %s\n", single_image_file);
+    }
+    if (remove(multi_image_file) != 0) {
+        printf("WARNING: Failed to delete temporary file %s\n", multi_image_file);
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    /* Clean up on error */
+    H5E_BEGIN_TRY
+    {
+        H5Gclose(group_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    /* Attempt to delete temporary files */
+    remove(single_image_file);
+    remove(multi_image_file);
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test reading tiled TIFF files through the VOL connector */
+int TiledTIFFReadTest(const char *filename, int is_rgb)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    unsigned char *data = NULL;
+    hsize_t dims[3];
+    int ndims;
+    uint32_t width = 512;
+    uint32_t height = 512;
+    uint32_t tile_width = 128;
+    uint32_t tile_height = 128;
+
+    printf("Testing tiled TIFF read (%s) with file: %s  ", is_rgb ? "RGB" : "grayscale", filename);
+
+    /* Check if file exists, if not generate it */
+    if (access(filename, F_OK) != 0) {
+        printf("\nGenerating tiled TIFF file...\n");
+        if (generate_tiled_tiff(filename, is_rgb, width, height, tile_width, tile_height) != 0) {
+            printf("Failed to generate tiled TIFF file\n");
+            goto error;
+        }
+    }
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Open the image dataset */
+    if ((dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open image dataset\n");
+        goto error;
+    }
+
+    /* Get dataspace */
+    if ((space_id = H5Dget_space(dset_id)) < 0) {
+        printf("Failed to get dataspace\n");
+        goto error;
+    }
+
+    /* Get dimensions */
+    if ((ndims = H5Sget_simple_extent_ndims(space_id)) < 0) {
+        printf("Failed to get number of dimensions\n");
+        goto error;
+    }
+
+    if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) {
+        printf("Failed to get dimensions\n");
+        goto error;
+    }
+
+    /* Verify dimensions */
+    if (is_rgb) {
+        if (ndims != 3 || dims[0] != height || dims[1] != width || dims[2] != 3) {
+            printf("VERIFICATION FAILED: Expected dimensions %ux%ux3, got ", height, width);
+            for (int i = 0; i < ndims; i++) {
+                printf("%llu%s", (unsigned long long) dims[i], (i < ndims - 1) ? "x" : "");
+            }
+            printf("\n");
+            goto error;
+        }
+    } else {
+        if (ndims != 2 || dims[0] != height || dims[1] != width) {
+            printf("VERIFICATION FAILED: Expected dimensions %ux%u, got ", height, width);
+            for (int i = 0; i < ndims; i++) {
+                printf("%llu%s", (unsigned long long) dims[i], (i < ndims - 1) ? "x" : "");
+            }
+            printf("\n");
+            goto error;
+        }
+    }
+
+    /* Allocate buffer and read data */
+    size_t data_size = is_rgb ? (width * height * 3) : (width * height);
+    data = (unsigned char *) malloc(data_size);
+    if (!data) {
+        printf("Failed to allocate read buffer\n");
+        goto error;
+    }
+
+    if (H5Dread(dset_id, H5T_NATIVE_UCHAR, H5S_ALL, H5S_ALL, H5P_DEFAULT, data) < 0) {
+        printf("Failed to read dataset\n");
+        goto error;
+    }
+
+    /* Verify pixel data matches expected pattern (sample a few pixels) */
+    int verification_failures = 0;
+    for (uint32_t row = 0; row < height && verification_failures < 5; row += 64) {
+        for (uint32_t col = 0; col < width && verification_failures < 5; col += 64) {
+            if (is_rgb) {
+                /* RGB pattern: R=row*8, G=col*8, B=(row+col)*4 */
+                size_t idx = (row * width + col) * 3;
+                unsigned char expected_r = (unsigned char) ((row * 8) % 256);
+                unsigned char expected_g = (unsigned char) ((col * 8) % 256);
+                unsigned char expected_b = (unsigned char) (((row + col) * 4) % 256);
+                unsigned char actual_r = data[idx + 0];
+                unsigned char actual_g = data[idx + 1];
+                unsigned char actual_b = data[idx + 2];
+
+                if (actual_r != expected_r || actual_g != expected_g || actual_b != expected_b) {
+                    printf("VERIFICATION FAILED: Pixel[%u,%u] expected RGB(%u,%u,%u), got "
+                           "RGB(%u,%u,%u)\n",
+                           row, col, expected_r, expected_g, expected_b, actual_r, actual_g,
+                           actual_b);
+                    verification_failures++;
+                }
+            } else {
+                /* Grayscale pattern: value = (row * 8 + col / 4) % 256 */
+                size_t idx = row * width + col;
+                unsigned char expected = (unsigned char) ((row * 8 + col / 4) % 256);
+                unsigned char actual = data[idx];
+                if (actual != expected) {
+                    printf("VERIFICATION FAILED: Pixel[%u,%u] expected %u, got %u\n", row, col,
+                           expected, actual);
+                    verification_failures++;
+                }
+            }
+        }
+    }
+
+    if (verification_failures > 0) {
+        goto error;
+    }
+
+    /* Clean up - check return values */
+    free(data);
+    data = NULL;
+
+    if (H5Sclose(space_id) < 0) {
+        printf("Failed to close dataspace\n");
+        goto error;
+    }
+    space_id = H5I_INVALID_HID;
+
+    if (H5Dclose(dset_id) < 0) {
+        printf("Failed to close dataset\n");
+        goto error;
+    }
+    dset_id = H5I_INVALID_HID;
+
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    file_id = H5I_INVALID_HID;
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    /* Clean up in reverse order - no error checks */
+    if (data)
+        free(data);
+    H5E_BEGIN_TRY
+    {
         H5Sclose(space_id);
         H5Dclose(dset_id);
         H5Fclose(file_id);

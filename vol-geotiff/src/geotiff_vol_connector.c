@@ -53,7 +53,6 @@ hid_t H5_geotiff_object_table_iter_err_min_g = H5I_INVALID_HID;
 
 /* Helper functions */
 static herr_t geotiff_read_image_data(geotiff_dataset_t *dset);
-static herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file);
 static herr_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample,
                                               hid_t *type_id);
 
@@ -134,12 +133,12 @@ static const H5VL_class_t geotiff_class_g = {
     },
     {
         /* link_cls */
-        NULL, /* create       */
-        NULL, /* copy         */
-        NULL, /* move         */
-        NULL, /* get          */
-        NULL, /* specific     */
-        NULL  /* optional     */
+        NULL,                  /* create       */
+        NULL,                  /* copy         */
+        NULL,                  /* move         */
+        NULL,                  /* get          */
+        geotiff_link_specific, /* specific     */
+        NULL                   /* optional     */
     },
     {
         /* object_cls */
@@ -151,9 +150,9 @@ static const H5VL_class_t geotiff_class_g = {
     },
     {
         /* introscpect_cls */
-        NULL,                        /* get_conn_cls  */
-        NULL,                        /* get_cap_flags */
-        geotiff_introspect_opt_query /* opt_query     */
+        geotiff_introspect_get_conn_cls, /* get_conn_cls  */
+        NULL,                            /* get_cap_flags */
+        geotiff_introspect_opt_query     /* opt_query     */
     },
     {
         /* request_cls */
@@ -292,20 +291,11 @@ void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id,
     if ((file->tiff = XTIFFOpen(name, "r")) == NULL)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL, "Failed to open GeoTIFF file: %s", name);
 
-    if ((file->gtif = GTIFNew(file->tiff)) == NULL)
-        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL,
-                        "Failed to create GeoTIFF handle for file: %s", name);
-
     if ((file->filename = strdup(name)) == NULL)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTALLOC, NULL, "Failed to duplicate filename string");
 
     file->flags = flags;
     file->plist_id = fapl_id;
-
-    /* Parse GeoTIFF metadata */
-    if (geotiff_parse_geotiff_tags(file) < 0)
-        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL,
-                        "Failed to parse GeoTIFF tags for file: %s", name);
 
     ret_value = file;
 
@@ -355,8 +345,6 @@ herr_t geotiff_file_close(void *file, hid_t __attribute__((unused)) dxpl_id,
     geotiff_file_t *f = (geotiff_file_t *) file;
 
     if (f) {
-        if (f->gtif)
-            GTIFFree(f->gtif);
         if (f->tiff)
             TIFFClose(f->tiff);
         if (f->filename)
@@ -382,6 +370,8 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     uint16_t samples_per_pixel = 0;
     uint16_t bits_per_sample = 0;
     uint16_t sample_format = 0;
+
+    uint16_t num_dirs = 0;
     hsize_t dims[3] = {0, 0, 0};
 
     H5T_class_t dtype_class = H5T_NO_CLASS;
@@ -406,17 +396,46 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     dset->is_image = false;
     dset->space_id = H5I_INVALID_HID;
     dset->type_id = H5I_INVALID_HID;
+    dset->gtif = NULL;
+    dset->directory_index = -1;
 
-    /* Future-proof: require "image0" for now, designed for multiple images later
-     * TODO: Support image1, image2, etc. when multi-image TIFFs are implemented
-     */
-    if (strcmp(name, "/image0") != 0 && strcmp(name, "image0") != 0)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
-                        "GeoTIFF VOL connector currently only supports dataset '/image0'");
+    /* Parse dataset name to extract image index (e.g., "image0", "/image1", etc.) */
+    int image_index = 0;
+    if (sscanf(name, "/image%d", &image_index) == 1 || sscanf(name, "image%d", &image_index) == 1) {
+        if (image_index < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL,
+                            "Invalid image index %d (must be non-negative)", image_index);
+    } else {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL,
+                        "Invalid dataset name '%s', expected 'imageN' format", name);
+    }
+
+    /* Check if this image directory exists in the TIFF file */
+    num_dirs = TIFFNumberOfDirectories(file->tiff);
+    if (image_index >= num_dirs) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_NOTFOUND, NULL,
+                        "Image %d does not exist (file has %d image%s)", image_index, num_dirs,
+                        num_dirs == 1 ? "" : "s");
+    }
+
+    /* Navigate to the correct TIFF directory for this image */
+    if (!TIFFSetDirectory(file->tiff, (uint16_t) image_index)) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to set TIFF directory to %d",
+                        image_index);
+    }
+
+    /* Create GeoTIFF handle for this directory's geo keys
+     * GTIF handles are per-dataset to support multi-image
+     * files where each image may have different geo keys */
+    if ((dset->gtif = GTIFNew(file->tiff)) == NULL) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
+                        "Failed to create GeoTIFF handle for image %d", image_index);
+    }
 
     dset->is_image = true;
+    dset->directory_index = image_index;
 
-    /* Read image metadata from TIFF tags */
+    /* Read image metadata from TIFF tags (for this directory) */
     if (!TIFFGetField(file->tiff, TIFFTAG_IMAGEWIDTH, &width))
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "Failed to get image width from TIFF");
     if (!TIFFGetField(file->tiff, TIFFTAG_IMAGELENGTH, &height))
@@ -428,6 +447,57 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
     TIFFGetFieldDefaulted(file->tiff, TIFFTAG_SAMPLEFORMAT, &sample_format);
+
+    /* Validate TIFF configuration - check for unsupported features */
+    {
+        uint16_t planar_config = 0;
+        uint16_t photometric = 0;
+        uint16_t *extra_samples = NULL;
+        uint16_t extra_sample_count = 0;
+
+        /* Check planar configuration - we only support contiguous (interleaved) data */
+        TIFFGetFieldDefaulted(file->tiff, TIFFTAG_PLANARCONFIG, &planar_config);
+        if (planar_config != PLANARCONFIG_CONTIG)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                            "Unsupported planar configuration: %d (only PLANARCONFIG_CONTIG is "
+                            "supported)",
+                            planar_config);
+
+        /* Check photometric interpretation - validate we support this color space */
+        if (TIFFGetField(file->tiff, TIFFTAG_PHOTOMETRIC, &photometric)) {
+            if (photometric != PHOTOMETRIC_MINISBLACK && photometric != PHOTOMETRIC_RGB &&
+                photometric != PHOTOMETRIC_MINISWHITE)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                                "Unsupported photometric interpretation: %d (only MINISBLACK, "
+                                "MINISWHITE, and RGB "
+                                "are supported)",
+                                photometric);
+        }
+
+        /* Check for extra samples that would complicate interpretation */
+        if (TIFFGetField(file->tiff, TIFFTAG_EXTRASAMPLES, &extra_sample_count, &extra_samples)) {
+            /* Allow alpha channel (extra_sample_count == 1) for RGBA, but warn about others */
+            if (samples_per_pixel == 4 && extra_sample_count == 1) {
+                /* This is likely RGBA with alpha channel - acceptable */
+                if (extra_samples[0] != EXTRASAMPLE_ASSOCALPHA &&
+                    extra_samples[0] != EXTRASAMPLE_UNASSALPHA)
+                    FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                                    "Unsupported extra sample type: %d (expected alpha channel)",
+                                    extra_samples[0]);
+            } else if (extra_sample_count > 0) {
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                                "Unsupported configuration: %d extra samples found (only alpha "
+                                "channel for RGBA is supported)",
+                                extra_sample_count);
+            }
+        }
+
+        /* Validate bits per sample is byte-aligned */
+        if (bits_per_sample % 8 != 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
+                            "Unsupported bits per sample: %d (must be a multiple of 8)",
+                            bits_per_sample);
+    }
 
     if (geotiff_get_hdf5_type_from_tiff(sample_format, bits_per_sample, &dset->type_id) < 0)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
@@ -774,6 +844,8 @@ herr_t geotiff_dataset_close(void *dset, hid_t __attribute__((unused)) dxpl_id,
     herr_t ret_value = SUCCEED;
 
     if (d) {
+        if (d->gtif)
+            GTIFFree(d->gtif);
         if (d->name)
             free(d->name);
         if (d->data)
@@ -830,11 +902,49 @@ done:
     return ret_value;
 }
 
-herr_t geotiff_group_get(void __attribute__((unused)) * obj,
-                         H5VL_group_get_args_t __attribute__((unused)) * args,
+herr_t geotiff_group_get(void *obj, H5VL_group_get_args_t *args,
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    return 0;
+    herr_t ret_value = SUCCEED;
+
+    if (!args)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
+
+    switch (args->op_type) {
+        case H5VL_GROUP_GET_INFO: {
+            geotiff_group_t *grp = (geotiff_group_t *) obj;
+            H5G_info_t *ginfo = args->args.get_info.ginfo;
+            uint16_t num_dirs = 0;
+
+            if (!grp || !ginfo)
+                FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid group or info pointer");
+
+            if (!grp->file || !grp->file->tiff)
+                FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid file object");
+
+            /* Get number of TIFF directories (images) in the file */
+            num_dirs = TIFFNumberOfDirectories(grp->file->tiff);
+
+            /* Fill in group info structure */
+            ginfo->storage_type = H5G_STORAGE_TYPE_COMPACT;
+            ginfo->nlinks = num_dirs; /* Number of image links (image0, image1, ...) */
+            ginfo->max_corder = -1;   /* No creation order tracking */
+            ginfo->mounted = false;   /* No files mounted on this group */
+
+            break;
+        }
+
+        case H5VL_GROUP_GET_GCPL: {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "GCPL get operation not supported");
+        }
+
+        default: {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "unknown group get operation");
+        }
+    }
+
+done:
+    return ret_value;
 }
 
 herr_t geotiff_group_close(void *grp, hid_t __attribute__((unused)) dxpl_id,
@@ -1107,10 +1217,65 @@ static herr_t geotiff_read_image_data(geotiff_dataset_t *dset)
 
     image_data = (unsigned char *) dset->data;
 
-    for (row = 0; row < height; row++) {
-        if (TIFFReadScanline(file->tiff, image_data + row * scanline_size, row, 0) < 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL,
-                            "Failed to read scanline %u from TIFF", row);
+    /* Check if this is a tiled or striped TIFF and read accordingly */
+    if (TIFFIsTiled(file->tiff)) {
+        /* Tiled TIFF - read tile by tile */
+        uint32_t tile_width = 0, tile_height = 0;
+        unsigned char *tile_buf = NULL;
+        tsize_t tile_size = 0;
+
+        /* Get tile dimensions */
+        if (!TIFFGetField(file->tiff, TIFFTAG_TILEWIDTH, &tile_width))
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to get tile width from TIFF");
+        if (!TIFFGetField(file->tiff, TIFFTAG_TILELENGTH, &tile_height))
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to get tile height from TIFF");
+
+        tile_size = TIFFTileSize(file->tiff);
+        if (tile_size <= 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Invalid tile size");
+
+        /* Allocate buffer for reading tiles */
+        if ((tile_buf = (unsigned char *) malloc((size_t) tile_size)) == NULL)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, FAIL, "Failed to allocate tile buffer");
+
+        /* Read tiles and copy into image buffer */
+        for (uint32_t tile_row = 0; tile_row < height; tile_row += tile_height) {
+            for (uint32_t tile_col = 0; tile_col < width; tile_col += tile_width) {
+                /* Read the tile */
+                if (TIFFReadTile(file->tiff, tile_buf, tile_col, tile_row, 0, 0) < 0) {
+                    free(tile_buf);
+                    FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL,
+                                    "Failed to read tile at row=%u, col=%u", tile_row, tile_col);
+                }
+
+                /* Calculate actual tile dimensions (may be partial at edges) */
+                uint32_t actual_tile_height =
+                    (tile_row + tile_height > height) ? height - tile_row : tile_height;
+                uint32_t actual_tile_width =
+                    (tile_col + tile_width > width) ? width - tile_col : tile_width;
+
+                /* Copy tile data into image buffer, row by row */
+                for (uint32_t ty = 0; ty < actual_tile_height; ty++) {
+                    uint32_t image_row = tile_row + ty;
+                    size_t tile_row_offset = ty * tile_width * samples_per_pixel;
+                    size_t image_row_offset =
+                        (size_t) image_row * (size_t) scanline_size + tile_col * samples_per_pixel;
+                    size_t copy_bytes =
+                        actual_tile_width * samples_per_pixel * (bits_per_sample / 8);
+
+                    memcpy(image_data + image_row_offset, tile_buf + tile_row_offset, copy_bytes);
+                }
+            }
+        }
+
+        free(tile_buf);
+    } else {
+        /* Striped TIFF - read scanline by scanline */
+        for (row = 0; row < height; row++) {
+            if (TIFFReadScanline(file->tiff, image_data + row * scanline_size, row, 0) < 0)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL,
+                                "Failed to read scanline %u from TIFF", row);
+        }
     }
 
 done:
@@ -1120,36 +1285,6 @@ done:
         dset->data_size = 0;
     }
 
-    return ret_value;
-}
-
-/* Helper function to parse GeoTIFF tags */
-static herr_t geotiff_parse_geotiff_tags(geotiff_file_t *file)
-{
-    herr_t ret_value = SUCCEED;
-    geocode_t model_type;
-    geocode_t pcs_code, gcs_code;
-    /* Optionally read tie points / pixel scale via TIFF tags in the future */
-
-    if (!file || !file->gtif)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid file or GTIF handle\n");
-
-    /* Get metadata - don't throw error, since file may not have these fields populated */
-
-    /* Get model type */
-    GTIFKeyGet(file->gtif, GTModelTypeGeoKey, &model_type, 0, 1);
-
-    /* Get PCS code */
-    GTIFKeyGet(file->gtif, ProjectedCSTypeGeoKey, &pcs_code, 0, 1);
-
-    /* Get GCS code */
-    GTIFKeyGet(file->gtif, GeographicTypeGeoKey, &gcs_code, 0, 1);
-
-    /* Skipping citation retrieval for portability */
-
-    /* Skipping tie points and pixel scale retrieval here due to tag differences across platforms */
-
-done:
     return ret_value;
 }
 
@@ -1301,5 +1436,136 @@ herr_t geotiff_term_connector(void)
         H5_geotiff_attr_table_iter_err_min_g = H5I_INVALID_HID;
     }
 
+    return ret_value;
+}
+
+herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
+                                       H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
+                                       const H5VL_class_t __attribute__((unused)) * *conn_cls)
+{
+    herr_t ret_value = SUCCEED;
+
+    assert(conn_cls);
+
+    /* Retrieve the VOL connector class */
+    *conn_cls = &geotiff_class_g;
+
+    return ret_value;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    geotiff_link_specific
+ *
+ * Purpose:     Handles link-specific operations for the GeoTIFF VOL connector
+ *
+ * Return:      SUCCEED/FAIL
+ *
+ * Note:        The GeoTIFF VOL has a flat structure with only image datasets
+ *              at the root level (e.g., "image0"). We pretend each image has
+ *              a hard link from the root group.
+ *
+ *---------------------------------------------------------------------------
+ */
+/* cppcheck-suppress constParameterCallback */
+herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                             H5VL_link_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                             void __attribute__((unused)) * *req)
+{
+    herr_t ret_value = SUCCEED;
+    const char *link_name = NULL;
+
+    /* obj could be file, group, or dataset - we need the file */
+    /* For simplicity, try to extract file pointer based on common structure pattern */
+    if (!obj || !loc_params || !args)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to link_specific");
+
+    switch (args->op_type) {
+        case H5VL_LINK_EXISTS: {
+            /* Get the link name from loc_params */
+            if (loc_params->type == H5VL_OBJECT_BY_NAME) {
+                link_name = loc_params->loc_data.loc_by_name.name;
+            } else {
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
+                                "Link exists check requires name-based location");
+            }
+
+            if (!link_name)
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "No link name provided");
+
+            /* Currently only "image0" exists as a link/dataset
+             * Future: check for "image1", "image2", etc. for multi-page TIFFs
+             */
+            *args->args.exists.exists = (strcmp(link_name, "image0") == 0);
+
+            break;
+        }
+
+        case H5VL_LINK_ITER: {
+            H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
+
+            /* TODO: For now, we only have one link: "image0"
+             * Future: iterate over multiple images for multi-page TIFFs
+             */
+
+            assert(iter_args);
+            assert(iter_args->idx_p);
+
+            /* Only iterate if we haven't reached the end */
+            if (*iter_args->idx_p > 0) {
+                /* Already past the only link we have */
+                break;
+            }
+
+            /* Call the user's callback for "image0" */
+            if (iter_args->op) {
+                H5L_info2_t link_info;
+                herr_t cb_ret;
+
+                /* Fill in minimal link info */
+                memset(&link_info, 0, sizeof(H5L_info2_t));
+                /* Consider all GeoTIFF "links" to be hard links */
+                link_info.type = H5L_TYPE_HARD;
+                link_info.corder_valid = true;
+                link_info.corder = 0;
+                link_info.cset = H5T_CSET_ASCII;
+
+                /* TODO: Fill in link_info.u.token if needed */
+                /* For now, leave token as zeros */
+
+                /* Call user's callback
+                 * Signature: herr_t (*op)(hid_t group, const char *name, const H5L_info2_t *info,
+                 * void *op_data)
+                 * Note: We pass 0 as group hid since we don't have a proper group ID
+                 */
+                cb_ret = iter_args->op(0, "image0", &link_info, iter_args->op_data);
+
+                /* Update index */
+                if (iter_args->idx_p)
+                    *iter_args->idx_p = *iter_args->idx_p + 1;
+
+                /* Check callback return value */
+                if (cb_ret < 0) {
+                    FUNC_GOTO_ERROR(H5E_LINK, H5E_BADITER, FAIL,
+                                    "Iterator callback returned error");
+                } else if (cb_ret > 0) {
+                    /* Callback requested early termination */
+                    ret_value = cb_ret;
+                    goto done;
+                }
+            }
+
+            break;
+        }
+
+        case H5VL_LINK_DELETE:
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL,
+                            "Link deletion is not supported in read-only GeoTIFF VOL connector");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL, "Unsupported link specific operation");
+    }
+
+done:
     return ret_value;
 }

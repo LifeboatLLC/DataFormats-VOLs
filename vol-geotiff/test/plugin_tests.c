@@ -18,7 +18,7 @@
 
 // cppcheck-suppress missingInclude
 #include "geotiff_vol_connector.h"
-#include "test_geotiff.h"
+#include "test_runner.h"
 #include <H5PLpublic.h>
 
 #include <stdlib.h>

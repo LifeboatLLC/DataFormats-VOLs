@@ -39,17 +39,20 @@
 
 /* GeoTIFF VOL file object structure */
 typedef struct geotiff_file_t {
-    TIFF *tiff;         /* TIFF file handle */
-    GTIF *gtif;         /* GeoTIFF handle */
+    TIFF *tiff;         /* TIFF file handle - shared across datasets */
     char *filename;     /* File name */
     unsigned int flags; /* File access flags */
     hid_t plist_id;     /* Property list ID */
+    /* NOTE: For thread safety with multi-image files, each dataset should
+     * have its own TIFF handle via TIFFOpen(). Currently using shared handle. */
 } geotiff_file_t;
 
 /* GeoTIFF VOL dataset object structure */
 typedef struct geotiff_dataset_t {
     geotiff_file_t *file; /* Parent file */
     char *name;           /* Dataset name */
+    int directory_index;  /* TIFF directory index for multi-image files */
+    GTIF *gtif;           /* GeoTIFF handle for this directory's geo keys */
     hid_t type_id;        /* HDF5 datatype */
     hid_t space_id;       /* HDF5 dataspace */
     void *data;           /* Cached data */
@@ -105,6 +108,10 @@ herr_t geotiff_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id
 herr_t geotiff_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req);
 
+/* Link operations */
+herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                             H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req);
+
 /* Helper functions */
 herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *start,
                               const hsize_t *stride, const hsize_t *count, const hsize_t *block,
@@ -112,4 +119,8 @@ herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *star
 
 herr_t geotiff_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type,
                                     uint64_t *flags);
+
+herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
+                                       H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
+                                       const H5VL_class_t __attribute__((unused)) * *conn_cls);
 #endif /* _geotiff_vol_connector_H */
