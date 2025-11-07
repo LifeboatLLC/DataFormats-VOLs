@@ -1,10 +1,10 @@
-# 🌬️ BUFR to HDF5 Mapping Specification
+# BUFR to HDF5 Mapping Specification
 
 This document details the conceptual mapping between the **BUFR (Binary Universal Form for the Representation of meteorological data)** format and the **HDF5 (Hierarchical Data Format, Version 5)**, often implemented according to **NetCDF-4/CF conventions**.
 
 ---
 
-## 📦 Structural and Data Mapping
+## Structural and Data Mapping
 
 BUFR's sequence-oriented, table-driven structure is translated into HDF5's flexible, array-based hierarchy.
 
@@ -18,7 +18,7 @@ BUFR's sequence-oriented, table-driven structure is translated into HDF5's flexi
 
 ---
 
-## 🏷️ Metadata Mapping (Attributes)
+## Metadata Mapping (Attributes)
 
 BUFR's table-driven metadata is translated into self-describing HDF5 attributes, improving discoverability and usability.
 
@@ -31,7 +31,7 @@ BUFR's table-driven metadata is translated into self-describing HDF5 attributes,
 
 ---
 
-## ⚙️ Example: Sounding Report Structure
+## Example: Sounding Report Structure
 
 For a single HDF5 file containing multiple BUFR sounding reports, the structure aligns data along common dimensions:
 
@@ -48,7 +48,7 @@ This document details the conceptual mapping between the **BUFR (Binary Universa
 
 ---
 
-## 📦 Structural and Data Mapping
+## Structural and Data Mapping
 
 BUFR's sequence-oriented, table-driven structure is translated into HDF5's flexible, array-based hierarchy.
 
@@ -62,7 +62,7 @@ BUFR's sequence-oriented, table-driven structure is translated into HDF5's flexi
 
 ---
 
-## 🏷️ Metadata Mapping (Attributes)
+## Metadata Mapping (Attributes)
 
 BUFR's table-driven metadata is translated into self-describing HDF5 attributes, improving discoverability and usability.
 
@@ -75,7 +75,7 @@ BUFR's table-driven metadata is translated into self-describing HDF5 attributes,
 
 ---
 
-## ⚙️ Example: Sounding Report Structure
+## Example: Sounding Report Structure
 
 For a single HDF5 file containing multiple BUFR sounding reports, the structure aligns data along common dimensions:
 
