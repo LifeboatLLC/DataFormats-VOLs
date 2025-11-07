@@ -1466,6 +1466,7 @@ herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
  *
  *---------------------------------------------------------------------------
  */
+/* cppcheck-suppress constParameterCallback */
 herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                              H5VL_link_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
                              void __attribute__((unused)) * *req)

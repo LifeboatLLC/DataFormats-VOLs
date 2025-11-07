@@ -77,7 +77,7 @@ static int CreateGrayscaleGeoTIFF(const char *filename)
             buffer[col] = (unsigned char) ((row * 8 + col / 4) % 256);
         }
         if (!TIFFWriteScanline(tif, buffer, row, 0)) {
-            printf("Failed to write scanline %d\n", row);
+            printf("Failed to write scanline %u\n", row);
             GTIFFree(gtif);
             TIFFClose(tif);
             return -1;
@@ -1053,7 +1053,7 @@ static int CreateMultiImageGeoTIFF(const char *filename, uint32_t num_images)
         GTIF *gtif = NULL;
 
         if ((gtif = GTIFNew(tif)) == NULL) {
-            printf("Failed to create GeoTIFF handle for image %d\n", img_idx);
+            printf("Failed to create GeoTIFF handle for image %u\n", img_idx);
             TIFFClose(tif);
             return -1;
         }
@@ -1084,7 +1084,7 @@ static int CreateMultiImageGeoTIFF(const char *filename, uint32_t num_images)
         size_t scanline_size = WIDTH * 3;
         unsigned char *scanline = (unsigned char *) malloc(scanline_size);
         if (!scanline) {
-            printf("Failed to allocate scanline buffer for image %d\n", img_idx);
+            printf("Failed to allocate scanline buffer for image %u\n", img_idx);
             GTIFFree(gtif);
             TIFFClose(tif);
             return -1;
@@ -1107,7 +1107,7 @@ static int CreateMultiImageGeoTIFF(const char *filename, uint32_t num_images)
             }
 
             if (!TIFFWriteScanline(tif, scanline, row, 0)) {
-                printf("Failed to write scanline %d for image %d\n", row, img_idx);
+                printf("Failed to write scanline %u for image %u\n", row, img_idx);
                 free(scanline);
                 GTIFFree(gtif);
                 TIFFClose(tif);
@@ -1122,7 +1122,7 @@ static int CreateMultiImageGeoTIFF(const char *filename, uint32_t num_images)
         /* Write directory for this image (except for the last one) */
         if (img_idx < num_images - 1) {
             if (!TIFFWriteDirectory(tif)) {
-                printf("Failed to write directory for image %d\n", img_idx);
+                printf("Failed to write directory for image %u\n", img_idx);
                 TIFFClose(tif);
                 return -1;
             }
@@ -1199,7 +1199,7 @@ int MultiImageReadGeoTIFFTest(void)
     /* Test reading each image as a separate dataset */
     for (uint32_t img_idx = 0; img_idx < NUM_IMAGES; img_idx++) {
         char dset_name[32];
-        snprintf(dset_name, sizeof(dset_name), "image%d", img_idx);
+        snprintf(dset_name, sizeof(dset_name), "image%u", img_idx);
 
         /* Open the image dataset */
         if ((dset_id = H5Dopen2(file_id, dset_name, H5P_DEFAULT)) < 0) {
@@ -1255,7 +1255,7 @@ int MultiImageReadGeoTIFFTest(void)
                 unsigned char actual_b = data[idx + 2];
 
                 if (actual_r != expected_r || actual_g != expected_g || actual_b != expected_b) {
-                    printf("VERIFICATION FAILED: %s pixel[%d,%d] expected RGB(%u,%u,%u), got "
+                    printf("VERIFICATION FAILED: %s pixel[%u,%u] expected RGB(%u,%u,%u), got "
                            "RGB(%u,%u,%u)\n",
                            dset_name, row, col, expected_r, expected_g, expected_b, actual_r,
                            actual_g, actual_b);
@@ -2048,7 +2048,6 @@ int UnsupportedFeaturesTest(void)
             goto error;
         }
         H5Fclose(file_id);
-        file_id = H5I_INVALID_HID;
     }
 
     /* Test that PHOTOMETRIC_PALETTE is rejected */
@@ -2066,7 +2065,6 @@ int UnsupportedFeaturesTest(void)
             goto error;
         }
         H5Fclose(file_id);
-        file_id = H5I_INVALID_HID;
     }
 
     /* Test that non-byte-aligned bit depths are rejected */
@@ -2215,7 +2213,6 @@ int GroupGetInfoTest(void)
         printf("Failed to close single-image file\n");
         goto error;
     }
-    file_id = H5I_INVALID_HID;
 
     /* Test 2: Multi-image file - should report NUM_IMAGES links (image0, image1, image2, ...) */
     if ((file_id = H5Fopen(multi_image_file, H5F_ACC_RDONLY, fapl_id)) < 0) {
