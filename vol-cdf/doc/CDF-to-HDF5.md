@@ -1,4 +1,4 @@
-# CDF → HDF5 Mapping Guide
+# CDF  to HDF5 Mapping 
 
 This document specifies a practical, loss-minimizing mapping from **NASA CDF (Common Data Format)** objects to **HDF5** objects. It targets implementers of converters and readers who want predictable, interoperable HDF5 outputs that preserve CDF semantics.
 
