@@ -33,5 +33,7 @@ int LinkIterateTest(const char *filename);
 int UnsupportedFeaturesTest(void);
 int GroupGetInfoTest(void);
 int TiledTIFFReadTest(const char *filename, int is_rgb);
+int CoordinatesAttributeGeographicTest(const char *unused);
+int CoordinatesAttributeProjectedTest(const char *unused);
 
 #endif // TEST_GEOTIFF_H

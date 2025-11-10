@@ -125,6 +125,13 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "tiled_read_rgb") == 0)
         num_failures += (TiledTIFFReadTest("test_tiled_rgb.tif", 1) != 0 ? 1 : 0);
 
+    /* Coordinates attribute tests */
+    if (run_all || strcmp(test_name, "coordinates_attr_geographic") == 0)
+        num_failures += (CoordinatesAttributeGeographicTest(NULL) != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "coordinates_attr_projected") == 0)
+        num_failures += (CoordinatesAttributeProjectedTest(NULL) != 0 ? 1 : 0);
+
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
     } else {

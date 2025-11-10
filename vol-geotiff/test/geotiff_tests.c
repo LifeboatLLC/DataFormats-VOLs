@@ -2500,3 +2500,475 @@ error:
     printf("FAILED\n");
     return 1;
 }
+
+
+/* Helper to create a small GeoTIFF with geographic (lat/lon) coordinates */
+static int CreateGeographicGeoTIFF(const char *filename)
+{
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
+    unsigned char buffer[10]; /* 10x10 image */
+    const uint32_t width = 10;
+    const uint32_t height = 10;
+
+    if ((tif = XTIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create %s\\n", filename);
+        return -1;
+    }
+
+    if ((gtif = GTIFNew(tif)) == NULL) {
+        printf("Failed to create GeoTIFF handle for %s\\n", filename);
+        TIFFClose(tif);
+        return -1;
+    }
+
+    /* Set up TIFF tags */
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, height);
+
+    /* Geographic coordinates: top-left at (-120°, 40°), 0.1° per pixel */
+    const double tiepoints[6] = {0, 0, 0, -120.0, 40.0, 0.0};
+    const double pixscale[3] = {0.1, 0.1, 0.0};
+    TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+    TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+
+    /* Set GeoKeys for geographic coordinate system (WGS84) */
+    GTIFKeySet(gtif, GTModelTypeGeoKey, TYPE_SHORT, 1, ModelGeographic);
+    GTIFKeySet(gtif, GTRasterTypeGeoKey, TYPE_SHORT, 1, RasterPixelIsArea);
+    GTIFKeySet(gtif, GeographicTypeGeoKey, TYPE_SHORT, 1, GCS_WGS_84);
+
+    /* Write simple gradient data */
+    for (uint32_t row = 0; row < height; row++) {
+        for (uint32_t col = 0; col < width; col++) {
+            buffer[col] = (unsigned char) ((row + col) * 10);
+        }
+        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+            printf("Failed to write scanline %u\\n", row);
+            GTIFFree(gtif);
+            TIFFClose(tif);
+            return -1;
+        }
+    }
+
+    GTIFWriteKeys(gtif);
+    GTIFFree(gtif);
+    XTIFFClose(tif);
+
+    return 0;
+}
+
+/* Helper to create a small GeoTIFF with projected (UTM) coordinates */
+static int CreateProjectedGeoTIFF(const char *filename)
+{
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
+    unsigned char buffer[10]; /* 10x10 image */
+    const uint32_t width = 10;
+    const uint32_t height = 10;
+
+    if ((tif = XTIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create %s\n", filename);
+        return -1;
+    }
+
+    if ((gtif = GTIFNew(tif)) == NULL) {
+        printf("Failed to create GeoTIFF handle for %s\n", filename);
+        TIFFClose(tif);
+        return -1;
+    }
+
+    /* Set up TIFF tags */
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, height);
+
+    /* UTM Zone 11N coordinates: top-left at (500000E, 4500000N), 100m per pixel */
+    const double tiepoints[6] = {0, 0, 0, 500000.0, 4500000.0, 0.0};
+    const double pixscale[3] = {100.0, 100.0, 0.0};
+    TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+    TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+
+    /* Set GeoKeys for UTM Zone 11N, WGS84 */
+    GTIFKeySet(gtif, GTModelTypeGeoKey, TYPE_SHORT, 1, ModelProjected);
+    GTIFKeySet(gtif, GTRasterTypeGeoKey, TYPE_SHORT, 1, RasterPixelIsArea);
+    GTIFKeySet(gtif, ProjectedCSTypeGeoKey, TYPE_SHORT, 1, 32611); /* WGS84 UTM Zone 11N */
+
+    /* Write simple gradient data */
+    for (uint32_t row = 0; row < height; row++) {
+        for (uint32_t col = 0; col < width; col++) {
+            buffer[col] = (unsigned char) ((row + col) * 10);
+        }
+        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+            printf("Failed to write scanline %u\n", row);
+            GTIFFree(gtif);
+            TIFFClose(tif);
+            return -1;
+        }
+    }
+
+    GTIFWriteKeys(gtif);
+    GTIFFree(gtif);
+    XTIFFClose(tif);
+
+    return 0;
+}
+
+/* Test reading coordinates attribute from geographic GeoTIFF */
+int CoordinatesAttributeGeographicTest(const char *unused)
+{
+    (void)unused;
+    const char *filename = "_tmp_geographic_coords.tif";
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+
+    typedef struct {
+        double lon;
+        double lat;
+    } coord_t;
+
+    coord_t *coords = NULL;
+    const uint32_t width = 10;
+    const uint32_t height = 10;
+
+    printf("Testing coordinates attribute with geographic GeoTIFF...");
+
+    /* Create test file */
+    if (CreateGeographicGeoTIFF(filename) < 0) {
+        printf("Failed to create test GeoTIFF\n");
+        goto error;
+    }
+
+    /* Register VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Set up FAPL with GeoTIFF VOL */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open file and dataset */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open file\n");
+        goto error;
+    }
+
+    if ((dset_id = H5Dopen(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open dataset\n");
+        goto error;
+    }
+
+    /* Open coordinates attribute */
+    if ((attr_id = H5Aopen(dset_id, "coordinates", H5P_DEFAULT)) < 0) {
+        printf("Failed to open coordinates attribute\n");
+        goto error;
+    }
+
+    /* Verify attribute dataspace matches dataset */
+    if ((space_id = H5Aget_space(attr_id)) < 0) {
+        printf("Failed to get attribute dataspace\n");
+        goto error;
+    }
+
+    hsize_t dims[2];
+    if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) {
+        printf("Failed to get dataspace dimensions\n");
+        goto error;
+    }
+
+    if (dims[0] != height || dims[1] != width) {
+        printf("Attribute dimensions (%llu, %llu) don't match expected (%u, %u)\n",
+               (unsigned long long)dims[0], (unsigned long long)dims[1], height, width);
+        goto error;
+    }
+
+    /* Verify attribute type is compound with lon/lat */
+    if ((type_id = H5Aget_type(attr_id)) < 0) {
+        printf("Failed to get attribute type\n");
+        goto error;
+    }
+
+    if (H5Tget_class(type_id) != H5T_COMPOUND) {
+        printf("Attribute type is not compound\n");
+        goto error;
+    }
+
+    if (H5Tget_nmembers(type_id) != 2) {
+        printf("Compound type has %d members, expected 2\n", H5Tget_nmembers(type_id));
+        goto error;
+    }
+
+    /* Allocate and read coordinates */
+    coords = (coord_t *)malloc(width * height * sizeof(coord_t));
+    if (!coords) {
+        printf("Failed to allocate memory for coordinates\n");
+        goto error;
+    }
+
+    if (H5Aread(attr_id, type_id, coords) < 0) {
+        printf("Failed to read coordinates attribute\n");
+        goto error;
+    }
+
+    /* Verify coordinates at specific pixels
+     * Tiepoint: pixel (0,0) = (-120.0°, 40.0°)
+     * Pixel scale: 0.1° per pixel
+     * Note: Y increases downward in image, but latitude should decrease
+     */
+    const double epsilon = 1e-6;
+
+    /* Check pixel (0, 0) - top-left corner */
+    double expected_lon = -120.0;
+    double expected_lat = 40.0;
+    if (fabs(coords[0].lon - expected_lon) > epsilon || fabs(coords[0].lat - expected_lat) > epsilon) {
+        printf("Pixel (0,0): expected (%.6f, %.6f), got (%.6f, %.6f)\n",
+               expected_lon, expected_lat, coords[0].lon, coords[0].lat);
+        goto error;
+    }
+
+    /* Check pixel (0, 5) - middle of top row */
+    expected_lon = -120.0 + 5 * 0.1;  /* -119.5 */
+    expected_lat = 40.0;
+    size_t idx = 0 * width + 5;
+    if (fabs(coords[idx].lon - expected_lon) > epsilon || fabs(coords[idx].lat - expected_lat) > epsilon) {
+        printf("Pixel (0,5): expected (%.6f, %.6f), got (%.6f, %.6f)\n",
+               expected_lon, expected_lat, coords[idx].lon, coords[idx].lat);
+        goto error;
+    }
+
+    /* Check pixel (5, 0) - middle of left column */
+    expected_lon = -120.0;
+    expected_lat = 40.0 - 5 * 0.1;  /* 39.5 (Y increases down, lat decreases) */
+    idx = 5 * width + 0;
+    if (fabs(coords[idx].lon - expected_lon) > epsilon || fabs(coords[idx].lat - expected_lat) > epsilon) {
+        printf("Pixel (5,0): expected (%.6f, %.6f), got (%.6f, %.6f)\n",
+               expected_lon, expected_lat, coords[idx].lon, coords[idx].lat);
+        goto error;
+    }
+
+    /* Check pixel (9, 9) - bottom-right corner */
+    expected_lon = -120.0 + 9 * 0.1;  /* -119.1 */
+    expected_lat = 40.0 - 9 * 0.1;    /* 39.1 */
+    idx = 9 * width + 9;
+    if (fabs(coords[idx].lon - expected_lon) > epsilon || fabs(coords[idx].lat - expected_lat) > epsilon) {
+        printf("Pixel (9,9): expected (%.6f, %.6f), got (%.6f, %.6f)\n",
+               expected_lon, expected_lat, coords[idx].lon, coords[idx].lat);
+        goto error;
+    }
+
+    /* Clean up */
+    free(coords);
+    H5Tclose(type_id);
+    H5Sclose(space_id);
+    H5Aclose(attr_id);
+    H5Dclose(dset_id);
+    H5Fclose(file_id);
+    H5Pclose(fapl_id);
+    H5VLunregister_connector(vol_id);
+    unlink(filename);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    if (coords)
+        free(coords);
+    H5E_BEGIN_TRY
+    {
+        H5Tclose(type_id);
+        H5Sclose(space_id);
+        H5Aclose(attr_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+    unlink(filename);
+
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test reading coordinates attribute from projected GeoTIFF (requires conversion) */
+int CoordinatesAttributeProjectedTest(const char *unused)
+{
+    (void)unused;
+    const char *filename = "_tmp_projected_coords.tif";
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+
+    typedef struct {
+        double lon;
+        double lat;
+    } coord_t;
+
+    coord_t *coords = NULL;
+    const uint32_t width = 10;
+    const uint32_t height = 10;
+
+    printf("Testing coordinates attribute with projected (UTM) GeoTIFF...");
+
+    /* Create test file */
+    if (CreateProjectedGeoTIFF(filename) < 0) {
+        printf("Failed to create test GeoTIFF\n");
+        goto error;
+    }
+
+    /* Register VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    /* Set up FAPL with GeoTIFF VOL */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open file and dataset */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open file\n");
+        goto error;
+    }
+
+    if ((dset_id = H5Dopen(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open dataset\n");
+        goto error;
+    }
+
+    /* Open coordinates attribute */
+    if ((attr_id = H5Aopen(dset_id, "coordinates", H5P_DEFAULT)) < 0) {
+        printf("Failed to open coordinates attribute\n");
+        goto error;
+    }
+
+    /* Get attribute type */
+    if ((type_id = H5Aget_type(attr_id)) < 0) {
+        printf("Failed to get attribute type\n");
+        goto error;
+    }
+
+    /* Allocate and read coordinates */
+    coords = (coord_t *)malloc(width * height * sizeof(coord_t));
+    if (!coords) {
+        printf("Failed to allocate memory for coordinates\n");
+        goto error;
+    }
+
+    if (H5Aread(attr_id, type_id, coords) < 0) {
+        printf("Failed to read coordinates attribute\n");
+        goto error;
+    }
+
+    /* Verify coordinates are reasonable for UTM Zone 11N
+     * UTM Zone 11N is roughly -120° to -114° longitude, 0° to 84° latitude
+     * Our test data is at approximately:
+     * - Easting 500000m = center of zone = approximately -117° longitude
+     * - Northing 4500000m = approximately 40.6° latitude
+     */
+
+    /* Check that coordinates are in reasonable ranges and not NaN */
+    for (uint32_t row = 0; row < height; row++) {
+        for (uint32_t col = 0; col < width; col++) {
+            size_t idx = row * width + col;
+
+            if (isnan(coords[idx].lon) || isnan(coords[idx].lat)) {
+                printf("Pixel (%u,%u): got NaN coordinates\n", row, col);
+                goto error;
+            }
+
+            /* Rough bounds check for UTM Zone 11N */
+            if (coords[idx].lon < -121.0 || coords[idx].lon > -113.0) {
+                printf("Pixel (%u,%u): longitude %.6f out of expected range [-121, -113]\n",
+                       row, col, coords[idx].lon);
+                goto error;
+            }
+
+            if (coords[idx].lat < 40.0 || coords[idx].lat > 41.0) {
+                printf("Pixel (%u,%u): latitude %.6f out of expected range [40, 41]\n",
+                       row, col, coords[idx].lat);
+                goto error;
+            }
+        }
+    }
+
+    /* Verify that longitude increases with column */
+    if (coords[0 * width + 9].lon <= coords[0 * width + 0].lon) {
+        printf("Expected longitude to increase from west to east\n");
+        goto error;
+    }
+
+    /* Verify that latitude decreases with row (Y increases down) */
+    if (coords[9 * width + 0].lat >= coords[0 * width + 0].lat) {
+        printf("Expected latitude to decrease from north to south\n");
+        goto error;
+    }
+
+    /* Clean up */
+    free(coords);
+    H5Tclose(type_id);
+    H5Aclose(attr_id);
+    H5Dclose(dset_id);
+    H5Fclose(file_id);
+    H5Pclose(fapl_id);
+    H5VLunregister_connector(vol_id);
+    unlink(filename);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    if (coords)
+        free(coords);
+    H5E_BEGIN_TRY
+    {
+        H5Tclose(type_id);
+        H5Aclose(attr_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+    unlink(filename);
+
+    printf("FAILED\n");
+    return 1;
+}

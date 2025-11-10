@@ -20,6 +20,9 @@
 #include <H5PLextern.h>
 #include <assert.h>
 #include <geotiff/xtiffio.h>
+#include <geotiff/geo_normalize.h>
+#include <geotiff/geovalues.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -962,16 +965,39 @@ herr_t geotiff_group_close(void *grp, hid_t __attribute__((unused)) dxpl_id,
 }
 
 /* Attribute operations */
-void *geotiff_attr_open(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
+void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params,
                         const char *name, hid_t __attribute__((unused)) aapl_id,
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    geotiff_file_t *file = (geotiff_file_t *) obj;
     geotiff_attr_t *attr = NULL;
     geotiff_attr_t *ret_value = NULL;
+    H5I_type_t obj_type = H5I_BADID;
 
-    if (!file || !name)
-        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Invalid file or attribute name");
+    if (!obj || !name || !loc_params)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Invalid object or attribute name");
+
+    /* Determine the type of the parent object */
+    if (loc_params->type == H5VL_OBJECT_BY_SELF) {
+        /* Need to determine what type obj is - check structure patterns */
+        /* Try to identify by checking first pointer field patterns */
+        geotiff_file_t *test_file = (geotiff_file_t *)obj;
+        geotiff_dataset_t *test_dset = (geotiff_dataset_t *)obj;
+        geotiff_group_t *test_group = (geotiff_group_t *)obj;
+
+        /* Heuristic: datasets have file pointer and additional fields */
+        if (test_dset->file && test_dset->name && test_dset->gtif) {
+            obj_type = H5I_DATASET;
+        } else if (test_group->file && test_group->name) {
+            obj_type = H5I_GROUP;
+        } else if (test_file->tiff && test_file->filename) {
+            obj_type = H5I_FILE;
+        } else {
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Cannot determine parent object type");
+        }
+    } else {
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, NULL,
+                        "Unsupported location parameter type for attribute open");
+    }
 
     if ((attr = (geotiff_attr_t *) calloc(1, sizeof(geotiff_attr_t))) == NULL)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL,
@@ -980,14 +1006,39 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t __attribute__((unused
     if ((attr->name = strdup(name)) == NULL)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL, "Failed to duplicate attribute name string");
 
-    if ((attr->space_id = H5Screate(H5S_SCALAR)) < 0)
-        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
-                        "Failed to create scalar dataspace for attribute");
+    attr->parent = obj;
+    attr->parent_type = obj_type;
+    attr->space_id = H5I_INVALID_HID;
+    attr->type_id = H5I_INVALID_HID;
+    attr->is_coordinate_attr = false;
 
-    attr->file = file;
-    attr->data = NULL;
-    attr->data_size = 0;
-    attr->type_id = H5T_NATIVE_CHAR;
+    /* Check if this is the special "coordinates" attribute on a dataset */
+    if (obj_type == H5I_DATASET && strcmp(name, "coordinates") == 0) {
+        geotiff_dataset_t *dset = (geotiff_dataset_t *)obj;
+
+        /* Only provide coordinates for image datasets */
+        if (!dset->is_image)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL,
+                            "coordinates attribute only available on image datasets");
+
+        attr->is_coordinate_attr = true;
+
+        /* Copy the dataset's dataspace (same dimensions as the image) */
+        if ((attr->space_id = H5Scopy(dset->space_id)) < 0)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCOPY, NULL,
+                            "Failed to copy dataset dataspace for coordinates attribute");
+
+        /* Create the compound type for {lon, lat} */
+        if ((attr->type_id = geotiff_create_coordinate_type()) < 0)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
+                            "Failed to create coordinate compound type");
+    } else {
+        /* For other attributes, create scalar placeholder */
+        if ((attr->space_id = H5Screate(H5S_SCALAR)) < 0)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
+                            "Failed to create scalar dataspace for attribute");
+        attr->type_id = H5T_NATIVE_CHAR;
+    }
 
     ret_value = attr;
 done:
@@ -1007,12 +1058,22 @@ herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, 
 {
     const geotiff_attr_t *a = (const geotiff_attr_t *) attr;
     herr_t ret_value = SUCCEED;
+
     if (!a || !buf)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid attribute or buffer");
 
-    if (a->data && a->data_size > 0) {
-        memcpy(buf, a->data, a->data_size);
+    /* Handle the computed coordinates attribute */
+    if (a->is_coordinate_attr) {
+        geotiff_dataset_t *dset = (geotiff_dataset_t *)a->parent;
+
+        if (!dset || !dset->gtif)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid parent dataset for coordinates");
+
+        /* Compute coordinates for all pixels - pass H5S_ALL for full selection */
+        if (geotiff_compute_coordinates(dset, buf, H5S_ALL) < 0)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_READERROR, FAIL, "Failed to compute coordinates");
     }
+    /* For other attributes, currently no data to return */
 
 done:
     return ret_value;
@@ -1052,8 +1113,6 @@ herr_t geotiff_attr_close(void *attr, hid_t __attribute__((unused)) dxpl_id,
     if (a) {
         if (a->name)
             free(a->name);
-        if (a->data)
-            free(a->data);
         /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
         if (a->space_id != H5I_INVALID_HID)
             if (H5Sclose(a->space_id) < 0)
@@ -1564,6 +1623,123 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
         default:
             FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL, "Unsupported link specific operation");
+    }
+
+done:
+    return ret_value;
+}
+
+/* Helper function to create the coordinate compound type {lon, lat} */
+hid_t geotiff_create_coordinate_type(void)
+{
+    hid_t coord_type = H5I_INVALID_HID;
+    hid_t ret_value = H5I_INVALID_HID;
+
+    /* Define the coordinate structure for memory layout */
+    typedef struct {
+        double lon;
+        double lat;
+    } coord_t;
+
+    /* Create compound type */
+    if ((coord_type = H5Tcreate(H5T_COMPOUND, sizeof(coord_t))) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCREATE, H5I_INVALID_HID,
+                        "Failed to create compound type for coordinates");
+
+    /* Insert longitude field */
+    if (H5Tinsert(coord_type, "lon", HOFFSET(coord_t, lon), H5T_NATIVE_DOUBLE) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTINSERT, H5I_INVALID_HID,
+                        "Failed to insert lon field in coordinate type");
+
+    /* Insert latitude field */
+    if (H5Tinsert(coord_type, "lat", HOFFSET(coord_t, lat), H5T_NATIVE_DOUBLE) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTINSERT, H5I_INVALID_HID,
+                        "Failed to insert lat field in coordinate type");
+
+    ret_value = coord_type;
+
+done:
+    if (ret_value < 0 && coord_type >= 0) {
+        H5Tclose(coord_type);
+    }
+    return ret_value;
+}
+
+/* Helper function to compute coordinates for all pixels in the dataset */
+herr_t geotiff_compute_coordinates(const geotiff_dataset_t *dset, void *buf,
+                                   hid_t __attribute__((unused)) mem_space_id)
+{
+    herr_t ret_value = SUCCEED;
+    GTIFDefn defn;
+    hsize_t dims[3];
+    int ndims;
+    uint32_t width, height;
+
+    /* Coordinate structure matching the compound type */
+    typedef struct {
+        double lon;
+        double lat;
+    } coord_t;
+
+    coord_t *coords = (coord_t *)buf;
+
+    if (!dset || !dset->gtif || !buf)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid dataset or buffer");
+
+    /* Get dataset dimensions */
+    if ((ndims = H5Sget_simple_extent_ndims(dset->space_id)) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_CANTGET, FAIL, "Failed to get dataspace rank");
+
+    if (H5Sget_simple_extent_dims(dset->space_id, dims, NULL) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_CANTGET, FAIL, "Failed to get dataspace dimensions");
+
+    /* Extract height and width from dimensions */
+    if (ndims == 2) {
+        height = (uint32_t)dims[0];
+        width = (uint32_t)dims[1];
+    } else if (ndims == 3) {
+        height = (uint32_t)dims[0];
+        width = (uint32_t)dims[1];
+    } else {
+        FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_BADVALUE, FAIL, "Unsupported number of dimensions");
+    }
+
+    /* Get the GeoTIFF definition (projection parameters) */
+    if (!GTIFGetDefn(dset->gtif, &defn))
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to get GeoTIFF definition");
+
+    /* Compute coordinates for each pixel */
+    for (uint32_t row = 0; row < height; row++) {
+        for (uint32_t col = 0; col < width; col++) {
+            double x = (double)col;
+            double y = (double)row;
+            size_t idx = row * width + col;
+
+            /* Step 1: Convert pixel coordinates to projected coordinates */
+            if (!GTIFImageToPCS(dset->gtif, &x, &y)) {
+                /* If transformation fails, set to NaN */
+                coords[idx].lon = NAN;
+                coords[idx].lat = NAN;
+                continue;
+            }
+
+            /* Step 2: If projected coordinate system, convert to lat/long */
+            if (defn.Model == ModelTypeGeographic) {
+                /* Already in geographic coordinates (lat/lon) */
+                coords[idx].lon = x;  /* longitude */
+                coords[idx].lat = y;  /* latitude */
+            } else {
+                /* Projected coordinates - convert to lat/long */
+                if (GTIFProj4ToLatLong(&defn, 1, &x, &y)) {
+                    coords[idx].lon = x;  /* longitude */
+                    coords[idx].lat = y;  /* latitude */
+                } else {
+                    /* Conversion failed */
+                    coords[idx].lon = NAN;
+                    coords[idx].lat = NAN;
+                }
+            }
+        }
     }
 
 done:
