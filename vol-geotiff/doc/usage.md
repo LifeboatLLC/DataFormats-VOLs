@@ -32,7 +32,7 @@ brew install cmake pkg-config libtiff libgeotiff
 
 ## Building
 
-This project uses CMake as the build system. 
+This project uses CMake as the build system.
 
 ### CMake Build
 1. Create a build directory:
@@ -65,9 +65,35 @@ This project uses CMake as the build system.
    make test
    ```
 
+### CMake Configuration Options
+
+- **`GEOTIFF_BUILD_EXAMPLES`** (default: `ON`): Build example programs
+
+  To disable building examples:
+  ```bash
+  cmake .. -DGEOTIFF_BUILD_EXAMPLES=OFF
+  ```
+
 ### Alternative CMake Configuration
 
 This project requires HDF5 develop (1.14+/2.x). Ensure your `CMAKE_PREFIX_PATH` and/or `HDF5_DIR` point to that install.
+
+### Example Programs
+
+The example programs demonstrate how to use the GeoTIFF VOL connector and visualize GeoTIFF data. They are built by default but can be disabled with `-DGEOTIFF_BUILD_EXAMPLES=OFF`.
+
+**Runtime Dependencies for Examples:**
+- **gnuplot** (for visualization demo)
+
+Install gnuplot on Ubuntu/Debian:
+```bash
+sudo apt-get install gnuplot
+```
+
+Install gnuplot on macOS:
+```bash
+brew install gnuplot
+```
 
 ## Usage
 
