@@ -132,6 +132,17 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "coordinates_attr_projected") == 0)
         num_failures += (CoordinatesAttributeProjectedTest(NULL) != 0 ? 1 : 0);
 
+    /* Reference counting tests */
+    if (run_all || strcmp(test_name, "refcount_close_file_before_dataset") == 0)
+        num_failures += (RefCountCloseFileBeforeDatasetTest(GRAYSCALE_FILENAME) != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "refcount_close_dataset_before_attribute") == 0)
+        num_failures += (RefCountCloseDatasetBeforeAttributeTest() != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "refcount_close_file_with_multiple_children") == 0)
+        num_failures +=
+            (RefCountCloseFileWithMultipleChildrenTest(GRAYSCALE_FILENAME) != 0 ? 1 : 0);
+
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
     } else {

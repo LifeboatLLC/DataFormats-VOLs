@@ -100,3 +100,13 @@ set_tests_properties(tiled_read_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIRON
 
 add_test(NAME tiled_read_rgb COMMAND test_runner tiled_read_rgb)
 set_tests_properties(tiled_read_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+# Reference counting tests
+add_test(NAME refcount_close_file_before_dataset COMMAND test_runner refcount_close_file_before_dataset)
+set_tests_properties(refcount_close_file_before_dataset PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME refcount_close_dataset_before_attribute COMMAND test_runner refcount_close_dataset_before_attribute)
+set_tests_properties(refcount_close_dataset_before_attribute PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME refcount_close_file_with_multiple_children COMMAND test_runner refcount_close_file_with_multiple_children)
+set_tests_properties(refcount_close_file_with_multiple_children PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")

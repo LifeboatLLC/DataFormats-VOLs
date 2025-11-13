@@ -19,9 +19,9 @@
 
 #include <H5PLextern.h>
 #include <assert.h>
-#include <geotiff/xtiffio.h>
 #include <geotiff/geo_normalize.h>
 #include <geotiff/geovalues.h>
+#include <geotiff/xtiffio.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -55,7 +55,7 @@ hid_t H5_geotiff_object_table_err_min_g = H5I_INVALID_HID;
 hid_t H5_geotiff_object_table_iter_err_min_g = H5I_INVALID_HID;
 
 /* Helper functions */
-static herr_t geotiff_read_image_data(geotiff_dataset_t *dset);
+static herr_t geotiff_read_image_data(geotiff_object_t *dset_obj);
 static herr_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample,
                                               hid_t *type_id);
 
@@ -279,17 +279,25 @@ void *geotiff_file_create(const char __attribute__((unused)) * name,
 void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id,
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    geotiff_file_t *file = NULL;
-    geotiff_file_t *ret_value = NULL;
+    geotiff_object_t *file_obj = NULL;
+    geotiff_object_t *ret_value = NULL;
+
+    geotiff_file_t *file = NULL; /* Convenience pointer */
 
     /* We only support read-only access for GeoTIFF files */
     if (flags != H5F_ACC_RDONLY)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_UNSUPPORTED, NULL,
                         "GeoTIFF VOL connector only supports read-only access");
 
-    if ((file = (geotiff_file_t *) calloc(1, sizeof(geotiff_file_t))) == NULL)
+    if ((file_obj = (geotiff_object_t *) calloc(1, sizeof(geotiff_object_t))) == NULL)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTALLOC, NULL,
                         "Failed to allocate memory for GeoTIFF file struct");
+
+    file_obj->obj_type = H5I_FILE;
+    file = &file_obj->u.file;
+    /* Parent file pointers points to itself */
+    file_obj->parent_file = file_obj;
+    file_obj->ref_count = 1;
 
     if ((file->tiff = XTIFFOpen(name, "r")) == NULL)
         FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTOPENFILE, NULL, "Failed to open GeoTIFF file: %s", name);
@@ -300,14 +308,14 @@ void *geotiff_file_open(const char *name, unsigned flags, hid_t fapl_id,
     file->flags = flags;
     file->plist_id = fapl_id;
 
-    ret_value = file;
+    ret_value = file_obj;
 
 done:
     if (!ret_value) {
-        if (file) {
+        if (file_obj) {
             H5E_BEGIN_TRY
             {
-                geotiff_file_close(file, dxpl_id, req);
+                geotiff_file_close(file_obj, dxpl_id, req);
             }
             H5E_END_TRY;
         }
@@ -320,7 +328,8 @@ done:
 herr_t geotiff_file_get(void *file, H5VL_file_get_args_t *args,
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    const geotiff_file_t *f = (const geotiff_file_t *) file;
+    const geotiff_object_t *o = (const geotiff_object_t *) file;
+    const geotiff_file_t *f = &o->u.file;
     herr_t ret_value = SUCCEED;
 
     switch (args->op_type) {
@@ -345,17 +354,27 @@ done:
 herr_t geotiff_file_close(void *file, hid_t __attribute__((unused)) dxpl_id,
                           void __attribute__((unused)) * *req)
 {
-    geotiff_file_t *f = (geotiff_file_t *) file;
+    geotiff_object_t *o = (geotiff_object_t *) file;
+    herr_t ret_value = SUCCEED;
 
-    if (f) {
-        if (f->tiff)
-            TIFFClose(f->tiff);
-        if (f->filename)
-            free(f->filename);
-        free(f);
+    assert(o);
+
+    if (o->ref_count == 0)
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTCLOSEFILE, FAIL,
+                        "GeoTIFF file already closed (ref_count is 0)");
+
+    o->ref_count--;
+
+    if (o->ref_count == 0) {
+        if (o->u.file.tiff)
+            TIFFClose(o->u.file.tiff);
+        if (o->u.file.filename)
+            free(o->u.file.filename);
+        free(o);
     }
 
-    return SUCCEED;
+done:
+    return ret_value;
 }
 
 /* Dataset operations */
@@ -364,9 +383,12 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
                            hid_t __attribute__((unused)) dxpl_id,
                            void __attribute__((unused)) * *req)
 {
-    geotiff_file_t *file = (geotiff_file_t *) obj;
-    geotiff_dataset_t *dset = NULL;
-    geotiff_dataset_t *ret_value = NULL;
+    geotiff_object_t *file_obj = (geotiff_object_t *) obj;
+    geotiff_object_t *dset_obj = NULL;
+    geotiff_object_t *ret_value = NULL;
+
+    geotiff_dataset_t *dset = NULL;           /* Convenience pointer */
+    geotiff_file_t *file = &file_obj->u.file; /* Convenience pointer */
 
     uint32_t width = 0;
     uint32_t height = 0;
@@ -379,21 +401,28 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
 
     H5T_class_t dtype_class = H5T_NO_CLASS;
 
-    if (!file || !name) {
+    if (!file_obj || !name) {
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or dataset name");
     }
 
-    if ((dset = (geotiff_dataset_t *) malloc(sizeof(geotiff_dataset_t))) == NULL) {
+    if ((dset_obj = (geotiff_object_t *) malloc(sizeof(geotiff_object_t))) == NULL) {
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, NULL,
                         "Failed to allocate memory for GeoTIFF dataset struct");
     }
+
+    dset_obj->obj_type = H5I_DATASET;
+    dset_obj->parent_file = file_obj->parent_file;
+    dset_obj->ref_count = 1; /* Initialize dataset's own ref count */
+    /* Increment file reference count since this dataset holds a reference */
+    file_obj->ref_count++;
+
+    dset = &dset_obj->u.dataset;
 
     if ((dset->name = strdup(name)) == NULL) {
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, NULL,
                         "Failed to duplicate dataset name string");
     }
 
-    dset->file = file;
     dset->data = NULL;
     dset->data_size = 0;
     dset->is_image = false;
@@ -537,17 +566,17 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
                         samples_per_pixel);
     }
 
-    if (geotiff_read_image_data(dset) < 0)
+    if (geotiff_read_image_data(dset_obj) < 0)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL, "failed to read image data");
 
-    ret_value = dset;
+    ret_value = dset_obj;
 
 done:
     if (!ret_value) {
         if (dset)
             H5E_BEGIN_TRY
             {
-                geotiff_dataset_close(dset, dxpl_id, req);
+                geotiff_dataset_close(dset_obj, dxpl_id, req);
             }
         H5E_END_TRY;
     }
@@ -684,7 +713,10 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
                             hid_t __attribute__((unused)) dxpl_id, void *buf[],
                             void __attribute__((unused)) * *req)
 {
-    const geotiff_dataset_t *d = (const geotiff_dataset_t *) dset[0];
+    const geotiff_object_t *dset_obj = (const geotiff_object_t *) dset[0];
+    const geotiff_dataset_t *d =
+        (const geotiff_dataset_t *) &dset_obj->u.dataset; /* Convenience pointer */
+
     herr_t ret_value = SUCCEED;
     H5S_sel_type file_sel_type = H5S_SEL_ERROR;
     H5S_sel_type mem_sel_type = H5S_SEL_ERROR;
@@ -811,7 +843,9 @@ herr_t geotiff_dataset_get(void *dset, H5VL_dataset_get_args_t *args,
                            hid_t __attribute__((unused)) dxpl_id,
                            void __attribute__((unused)) * *req)
 {
-    const geotiff_dataset_t *d = (const geotiff_dataset_t *) dset;
+    const geotiff_object_t *o = (const geotiff_object_t *) dset;
+    const geotiff_dataset_t *d = &o->u.dataset;
+
     herr_t ret_value = SUCCEED;
 
     switch (args->op_type) {
@@ -840,26 +874,44 @@ done:
     return ret_value;
 }
 
-herr_t geotiff_dataset_close(void *dset, hid_t __attribute__((unused)) dxpl_id,
-                             void __attribute__((unused)) * *req)
+herr_t geotiff_dataset_close(void *dset, hid_t dxpl_id, void **req)
 {
-    geotiff_dataset_t *d = (geotiff_dataset_t *) dset;
+    geotiff_object_t *d = (geotiff_object_t *) dset;
     herr_t ret_value = SUCCEED;
 
-    if (d) {
-        if (d->gtif)
-            GTIFFree(d->gtif);
-        if (d->name)
-            free(d->name);
-        if (d->data)
-            free(d->data);
-        /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
-        if (d->space_id != H5I_INVALID_HID)
-            if (H5Sclose(d->space_id) < 0)
+    assert(d);
+
+    /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
+    if (!d->parent_file)
+        FUNC_DONE_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL,
+                        "Dataset has no valid parent file reference");
+
+    /* Decrement dataset's ref count */
+    if (d->ref_count == 0)
+        FUNC_DONE_ERROR(H5E_DATASET, H5E_CANTCLOSEOBJ, FAIL,
+                        "Dataset already closed (ref_count is 0)");
+
+    d->ref_count--;
+
+    /* Only do the real close when ref_count reaches 0 */
+    if (d->ref_count == 0) {
+        if (d->u.dataset.gtif)
+            GTIFFree(d->u.dataset.gtif);
+        if (d->u.dataset.name)
+            free(d->u.dataset.name);
+        if (d->u.dataset.data)
+            free(d->u.dataset.data);
+        if (d->u.dataset.space_id != H5I_INVALID_HID)
+            if (H5Sclose(d->u.dataset.space_id) < 0)
                 FUNC_DONE_ERROR(H5E_DATASET, H5E_CLOSEERROR, FAIL, "Failed to close dataspace");
-        if (d->type_id != H5I_INVALID_HID)
-            if (H5Tclose(d->type_id) < 0)
+        if (d->u.dataset.type_id != H5I_INVALID_HID)
+            if (H5Tclose(d->u.dataset.type_id) < 0)
                 FUNC_DONE_ERROR(H5E_DATASET, H5E_CLOSEERROR, FAIL, "Failed to close datatype");
+
+        /* Decrement parent file's reference count */
+        if (geotiff_file_close(d->parent_file, dxpl_id, req) < 0)
+            FUNC_DONE_ERROR(H5E_DATASET, H5E_CLOSEERROR, FAIL,
+                            "Failed to close dataset file object");
 
         free(d);
     }
@@ -872,9 +924,11 @@ void *geotiff_group_open(void *obj, const H5VL_loc_params_t __attribute__((unuse
                          const char *name, hid_t __attribute__((unused)) gapl_id,
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    geotiff_file_t *file = (geotiff_file_t *) obj;
-    geotiff_group_t *grp = NULL;
-    geotiff_group_t *ret_value = NULL;
+    geotiff_object_t *file = (geotiff_object_t *) obj;
+    geotiff_object_t *grp_obj = NULL;
+    geotiff_object_t *ret_value = NULL;
+
+    geotiff_group_t *grp = NULL; /* Convenience pointer */
 
     if (!file || !name)
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or group name");
@@ -883,21 +937,26 @@ void *geotiff_group_open(void *obj, const H5VL_loc_params_t __attribute__((unuse
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_UNSUPPORTED, NULL,
                         "GeoTIFF VOL connector currently only supports root group '/'");
 
-    if ((grp = (geotiff_group_t *) calloc(1, sizeof(geotiff_group_t))) == NULL)
+    if ((grp_obj = (geotiff_object_t *) calloc(1, sizeof(geotiff_object_t))) == NULL)
         FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL,
                         "Failed to allocate memory for GeoTIFF group struct");
 
+    grp_obj->obj_type = H5I_GROUP;
+    grp_obj->parent_file = file->parent_file;
+    grp_obj->ref_count = 1; /* Initialize group's own ref count */
+    /* Increment file reference count since this group holds a reference */
+    grp_obj->parent_file->ref_count++;
+
+    grp = &grp_obj->u.group;
     if ((grp->name = strdup(name)) == NULL)
         FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL, "Failed to duplicate group name string");
 
-    grp->file = file;
-
-    ret_value = grp;
+    ret_value = grp_obj;
 done:
     if (!ret_value && grp) {
         H5E_BEGIN_TRY
         {
-            geotiff_group_close(grp, dxpl_id, req);
+            geotiff_group_close(grp_obj, dxpl_id, req);
         }
         H5E_END_TRY;
     }
@@ -908,6 +967,8 @@ done:
 herr_t geotiff_group_get(void *obj, H5VL_group_get_args_t *args,
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
+    geotiff_object_t *o = (geotiff_object_t *) obj;
+    geotiff_group_t *grp = (geotiff_group_t *) &o->u.group; /* Convenience pointer */
     herr_t ret_value = SUCCEED;
 
     if (!args)
@@ -915,18 +976,17 @@ herr_t geotiff_group_get(void *obj, H5VL_group_get_args_t *args,
 
     switch (args->op_type) {
         case H5VL_GROUP_GET_INFO: {
-            geotiff_group_t *grp = (geotiff_group_t *) obj;
             H5G_info_t *ginfo = args->args.get_info.ginfo;
             uint16_t num_dirs = 0;
 
             if (!grp || !ginfo)
                 FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid group or info pointer");
 
-            if (!grp->file || !grp->file->tiff)
+            if (!o->parent_file || !o->parent_file->u.file.tiff)
                 FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid file object");
 
             /* Get number of TIFF directories (images) in the file */
-            num_dirs = TIFFNumberOfDirectories(grp->file->tiff);
+            num_dirs = TIFFNumberOfDirectories(o->parent_file->u.file.tiff);
 
             /* Fill in group info structure */
             ginfo->storage_type = H5G_STORAGE_TYPE_COMPACT;
@@ -950,71 +1010,82 @@ done:
     return ret_value;
 }
 
-herr_t geotiff_group_close(void *grp, hid_t __attribute__((unused)) dxpl_id,
-                           void __attribute__((unused)) * *req)
+herr_t geotiff_group_close(void *grp, hid_t dxpl_id, void **req)
 {
-    geotiff_group_t *g = (geotiff_group_t *) grp;
+    geotiff_object_t *o = (geotiff_object_t *) grp;
+    geotiff_group_t *g = &o->u.group; /* Convenience pointer */
+    herr_t ret_value = SUCCEED;
 
-    if (g) {
+    assert(g);
+
+    /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
+
+    /* Decrement group's ref count */
+    if (o->ref_count == 0)
+        FUNC_DONE_ERROR(H5E_SYM, H5E_CANTCLOSEOBJ, FAIL, "Group already closed (ref_count is 0)");
+
+    o->ref_count--;
+
+    /* Only do the real close when ref_count reaches 0 */
+    if (o->ref_count == 0) {
         if (g->name)
             free(g->name);
-        free(g);
+
+        /* Decrement parent file's reference count */
+        if (geotiff_file_close(o->parent_file, dxpl_id, req) < 0)
+            FUNC_DONE_ERROR(H5E_SYM, H5E_CLOSEERROR, FAIL, "Failed to close group file object");
+
+        free(o);
     }
 
-    return SUCCEED;
+    return ret_value;
 }
 
 /* Attribute operations */
-void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params,
-                        const char *name, hid_t __attribute__((unused)) aapl_id,
+void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
+                        hid_t __attribute__((unused)) aapl_id,
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    geotiff_attr_t *attr = NULL;
-    geotiff_attr_t *ret_value = NULL;
-    H5I_type_t obj_type = H5I_BADID;
+    geotiff_object_t *parent_obj = NULL;
+    geotiff_object_t *attr_obj = NULL;
+    geotiff_object_t *ret_value = NULL;
+
+    geotiff_attr_t *attr = NULL; /* Convenience pointer */
 
     if (!obj || !name || !loc_params)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Invalid object or attribute name");
 
-    /* Determine the type of the parent object */
-    if (loc_params->type == H5VL_OBJECT_BY_SELF) {
-        /* Need to determine what type obj is - check structure patterns */
-        /* Try to identify by checking first pointer field patterns */
-        geotiff_file_t *test_file = (geotiff_file_t *)obj;
-        geotiff_dataset_t *test_dset = (geotiff_dataset_t *)obj;
-        geotiff_group_t *test_group = (geotiff_group_t *)obj;
+    parent_obj = (geotiff_object_t *) obj;
 
-        /* Heuristic: datasets have file pointer and additional fields */
-        if (test_dset->file && test_dset->name && test_dset->gtif) {
-            obj_type = H5I_DATASET;
-        } else if (test_group->file && test_group->name) {
-            obj_type = H5I_GROUP;
-        } else if (test_file->tiff && test_file->filename) {
-            obj_type = H5I_FILE;
-        } else {
-            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Cannot determine parent object type");
-        }
-    } else {
+    /* Determine the type of the parent object */
+    if (loc_params->type != H5VL_OBJECT_BY_SELF)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, NULL,
                         "Unsupported location parameter type for attribute open");
-    }
 
-    if ((attr = (geotiff_attr_t *) calloc(1, sizeof(geotiff_attr_t))) == NULL)
+    if ((attr_obj = (geotiff_object_t *) calloc(1, sizeof(geotiff_object_t))) == NULL)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL,
                         "Failed to allocate memory for GeoTIFF attribute struct");
+
+    attr_obj->obj_type = H5I_ATTR;
+    attr_obj->parent_file = parent_obj->parent_file;
+    attr_obj->ref_count = 1; /* Initialize attribute's own ref count */
+    /* Increment file reference count since this attribute holds a reference */
+    attr_obj->parent_file->ref_count++;
+    /* Increment parent object's reference count since this attribute holds a reference */
+    parent_obj->ref_count++;
+    attr = &attr_obj->u.attr;
 
     if ((attr->name = strdup(name)) == NULL)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL, "Failed to duplicate attribute name string");
 
     attr->parent = obj;
-    attr->parent_type = obj_type;
     attr->space_id = H5I_INVALID_HID;
     attr->type_id = H5I_INVALID_HID;
     attr->is_coordinate_attr = false;
 
     /* Check if this is the special "coordinates" attribute on a dataset */
-    if (obj_type == H5I_DATASET && strcmp(name, "coordinates") == 0) {
-        geotiff_dataset_t *dset = (geotiff_dataset_t *)obj;
+    if (parent_obj->obj_type == H5I_DATASET && strcmp(name, "coordinates") == 0) {
+        geotiff_dataset_t *dset = &parent_obj->u.dataset;
 
         /* Only provide coordinates for image datasets */
         if (!dset->is_image)
@@ -1040,12 +1111,12 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params,
         attr->type_id = H5T_NATIVE_CHAR;
     }
 
-    ret_value = attr;
+    ret_value = attr_obj;
 done:
-    if (!ret_value && attr) {
+    if (!ret_value && attr_obj) {
         H5E_BEGIN_TRY
         {
-            geotiff_attr_close(attr, dxpl_id, req);
+            geotiff_attr_close(attr_obj, dxpl_id, req);
         }
         H5E_END_TRY;
     }
@@ -1056,7 +1127,8 @@ done:
 herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, void *buf,
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    const geotiff_attr_t *a = (const geotiff_attr_t *) attr;
+    const geotiff_object_t *o = (const geotiff_object_t *) attr;
+    const geotiff_attr_t *a = &o->u.attr;
     herr_t ret_value = SUCCEED;
 
     if (!a || !buf)
@@ -1064,7 +1136,7 @@ herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, 
 
     /* Handle the computed coordinates attribute */
     if (a->is_coordinate_attr) {
-        geotiff_dataset_t *dset = (geotiff_dataset_t *)a->parent;
+        geotiff_dataset_t *dset = (geotiff_dataset_t *) a->parent;
 
         if (!dset || !dset->gtif)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid parent dataset for coordinates");
@@ -1083,7 +1155,9 @@ done:
 herr_t geotiff_attr_get(void *obj, H5VL_attr_get_args_t *args,
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    const geotiff_attr_t *a = (const geotiff_attr_t *) obj;
+    const geotiff_object_t *o = (const geotiff_object_t *) obj;
+    const geotiff_attr_t *a = &o->u.attr;
+
     herr_t ret_value = SUCCEED;
 
     switch (args->op_type) {
@@ -1104,16 +1178,27 @@ done:
     return ret_value;
 }
 
-herr_t geotiff_attr_close(void *attr, hid_t __attribute__((unused)) dxpl_id,
-                          void __attribute__((unused)) * *req)
+herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req)
 {
-    geotiff_attr_t *a = (geotiff_attr_t *) attr;
+    geotiff_object_t *o = (geotiff_object_t *) attr;
+    geotiff_attr_t *a = &o->u.attr;
+    geotiff_object_t *parent_obj = NULL;
     herr_t ret_value = SUCCEED;
 
-    if (a) {
+    assert(a);
+
+    /* Decrement attribute's ref count */
+    if (o->ref_count == 0)
+        FUNC_DONE_ERROR(H5E_ATTR, H5E_CANTCLOSEOBJ, FAIL,
+                        "Attribute already closed (ref_count is 0)");
+
+    o->ref_count--;
+
+    /* Only do the real close when ref_count reaches 0 */
+    if (o->ref_count == 0) {
+        /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
         if (a->name)
             free(a->name);
-        /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
         if (a->space_id != H5I_INVALID_HID)
             if (H5Sclose(a->space_id) < 0)
                 FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
@@ -1122,19 +1207,51 @@ herr_t geotiff_attr_close(void *attr, hid_t __attribute__((unused)) dxpl_id,
             if (H5Tclose(a->type_id) < 0)
                 FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
                                 "Failed to close attribute datatype");
-        free(a);
+
+        /* Close parent object (dataset, group, or file) */
+        parent_obj = (geotiff_object_t *) a->parent;
+        if (parent_obj) {
+            switch (parent_obj->obj_type) {
+                case H5I_FILE:
+                    if (geotiff_file_close(parent_obj, dxpl_id, req) < 0)
+                        FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                        "Failed to close attribute's parent file");
+                    break;
+                case H5I_DATASET:
+                    if (geotiff_dataset_close(parent_obj, dxpl_id, req) < 0)
+                        FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                        "Failed to close attribute's parent dataset");
+                    break;
+                case H5I_GROUP:
+                    if (geotiff_group_close(parent_obj, dxpl_id, req) < 0)
+                        FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                        "Failed to close attribute's parent group");
+                    break;
+                default:
+                    FUNC_DONE_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid parent object type");
+            }
+        }
+
+        /* Also decrement the file reference count */
+        if (geotiff_file_close(o->parent_file, dxpl_id, req) < 0)
+            FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                            "Failed to close attribute file object");
+
+        free(o);
     }
 
     return ret_value;
 }
 
 /* Helper function to read hyperslab selection (bands/regions) from GeoTIFF */
-herr_t geotiff_read_hyperslab(const geotiff_dataset_t *dset, const hsize_t *start,
+herr_t geotiff_read_hyperslab(const geotiff_object_t *dset_obj, const hsize_t *start,
                               const hsize_t __attribute__((unused)) * stride, const hsize_t *count,
                               const hsize_t *block, int ndims,
                               hid_t __attribute__((unused)) mem_type_id, void *buf)
 {
-    geotiff_file_t *file = dset->file;
+    geotiff_object_t *file_obj = dset_obj->parent_file;
+    geotiff_file_t *file = &file_obj->u.file; /* Convenience pointer */
+
     uint32_t width, height;
     uint16_t samples_per_pixel, bits_per_sample, sample_format;
     size_t elem_size;
@@ -1235,9 +1352,17 @@ done:
  * TODO: Currently reads entire image into memory. For large images, this may
  *       exceed available memory.
  */
-static herr_t geotiff_read_image_data(geotiff_dataset_t *dset)
+static herr_t geotiff_read_image_data(geotiff_object_t *dset_obj)
 {
-    geotiff_file_t *file = dset->file;
+    geotiff_dataset_t *dset = NULL; /* Convenience pointer */
+    geotiff_file_t *file = NULL;    /* Convenience pointer */
+
+    assert(dset_obj);
+    dset = &dset_obj->u.dataset;
+
+    assert(dset_obj->parent_file);
+    file = &dset_obj->parent_file->u.file;
+
     uint32_t width = 0;
     uint32_t height = 0;
     uint16_t samples_per_pixel = 0;
@@ -1635,12 +1760,6 @@ hid_t geotiff_create_coordinate_type(void)
     hid_t coord_type = H5I_INVALID_HID;
     hid_t ret_value = H5I_INVALID_HID;
 
-    /* Define the coordinate structure for memory layout */
-    typedef struct {
-        double lon;
-        double lat;
-    } coord_t;
-
     /* Create compound type */
     if ((coord_type = H5Tcreate(H5T_COMPOUND, sizeof(coord_t))) < 0)
         FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCREATE, H5I_INVALID_HID,
@@ -1659,9 +1778,9 @@ hid_t geotiff_create_coordinate_type(void)
     ret_value = coord_type;
 
 done:
-    if (ret_value < 0 && coord_type >= 0) {
+    if (ret_value < 0 && coord_type >= 0)
         H5Tclose(coord_type);
-    }
+
     return ret_value;
 }
 
@@ -1675,13 +1794,7 @@ herr_t geotiff_compute_coordinates(const geotiff_dataset_t *dset, void *buf,
     int ndims;
     uint32_t width, height;
 
-    /* Coordinate structure matching the compound type */
-    typedef struct {
-        double lon;
-        double lat;
-    } coord_t;
-
-    coord_t *coords = (coord_t *)buf;
+    coord_t *coords = (coord_t *) buf;
 
     if (!dset || !dset->gtif || !buf)
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid dataset or buffer");
@@ -1694,12 +1807,9 @@ herr_t geotiff_compute_coordinates(const geotiff_dataset_t *dset, void *buf,
         FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_CANTGET, FAIL, "Failed to get dataspace dimensions");
 
     /* Extract height and width from dimensions */
-    if (ndims == 2) {
-        height = (uint32_t)dims[0];
-        width = (uint32_t)dims[1];
-    } else if (ndims == 3) {
-        height = (uint32_t)dims[0];
-        width = (uint32_t)dims[1];
+    if (ndims == 2 || ndims == 3) {
+        height = (uint32_t) dims[0];
+        width = (uint32_t) dims[1];
     } else {
         FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_BADVALUE, FAIL, "Unsupported number of dimensions");
     }
@@ -1711,8 +1821,8 @@ herr_t geotiff_compute_coordinates(const geotiff_dataset_t *dset, void *buf,
     /* Compute coordinates for each pixel */
     for (uint32_t row = 0; row < height; row++) {
         for (uint32_t col = 0; col < width; col++) {
-            double x = (double)col;
-            double y = (double)row;
+            double x = (double) col;
+            double y = (double) row;
             size_t idx = row * width + col;
 
             /* Step 1: Convert pixel coordinates to projected coordinates */
@@ -1726,13 +1836,13 @@ herr_t geotiff_compute_coordinates(const geotiff_dataset_t *dset, void *buf,
             /* Step 2: If projected coordinate system, convert to lat/long */
             if (defn.Model == ModelTypeGeographic) {
                 /* Already in geographic coordinates (lat/lon) */
-                coords[idx].lon = x;  /* longitude */
-                coords[idx].lat = y;  /* latitude */
+                coords[idx].lon = x; /* longitude */
+                coords[idx].lat = y; /* latitude */
             } else {
                 /* Projected coordinates - convert to lat/long */
                 if (GTIFProj4ToLatLong(&defn, 1, &x, &y)) {
-                    coords[idx].lon = x;  /* longitude */
-                    coords[idx].lat = y;  /* latitude */
+                    coords[idx].lon = x; /* longitude */
+                    coords[idx].lat = y; /* latitude */
                 } else {
                     /* Conversion failed */
                     coords[idx].lon = NAN;
