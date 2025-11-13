@@ -4,7 +4,8 @@ target_include_directories (test_runner PRIVATE "${PROJECT_SOURCE_DIR}/src" ${HD
 
 # Define the plugin path for the tests to use
 target_compile_definitions(test_runner PRIVATE
-    GEOTIFF_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src")
+    GEOTIFF_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src"
+    REAL_TEST_FILE_PATH="${PROJECT_SOURCE_DIR}/test/PIA26616.tif")
 
 # Link test_runner with required libraries
 if (_have_config)
@@ -110,3 +111,7 @@ set_tests_properties(refcount_close_dataset_before_attribute PROPERTIES ENVIRONM
 
 add_test(NAME refcount_close_file_with_multiple_children COMMAND test_runner refcount_close_file_with_multiple_children)
 set_tests_properties(refcount_close_file_with_multiple_children PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+# Real file comprehensive test
+add_test(NAME real_file_comprehensive COMMAND test_runner real_file_comprehensive)
+set_tests_properties(real_file_comprehensive PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")

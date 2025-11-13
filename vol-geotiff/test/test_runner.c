@@ -143,6 +143,15 @@ int main(int argc, char **argv)
         num_failures +=
             (RefCountCloseFileWithMultipleChildrenTest(GRAYSCALE_FILENAME) != 0 ? 1 : 0);
 
+    /* Real file comprehensive test */
+    if (run_all || strcmp(test_name, "real_file_comprehensive") == 0) {
+#ifdef REAL_TEST_FILE_PATH
+        num_failures += (RealFileComprehensiveTest(REAL_TEST_FILE_PATH) != 0 ? 1 : 0);
+#else
+        printf("Skipping real_file_comprehensive: REAL_TEST_FILE_PATH not defined\n");
+#endif
+    }
+
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
     } else {

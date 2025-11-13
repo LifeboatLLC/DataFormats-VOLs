@@ -38,5 +38,6 @@ int CoordinatesAttributeProjectedTest(const char *unused);
 int RefCountCloseFileBeforeDatasetTest(const char *filename);
 int RefCountCloseDatasetBeforeAttributeTest(void);
 int RefCountCloseFileWithMultipleChildrenTest(const char *filename);
+int RealFileComprehensiveTest(const char *filename);
 
 #endif // TEST_GEOTIFF_H

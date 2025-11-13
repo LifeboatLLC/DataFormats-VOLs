@@ -3289,3 +3289,290 @@ error:
     H5E_END_TRY;
     return -1;
 }
+
+/*
+ * Comprehensive test for real GeoTIFF files
+ * Tests all basic VOL operations generically on any GeoTIFF file
+ */
+int RealFileComprehensiveTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t group_id = H5I_INVALID_HID;
+    hsize_t dims[3];
+    int ndims;
+    unsigned char *data = NULL;
+    H5O_info2_t obj_info;
+    int num_images = 0;
+
+    printf("Testing comprehensive VOL operations on real file: %s\n", filename);
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("  FAILED: Could not append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("  FAILED: Could not register VOL connector\n");
+        goto error;
+    }
+
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("  FAILED: Could not create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("  FAILED: Could not set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the GeoTIFF file */
+    printf("  Opening file...\n");
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("  FAILED: Could not open GeoTIFF file\n");
+        goto error;
+    }
+    printf("  PASSED: File opened successfully\n");
+
+    /* Open root group to count images */
+    printf("  Counting images in file...\n");
+    if ((group_id = H5Gopen2(file_id, "/", H5P_DEFAULT)) < 0) {
+        printf("  FAILED: Could not open root group\n");
+        goto error;
+    }
+
+    /* Try to open image0, image1, etc. until we fail */
+    for (int i = 0; i < 100; i++) {
+        char dset_name[32];
+        snprintf(dset_name, sizeof(dset_name), "image%d", i);
+
+        H5E_BEGIN_TRY
+        {
+            hid_t temp_dset = H5Dopen2(file_id, dset_name, H5P_DEFAULT);
+            if (temp_dset >= 0) {
+                num_images++;
+                H5Dclose(temp_dset);
+            } else {
+                break;
+            }
+        }
+        H5E_END_TRY;
+    }
+
+    if (num_images == 0) {
+        printf("  FAILED: No images found in file\n");
+        goto error;
+    }
+    printf("  PASSED: Found %d image(s) in file\n", num_images);
+
+    /* Test the first image */
+    printf("  Testing image0...\n");
+    if ((dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("  FAILED: Could not open image0 dataset\n");
+        goto error;
+    }
+
+    /* Get dataspace to determine dimensions */
+    printf("  Getting image dimensions...\n");
+    if ((space_id = H5Dget_space(dset_id)) < 0) {
+        printf("  FAILED: Could not get dataspace\n");
+        goto error;
+    }
+
+    if ((ndims = H5Sget_simple_extent_ndims(space_id)) < 0) {
+        printf("  FAILED: Could not get number of dimensions\n");
+        goto error;
+    }
+
+    if (ndims < 2 || ndims > 3) {
+        printf("  FAILED: Unexpected number of dimensions: %d (expected 2 or 3)\n", ndims);
+        goto error;
+    }
+
+    if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) {
+        printf("  FAILED: Could not get dimensions\n");
+        goto error;
+    }
+
+    /* Determine if RGB or grayscale */
+    int is_rgb = (ndims == 3 && dims[2] == 3);
+    int is_grayscale = (ndims == 2);
+
+    if (!is_rgb && !is_grayscale) {
+        printf("  FAILED: Image is neither grayscale nor RGB (dims: ");
+        for (int i = 0; i < ndims; i++) {
+            printf("%llu%s", (unsigned long long) dims[i], (i < ndims - 1) ? "x" : "");
+        }
+        printf(")\n");
+        goto error;
+    }
+
+    if (is_grayscale) {
+        printf("  PASSED: Image is grayscale (%llux%llu)\n", (unsigned long long) dims[0],
+               (unsigned long long) dims[1]);
+    } else {
+        printf("  PASSED: Image is RGB (%llux%llux%llu)\n", (unsigned long long) dims[0],
+               (unsigned long long) dims[1], (unsigned long long) dims[2]);
+    }
+
+    /* Get datatype */
+    printf("  Getting datatype...\n");
+    if ((type_id = H5Dget_type(dset_id)) < 0) {
+        printf("  FAILED: Could not get datatype\n");
+        goto error;
+    }
+
+    /* Verify it's a supported type (should be unsigned char) */
+    H5T_class_t type_class = H5Tget_class(type_id);
+    size_t type_size = H5Tget_size(type_id);
+
+    if (type_class != H5T_INTEGER) {
+        printf("  FAILED: Unexpected datatype class (expected integer)\n");
+        goto error;
+    }
+    printf("  PASSED: Datatype is integer with size %zu bytes\n", type_size);
+
+    /* Allocate buffer based on dimensions and read data */
+    printf("  Reading image data...\n");
+    size_t data_size;
+    if (is_grayscale) {
+        data_size = dims[0] * dims[1];
+    } else {
+        data_size = dims[0] * dims[1] * dims[2];
+    }
+
+    data = (unsigned char *) malloc(data_size * sizeof(unsigned char));
+    if (!data) {
+        printf("  FAILED: Could not allocate read buffer of size %zu\n", data_size);
+        goto error;
+    }
+
+    if (H5Dread(dset_id, H5T_NATIVE_UCHAR, H5S_ALL, H5S_ALL, H5P_DEFAULT, data) < 0) {
+        printf("  FAILED: Could not read dataset\n");
+        goto error;
+    }
+    printf("  PASSED: Read %zu bytes of image data\n", data_size);
+
+    /* Try to read coordinates attribute if it exists */
+    printf("  Checking for spatial metadata (coordinates attribute)...\n");
+    H5E_BEGIN_TRY
+    {
+        attr_id = H5Aopen(dset_id, "coordinates", H5P_DEFAULT);
+        if (attr_id >= 0) {
+            /* Get attribute dataspace to determine size */
+            hid_t attr_space = H5Aget_space(attr_id);
+            if (attr_space >= 0) {
+                hssize_t num_elements = H5Sget_simple_extent_npoints(attr_space);
+                if (num_elements > 0) {
+                    /* Allocate and read coordinates */
+                    double *coords = (double *) malloc(num_elements * sizeof(double));
+                    if (coords) {
+                        if (H5Aread(attr_id, H5T_NATIVE_DOUBLE, coords) >= 0) {
+                            printf("  PASSED: Read %lld coordinate values\n",
+                                   (long long) num_elements);
+
+                            /* Print first few values for verification */
+                            int print_count = (num_elements < 6) ? num_elements : 6;
+                            printf("  First coordinates: ");
+                            for (int i = 0; i < print_count; i++) {
+                                printf("%.6f%s", coords[i], (i < print_count - 1) ? ", " : "");
+                            }
+                            if (num_elements > 6) {
+                                printf("...");
+                            }
+                            printf("\n");
+                        } else {
+                            printf("  WARNING: Could not read coordinates attribute\n");
+                        }
+                        free(coords);
+                    }
+                }
+                H5Sclose(attr_space);
+            }
+            H5Aclose(attr_id);
+            attr_id = H5I_INVALID_HID;
+        } else {
+            printf("  INFO: No coordinates attribute found (file may not have spatial data)\n");
+        }
+    }
+    H5E_END_TRY;
+
+    /* Clean up */
+    free(data);
+    data = NULL;
+
+    if (H5Tclose(type_id) < 0) {
+        printf("  FAILED: Could not close datatype\n");
+        goto error;
+    }
+    type_id = H5I_INVALID_HID;
+
+    if (H5Sclose(space_id) < 0) {
+        printf("  FAILED: Could not close dataspace\n");
+        goto error;
+    }
+    space_id = H5I_INVALID_HID;
+
+    if (H5Dclose(dset_id) < 0) {
+        printf("  FAILED: Could not close dataset\n");
+        goto error;
+    }
+    dset_id = H5I_INVALID_HID;
+
+    if (H5Gclose(group_id) < 0) {
+        printf("  FAILED: Could not close group\n");
+        goto error;
+    }
+    group_id = H5I_INVALID_HID;
+
+    if (H5Fclose(file_id) < 0) {
+        printf("  FAILED: Could not close file\n");
+        goto error;
+    }
+    file_id = H5I_INVALID_HID;
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("  FAILED: Could not close FAPL\n");
+        goto error;
+    }
+    fapl_id = H5I_INVALID_HID;
+
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("  FAILED: Could not unregister VOL connector\n");
+        goto error;
+    }
+    vol_id = H5I_INVALID_HID;
+
+    printf("  PASSED: All comprehensive tests completed successfully\n\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        if (data)
+            free(data);
+        H5Aclose(attr_id);
+        H5Tclose(type_id);
+        H5Sclose(space_id);
+        H5Dclose(dset_id);
+        H5Gclose(group_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+    return -1;
+}
