@@ -714,8 +714,7 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
                             void __attribute__((unused)) * *req)
 {
     const geotiff_object_t *dset_obj = (const geotiff_object_t *) dset[0];
-    const geotiff_dataset_t *d =
-        (const geotiff_dataset_t *) &dset_obj->u.dataset; /* Convenience pointer */
+    const geotiff_dataset_t *d = NULL; /* Convenience pointer */
 
     herr_t ret_value = SUCCEED;
     H5S_sel_type file_sel_type = H5S_SEL_ERROR;
@@ -730,7 +729,10 @@ herr_t geotiff_dataset_read(size_t __attribute__((unused)) count, void *dset[], 
 
     void *gathered_buf = NULL;
 
-    if (!d || !buf[0])
+    assert(dset_obj);
+    d = (const geotiff_dataset_t *) &dset_obj->u.dataset;
+
+    if (!buf[0])
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid dataset buffer");
 
     /* Set up dataspaces and element count */
@@ -968,7 +970,7 @@ herr_t geotiff_group_get(void *obj, H5VL_group_get_args_t *args,
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     geotiff_object_t *o = (geotiff_object_t *) obj;
-    geotiff_group_t *grp = (geotiff_group_t *) &o->u.group; /* Convenience pointer */
+    const geotiff_group_t *grp = (const geotiff_group_t *) &o->u.group; /* Convenience pointer */
     herr_t ret_value = SUCCEED;
 
     if (!args)
@@ -1128,15 +1130,19 @@ herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, 
                          hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     const geotiff_object_t *o = (const geotiff_object_t *) attr;
-    const geotiff_attr_t *a = &o->u.attr;
+    const geotiff_attr_t *a = NULL; /* Convenience pointer */
     herr_t ret_value = SUCCEED;
 
-    if (!a || !buf)
+    assert(o);
+
+    a = &o->u.attr;
+
+    if (!buf)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid attribute or buffer");
 
     /* Handle the computed coordinates attribute */
     if (a->is_coordinate_attr) {
-        geotiff_dataset_t *dset = (geotiff_dataset_t *) a->parent;
+        const geotiff_dataset_t *dset = (const geotiff_dataset_t *) a->parent;
 
         if (!dset || !dset->gtif)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid parent dataset for coordinates");
@@ -1250,7 +1256,7 @@ herr_t geotiff_read_hyperslab(const geotiff_object_t *dset_obj, const hsize_t *s
                               hid_t __attribute__((unused)) mem_type_id, void *buf)
 {
     geotiff_object_t *file_obj = dset_obj->parent_file;
-    geotiff_file_t *file = &file_obj->u.file; /* Convenience pointer */
+    geotiff_file_t *file = NULL; /* Convenience pointer */
 
     uint32_t width, height;
     uint16_t samples_per_pixel, bits_per_sample, sample_format;
@@ -1262,7 +1268,10 @@ herr_t geotiff_read_hyperslab(const geotiff_object_t *dset_obj, const hsize_t *s
     hsize_t row_start, row_count, col_start, col_count, band_start, band_count;
     hsize_t band_idx;
 
-    if (!file || !file->tiff || !buf)
+    assert(file_obj);
+    file = &file_obj->u.file;
+
+    if (!file->tiff || !buf)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL, "Invalid file or buffer");
 
     /* Get TIFF dimensions */
@@ -1807,12 +1816,11 @@ herr_t geotiff_compute_coordinates(const geotiff_dataset_t *dset, void *buf,
         FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_CANTGET, FAIL, "Failed to get dataspace dimensions");
 
     /* Extract height and width from dimensions */
-    if (ndims == 2 || ndims == 3) {
-        height = (uint32_t) dims[0];
-        width = (uint32_t) dims[1];
-    } else {
+    if (ndims != 2 && ndims != 3)
         FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_BADVALUE, FAIL, "Unsupported number of dimensions");
-    }
+
+    height = (uint32_t) dims[0];
+    width = (uint32_t) dims[1];
 
     /* Get the GeoTIFF definition (projection parameters) */
     if (!GTIFGetDefn(dset->gtif, &defn))
