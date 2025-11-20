@@ -1165,7 +1165,7 @@ herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, 
         const geotiff_object_t *parent_obj = (const geotiff_object_t *) a->parent;
         const geotiff_dataset_t *dset = &parent_obj->u.dataset;
 
-        if (!dset || !dset->gtif)
+        if (!dset->gtif)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid parent dataset for coordinates");
 
         /* Compute coordinates for all pixels - pass H5S_ALL for full selection */

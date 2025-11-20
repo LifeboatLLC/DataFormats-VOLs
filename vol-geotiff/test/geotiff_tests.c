@@ -3747,10 +3747,15 @@ int NumImagesAttributeTest(void)
         goto error;
     }
 
-    H5Aclose(attr_id);
-    attr_id = H5I_INVALID_HID;
-    H5Fclose(file_id);
-    file_id = H5I_INVALID_HID;
+    if (H5Aclose(attr_id) < 0) {
+        printf("FAILED: Could not close num_images attribute\n");
+        goto error;
+    }
+
+    if (H5Fclose(file_id) < 0) {
+        printf("FAILED: Could not close single-image file\n");
+        goto error;
+    }
 
     /* Test multi-image file */
     if ((file_id = H5Fopen(multi_file, H5F_ACC_RDONLY, fapl_id)) < 0) {
@@ -3775,10 +3780,22 @@ int NumImagesAttributeTest(void)
     }
 
     /* Clean up */
-    H5Aclose(attr_id);
-    H5Fclose(file_id);
-    H5Pclose(fapl_id);
-    H5VLunregister_connector(vol_id);
+    if (H5Aclose(attr_id) < 0) {
+        printf("FAILED: Could not close num_images attribute\n");
+        goto error;
+    }
+    if (H5Fclose(file_id) < 0) {
+        printf("FAILED: Could not close multi-image file\n");
+        goto error;
+    }
+    if (H5Pclose(fapl_id) < 0) {
+        printf("FAILED: Could not close FAPL\n");
+        goto error;
+    }
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("FAILED: Could not unregister VOL connector\n");
+        goto error;
+    }
 
     printf("PASSED\n");
     return 0;
