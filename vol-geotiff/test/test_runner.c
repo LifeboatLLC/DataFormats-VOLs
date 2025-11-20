@@ -155,6 +155,9 @@ int main(int argc, char **argv)
         num_failures +=
             (RefCountCloseFileWithMultipleChildrenTest(GRAYSCALE_FILENAME) != 0 ? 1 : 0);
 
+    if (run_all || strcmp(test_name, "num_images_attribute") == 0)
+        num_failures += (NumImagesAttributeTest() != 0 ? 1 : 0);
+
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
     } else {

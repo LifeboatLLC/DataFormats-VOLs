@@ -14,7 +14,11 @@ Images are exposed as HDF5 datasets using a zero-indexed naming convention: `ima
 
 ### Discovering the Number of Images
 
-To determine how many images (TIFF directories) are present in a GeoTIFF file, use `H5Gget_info()` on the file ID. The `nlinks` field in the returned `H5G_info_t` structure indicates the total number of images available in the file. For example, a single-image TIFF will report `nlinks = 1` (corresponding to `image0`), while a multi-image TIFF with three directories will report `nlinks = 3` (corresponding to `image0`, `image1`, and `image2`).
+To determine how many images (TIFF directories) are present in a GeoTIFF file, there are two methods.
+
+1. Read from the scalar `num_images` attribute on a file. This is an attribute with a single native unisnged 64-bit integer describing the number of images/directories in the GeoTIFF file.
+
+2. Use `H5Gget_info()` on the file ID. The `nlinks` field in the returned `H5G_info_t` structure indicates the total number of images available in the file. For example, a single-image TIFF will report `nlinks = 1` (corresponding to `image0`), while a multi-image TIFF with three directories will report `nlinks = 3` (corresponding to `image0`, `image1`, and `image2`).
 
 ### RGB(A) Images
 

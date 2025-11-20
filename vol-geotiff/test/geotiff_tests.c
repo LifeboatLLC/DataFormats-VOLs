@@ -3678,3 +3678,120 @@ error:
     H5E_END_TRY;
     return -1;
 }
+
+/* Test: num_images attribute on file object */
+int NumImagesAttributeTest(void)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    uint64_t num_images;
+    const char *single_file = "test_num_images_single.tif";
+    const char *multi_file = "test_num_images_multi.tif";
+
+    printf("Testing num_images attribute on file object...  ");
+
+    /* Create test files */
+    if (CreateGrayscaleGeoTIFF(single_file) != 0) {
+        printf("FAILED: Could not create single-image test file\n");
+        goto error;
+    }
+
+    if (CreateMultiImageGeoTIFF(multi_file, 3) != 0) {
+        printf("FAILED: Could not create multi-image test file\n");
+        goto error;
+    }
+
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("FAILED: Could not append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("FAILED: Could not register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("FAILED: Could not create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("FAILED: Could not set VOL connector\n");
+        goto error;
+    }
+
+    /* Test single-image file */
+    if ((file_id = H5Fopen(single_file, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("FAILED: Could not open single-image file\n");
+        goto error;
+    }
+
+    if ((attr_id = H5Aopen(file_id, "num_images", H5P_DEFAULT)) < 0) {
+        printf("FAILED: Could not open num_images attribute on single-image file\n");
+        goto error;
+    }
+
+    if (H5Aread(attr_id, H5T_NATIVE_UINT64, &num_images) < 0) {
+        printf("FAILED: Could not read num_images attribute\n");
+        goto error;
+    }
+
+    if (num_images != 1) {
+        printf("FAILED: Expected 1 image in single-image file, got %llu\n",
+               (unsigned long long) num_images);
+        goto error;
+    }
+
+    H5Aclose(attr_id);
+    attr_id = H5I_INVALID_HID;
+    H5Fclose(file_id);
+    file_id = H5I_INVALID_HID;
+
+    /* Test multi-image file */
+    if ((file_id = H5Fopen(multi_file, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("FAILED: Could not open multi-image file\n");
+        goto error;
+    }
+
+    if ((attr_id = H5Aopen(file_id, "num_images", H5P_DEFAULT)) < 0) {
+        printf("FAILED: Could not open num_images attribute on multi-image file\n");
+        goto error;
+    }
+
+    if (H5Aread(attr_id, H5T_NATIVE_UINT64, &num_images) < 0) {
+        printf("FAILED: Could not read num_images attribute\n");
+        goto error;
+    }
+
+    if (num_images != 3) {
+        printf("FAILED: Expected 3 images in multi-image file, got %llu\n",
+               (unsigned long long) num_images);
+        goto error;
+    }
+
+    /* Clean up */
+    H5Aclose(attr_id);
+    H5Fclose(file_id);
+    H5Pclose(fapl_id);
+    H5VLunregister_connector(vol_id);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Aclose(attr_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+    return -1;
+}

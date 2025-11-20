@@ -39,5 +39,6 @@ int RefCountCloseFileBeforeDatasetTest(const char *filename);
 int RefCountCloseDatasetBeforeAttributeTest(void);
 int RefCountCloseFileWithMultipleChildrenTest(const char *filename);
 int RealFileComprehensiveTest(const char *filename);
+int NumImagesAttributeTest(void);
 
 #endif // TEST_GEOTIFF_H

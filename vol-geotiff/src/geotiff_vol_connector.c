@@ -1116,12 +1116,21 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
         if ((attr->type_id = geotiff_create_coordinate_type()) < 0)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
                             "Failed to create coordinate compound type");
-    } else {
-        /* For other attributes, create scalar placeholder */
+    } else if (parent_obj->obj_type == H5I_FILE && strcmp(name, "num_images") == 0) {
+        /* Special "num_images" attribute on file object */
+        attr->is_coordinate_attr = false; /* This is a different special attribute */
+
+        /* Create scalar dataspace for the count */
         if ((attr->space_id = H5Screate(H5S_SCALAR)) < 0)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
-                            "Failed to create scalar dataspace for attribute");
-        attr->type_id = H5T_NATIVE_CHAR;
+                            "Failed to create scalar dataspace for num_images attribute");
+
+        /* Use native uint64 type for the count */
+        attr->type_id = H5T_NATIVE_UINT64;
+    } else {
+        /* Unknown attribute - report error */
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL, "Unknown attribute '%s' on object type %d",
+                        name, parent_obj->obj_type);
     }
 
     ret_value = attr_obj;
@@ -1162,8 +1171,21 @@ herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, 
         /* Compute coordinates for all pixels - pass H5S_ALL for full selection */
         if (geotiff_compute_coordinates(dset, buf, H5S_ALL) < 0)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_READERROR, FAIL, "Failed to compute coordinates");
+    } else if (strcmp(a->name, "num_images") == 0) {
+        /* Handle the num_images attribute on file object */
+        const geotiff_object_t *parent_obj = (const geotiff_object_t *) a->parent;
+
+        if (parent_obj->obj_type != H5I_FILE)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
+                            "num_images attribute only valid on file objects");
+
+        if (!parent_obj->u.file.tiff)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid TIFF file handle");
+
+        /* Get number of directories and write to buffer */
+        uint64_t num_dirs = (uint64_t) TIFFNumberOfDirectories(parent_obj->u.file.tiff);
+        *((uint64_t *) buf) = num_dirs;
     }
-    /* For other attributes, currently no data to return */
 
 done:
     return ret_value;
@@ -1221,7 +1243,9 @@ herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req)
             if (H5Sclose(a->space_id) < 0)
                 FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
                                 "Failed to close attribute dataspace");
-        if (a->type_id != H5I_INVALID_HID)
+        /* Only close type_id if it's not a predefined type (like H5T_NATIVE_*) */
+        if (a->type_id != H5I_INVALID_HID && a->type_id != H5T_NATIVE_CHAR &&
+            a->type_id != H5T_NATIVE_UINT64)
             if (H5Tclose(a->type_id) < 0)
                 FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
                                 "Failed to close attribute datatype");

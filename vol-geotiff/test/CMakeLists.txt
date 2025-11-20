@@ -111,6 +111,9 @@ set_tests_properties(refcount_close_dataset_before_attribute PROPERTIES ENVIRONM
 add_test(NAME refcount_close_file_with_multiple_children COMMAND test_runner refcount_close_file_with_multiple_children)
 set_tests_properties(refcount_close_file_with_multiple_children PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
+add_test(NAME num_images_attribute COMMAND test_runner num_images_attribute)
+set_tests_properties(num_images_attribute PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
 # Real file comprehensive test
 add_test(NAME real_file_comprehensive COMMAND test_runner real_file_comprehensive)
 set_tests_properties(real_file_comprehensive PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
