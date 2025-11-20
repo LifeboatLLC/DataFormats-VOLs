@@ -24,6 +24,18 @@ int main(int argc, char **argv)
     const char *test_name = (argc > 1) ? argv[1] : "all";
     int run_all = (strcmp(test_name, "all") == 0);
 
+    /* Handle real_file_test with filename parameter */
+    if (strcmp(test_name, "real_file_test") == 0) {
+        if (argc < 3) {
+            printf("Error: real_file_test requires a filename argument\n");
+            printf("Usage: %s real_file_test <filename>\n", argv[0]);
+            return 1;
+        }
+        const char *filename = argv[2];
+        printf("Running real file test on: %s\n\n", filename);
+        return RealFileComprehensiveTest(filename) != 0 ? 1 : 0;
+    }
+
     /* Generate test files first (always needed) */
     printf("Generating test GeoTIFF files...\n");
     if (CreateGrayscaleGeoTIFF(GRAYSCALE_FILENAME) != 0) {
@@ -142,15 +154,6 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "refcount_close_file_with_multiple_children") == 0)
         num_failures +=
             (RefCountCloseFileWithMultipleChildrenTest(GRAYSCALE_FILENAME) != 0 ? 1 : 0);
-
-    /* Real file comprehensive test */
-    if (run_all || strcmp(test_name, "real_file_comprehensive") == 0) {
-#ifdef REAL_TEST_FILE_PATH
-        num_failures += (RealFileComprehensiveTest(REAL_TEST_FILE_PATH) != 0 ? 1 : 0);
-#else
-        printf("Skipping real_file_comprehensive: REAL_TEST_FILE_PATH not defined\n");
-#endif
-    }
 
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);

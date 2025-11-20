@@ -4,8 +4,7 @@ target_include_directories (test_runner PRIVATE "${PROJECT_SOURCE_DIR}/src" ${HD
 
 # Define the plugin path for the tests to use
 target_compile_definitions(test_runner PRIVATE
-    GEOTIFF_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src"
-    REAL_TEST_FILE_PATH="${PROJECT_SOURCE_DIR}/test/PIA26616.tif")
+    GEOTIFF_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src")
 
 # Link test_runner with required libraries
 if (_have_config)
@@ -115,3 +114,57 @@ set_tests_properties(refcount_close_file_with_multiple_children PROPERTIES ENVIR
 # Real file comprehensive test
 add_test(NAME real_file_comprehensive COMMAND test_runner real_file_comprehensive)
 set_tests_properties(real_file_comprehensive PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+# GDAL test files - individual CTest instances for each .tif file
+set(GDAL_TEST_FILES
+    "3376.tif"
+    "arcgis_geodataxform_coeffx_coeffy.tif"
+    "bigtiff_four_strip_be_short.tif"
+    "bigtiff_four_strip_short.tif"
+    "bigtiff_one_strip_long.tif"
+    "byte_gcp.tif"
+    "byte_inconsistent_georef.tif"
+    "byte_nogeoref.tif"
+    "byte_point.tif"
+    "byte.tif"
+    "byte_with_ovr.tif"
+    "byte_zstd.tif"
+    # "cielab.tif" # colorpsace ot yet supported
+    # "float32.tif" # floats not yet supported
+    # "float64.tif" # floats not yet supported
+    "GTModelTypeGeoKey_only.tif"
+    "int16.tif"
+    "int32.tif"
+    "int64.tif"
+    # "minfloat.tif" # floats not yet supported
+    "ModelTiepointTag_z_non_zero_but_ModelPixelScaleTag_z_zero.tif"
+    "PIA26616.tif"
+    "stefan_full_greyalpha.tif"
+    "stefan_full_rgba.tif"
+    # "test_average_palette.tif" # palette color model not supported
+    "uint16.tif"
+    "uint32.tif"
+    "uint64.tif"
+    "utmsmall.tif"
+    "WGS_1984_Web_Mercator_Auxiliary_Sphere.tif"
+    "WGS_1984_Web_Mercator.tif"
+)
+
+foreach(TEST_FILE ${GDAL_TEST_FILES})
+    # Get filename without extension for test name
+    string(REPLACE ".tif" "" TEST_NAME_BASE "${TEST_FILE}")
+    # Replace any special characters that might cause issues with underscores
+    string(REGEX REPLACE "[^a-zA-Z0-9_]" "_" TEST_NAME_SAFE "${TEST_NAME_BASE}")
+    set(TEST_NAME "gdal_${TEST_NAME_SAFE}")
+
+    # Check if file exists in test directory
+    if(EXISTS "${PROJECT_SOURCE_DIR}/test/${TEST_FILE}")
+        # Create a wrapper test that calls test_runner with the real_file_test and filename
+        add_test(NAME ${TEST_NAME}
+                 COMMAND ${CMAKE_COMMAND} -E env
+                         "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/Release\;${PROJECT_BINARY_DIR}/src"
+                         "PATH=C:/src/hdf5-dev/install/bin\;C:/src/vcpkg.microsoft/installed/x64-windows/bin\;$ENV{PATH}"
+                         "HDF5_VOL_CONNECTOR="
+                         $<TARGET_FILE:test_runner> real_file_test "${PROJECT_SOURCE_DIR}/test/${TEST_FILE}")
+    endif()
+endforeach()

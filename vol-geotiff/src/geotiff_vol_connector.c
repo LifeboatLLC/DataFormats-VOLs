@@ -40,6 +40,8 @@
 
 #define SUCCEED 0
 
+#define SIZE_LIMIT_BYTES (100 * 1024 * 1024) /* 100 MB size limit for image data */
+
 static hbool_t H5_geotiff_initialized_g = FALSE;
 
 /* Identifiers for HDF5's error API */
@@ -508,9 +510,9 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
 
         /* Check for extra samples that would complicate interpretation */
         if (TIFFGetField(file->tiff, TIFFTAG_EXTRASAMPLES, &extra_sample_count, &extra_samples)) {
-            /* Allow alpha channel (extra_sample_count == 1) for RGBA, but warn about others */
-            if (samples_per_pixel == 4 && extra_sample_count == 1) {
-                /* This is likely RGBA with alpha channel - acceptable */
+            /* Allow alpha channel (extra_sample_count == 1) for RGBA or grayscale+alpha */
+            if ((samples_per_pixel == 4 || samples_per_pixel == 2) && extra_sample_count == 1) {
+                /* Check that the extra sample is an alpha channel */
                 if (extra_samples[0] != EXTRASAMPLE_ASSOCALPHA &&
                     extra_samples[0] != EXTRASAMPLE_UNASSALPHA)
                     FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
@@ -519,7 +521,7 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
             } else if (extra_sample_count > 0) {
                 FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
                                 "Unsupported configuration: %d extra samples found (only alpha "
-                                "channel for RGBA is supported)",
+                                "channel for RGBA or grayscale+alpha is supported)",
                                 extra_sample_count);
             }
         }
@@ -527,7 +529,8 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
         /* Validate bits per sample is byte-aligned */
         if (bits_per_sample % 8 != 0)
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
-                            "Unsupported bits per sample: %d (must be a multiple of 8)",
+                            "Unsupported bits per sample: %d (must be a multiple of 8). 1-bit and "
+                            "other sub-byte formats are not supported.",
                             bits_per_sample);
     }
 
@@ -551,18 +554,18 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
                             "Failed to create dataspace for grayscale dataset");
         }
-    } else if (samples_per_pixel == 3 || samples_per_pixel == 4) {
-        /* RGB or RGBA: 3D dataspace [height, width, samples] */
+    } else if (samples_per_pixel == 2 || samples_per_pixel == 3 || samples_per_pixel == 4) {
+        /* Grayscale+Alpha, RGB, or RGBA: 3D dataspace [height, width, samples] */
         dims[0] = height;
         dims[1] = width;
         dims[2] = samples_per_pixel;
         if ((dset->space_id = H5Screate_simple(3, dims, NULL)) < 0) {
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
-                            "Failed to create dataspace for RGB/RGBA dataset");
+                            "Failed to create dataspace for multi-sample dataset");
         }
     } else {
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, NULL,
-                        "Unsupported samples per pixel: %d (only 1, 3, or 4 supported)",
+                        "Unsupported samples per pixel: %d (only 1, 2, 3, or 4 supported)",
                         samples_per_pixel);
     }
 
@@ -1096,10 +1099,18 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
 
         attr->is_coordinate_attr = true;
 
-        /* Copy the dataset's dataspace (same dimensions as the image) */
-        if ((attr->space_id = H5Scopy(dset->space_id)) < 0)
-            FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCOPY, NULL,
-                            "Failed to copy dataset dataspace for coordinates attribute");
+        /* Create 2D dataspace [height, width] for coordinates (one coord per pixel) */
+        hsize_t coord_dims[2];
+        hsize_t dset_dims[3];
+        H5Sget_simple_extent_dims(dset->space_id, dset_dims, NULL);
+
+        /* Coordinates are per-pixel, so always 2D regardless of dataset dimensionality */
+        coord_dims[0] = dset_dims[0]; /* height */
+        coord_dims[1] = dset_dims[1]; /* width */
+
+        if ((attr->space_id = H5Screate_simple(2, coord_dims, NULL)) < 0)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
+                            "Failed to create dataspace for coordinates attribute");
 
         /* Create the compound type for {lon, lat} */
         if ((attr->type_id = geotiff_create_coordinate_type()) < 0)
@@ -1142,7 +1153,8 @@ herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, 
 
     /* Handle the computed coordinates attribute */
     if (a->is_coordinate_attr) {
-        const geotiff_dataset_t *dset = (const geotiff_dataset_t *) a->parent;
+        const geotiff_object_t *parent_obj = (const geotiff_object_t *) a->parent;
+        const geotiff_dataset_t *dset = &parent_obj->u.dataset;
 
         if (!dset || !dset->gtif)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid parent dataset for coordinates");
@@ -1400,8 +1412,10 @@ static herr_t geotiff_read_image_data(geotiff_object_t *dset_obj)
 
     /* Validate reasonable data size to prevent memory issues */
     size_t total_size = (size_t) height * (size_t) scanline_size;
-    if (total_size > 100 * 1024 * 1024)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "total read size exceeds 100MB");
+    if (total_size > SIZE_LIMIT_BYTES)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                        "total read size of %zu bytes exceeds limit of %zu bytes", total_size,
+                        (size_t) SIZE_LIMIT_BYTES);
 
     dset->data_size = total_size;
     if ((dset->data = malloc(dset->data_size)) == NULL)

@@ -1408,7 +1408,6 @@ int DatasetErrorHandlingTest(const char *filename)
         /* Expected failure - this is correct */
     }
 
-    /* Clean up */
     if (H5Fclose(file_id) < 0) {
         printf("Failed to close file\n");
         goto error;
@@ -2078,6 +2077,34 @@ int UnsupportedFeaturesTest(void)
         }
         H5Fclose(file_id);
         file_id = H5I_INVALID_HID;
+    }
+
+    /* Test that 1-bit GDAL files are rejected (from test suite) */
+    /* These paths are relative to build/test directory where ctest runs from */
+    const char *onebit_files[] = {"../../test/1bit_2bands.tif", "../../test/oddsize_1bit2b.tif",
+                                  "../../test/oddsize1bit.tif"};
+    for (int i = 0; i < 3; i++) {
+        H5E_BEGIN_TRY
+        {
+            file_id = H5Fopen(onebit_files[i], H5F_ACC_RDONLY, fapl_id);
+        }
+        H5E_END_TRY;
+
+        if (file_id >= 0) {
+            H5E_BEGIN_TRY
+            {
+                dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT);
+            }
+            H5E_END_TRY;
+
+            if (dset_id >= 0) {
+                printf("VERIFICATION FAILED: 1-bit file %s should have been rejected\n",
+                       onebit_files[i]);
+                goto error;
+            }
+            H5Fclose(file_id);
+            file_id = H5I_INVALID_HID;
+        }
     }
 
     /* Clean up */
@@ -3344,38 +3371,27 @@ int RealFileComprehensiveTest(const char *filename)
         printf("  FAILED: Could not open GeoTIFF file\n");
         goto error;
     }
-    printf("  PASSED: File opened successfully\n");
 
-    /* Open root group to count images */
+    /* Open root group and get info to count images */
     printf("  Counting images in file...\n");
     if ((group_id = H5Gopen2(file_id, "/", H5P_DEFAULT)) < 0) {
         printf("  FAILED: Could not open root group\n");
         goto error;
     }
 
-    /* Try to open image0, image1, etc. until we fail */
-    for (int i = 0; i < 100; i++) {
-        char dset_name[32];
-        snprintf(dset_name, sizeof(dset_name), "image%d", i);
-
-        H5E_BEGIN_TRY
-        {
-            hid_t temp_dset = H5Dopen2(file_id, dset_name, H5P_DEFAULT);
-            if (temp_dset >= 0) {
-                num_images++;
-                H5Dclose(temp_dset);
-            } else {
-                break;
-            }
-        }
-        H5E_END_TRY;
+    /* Use H5Gget_info to get number of links (images) */
+    H5G_info_t group_info;
+    if (H5Gget_info(group_id, &group_info) < 0) {
+        printf("  FAILED: Could not get group info\n");
+        goto error;
     }
+
+    num_images = (int) group_info.nlinks;
 
     if (num_images == 0) {
         printf("  FAILED: No images found in file\n");
         goto error;
     }
-    printf("  PASSED: Found %d image(s) in file\n", num_images);
 
     /* Test the first image */
     printf("  Testing image0...\n");
@@ -3406,12 +3422,14 @@ int RealFileComprehensiveTest(const char *filename)
         goto error;
     }
 
-    /* Determine if RGB or grayscale */
-    int is_rgb = (ndims == 3 && dims[2] == 3);
+    /* Determine format: grayscale, grayscale+alpha, RGB, or RGBA */
     int is_grayscale = (ndims == 2);
+    int is_grayscale_alpha = (ndims == 3 && dims[2] == 2);
+    int is_rgb = (ndims == 3 && dims[2] == 3);
+    int is_rgba = (ndims == 3 && dims[2] == 4);
 
-    if (!is_rgb && !is_grayscale) {
-        printf("  FAILED: Image is neither grayscale nor RGB (dims: ");
+    if (!is_grayscale && !is_grayscale_alpha && !is_rgb && !is_rgba) {
+        printf("  FAILED: Unsupported image format (dims: ");
         for (int i = 0; i < ndims; i++) {
             printf("%llu%s", (unsigned long long) dims[i], (i < ndims - 1) ? "x" : "");
         }
@@ -3419,16 +3437,13 @@ int RealFileComprehensiveTest(const char *filename)
         goto error;
     }
 
-    if (is_grayscale) {
-        printf("  PASSED: Image is grayscale (%llux%llu)\n", (unsigned long long) dims[0],
-               (unsigned long long) dims[1]);
-    } else {
-        printf("  PASSED: Image is RGB (%llux%llux%llu)\n", (unsigned long long) dims[0],
-               (unsigned long long) dims[1], (unsigned long long) dims[2]);
-    }
+    /* Image format detected (no output unless failure) */
+    (void) is_grayscale;
+    (void) is_grayscale_alpha;
+    (void) is_rgb;
+    (void) is_rgba;
 
     /* Get datatype */
-    printf("  Getting datatype...\n");
     if ((type_id = H5Dget_type(dset_id)) < 0) {
         printf("  FAILED: Could not get datatype\n");
         goto error;
@@ -3436,16 +3451,13 @@ int RealFileComprehensiveTest(const char *filename)
 
     /* Verify it's a supported type (should be unsigned char) */
     H5T_class_t type_class = H5Tget_class(type_id);
-    size_t type_size = H5Tget_size(type_id);
 
     if (type_class != H5T_INTEGER) {
         printf("  FAILED: Unexpected datatype class (expected integer)\n");
         goto error;
     }
-    printf("  PASSED: Datatype is integer with size %zu bytes\n", type_size);
 
     /* Allocate buffer based on dimensions and read data */
-    printf("  Reading image data...\n");
     size_t data_size;
     if (is_grayscale) {
         data_size = dims[0] * dims[1];
@@ -3463,7 +3475,6 @@ int RealFileComprehensiveTest(const char *filename)
         printf("  FAILED: Could not read dataset\n");
         goto error;
     }
-    printf("  PASSED: Read %zu bytes of image data\n", data_size);
 
     /* Check if file has spatial metadata using libgeotiff directly */
     printf("  Checking for spatial metadata...\n");
@@ -3474,13 +3485,22 @@ int RealFileComprehensiveTest(const char *filename)
     if (tif_check) {
         gtif_check = GTIFNew(tif_check);
         if (gtif_check) {
-            /* Test if we can convert pixel (0,0) to geographic coordinates */
-            double x = 0.0, y = 0.0;
-            if (GTIFImageToPCS(gtif_check, &x, &y)) {
-                has_spatial_data = 1;
-                printf("  INFO: File has geotransform data (can compute coordinates)\n");
+            /* Use GTIFGetDefn to properly check if we have complete geotransform data */
+            GTIFDefn defn;
+            if (GTIFGetDefn(gtif_check, &defn)) {
+                /* Also verify we can actually convert coordinates */
+                double x = 0.0, y = 0.0;
+                if (GTIFImageToPCS(gtif_check, &x, &y)) {
+                    has_spatial_data = 1;
+                    printf(
+                        "  INFO: File has complete geotransform data (can compute coordinates)\n");
+                } else {
+                    printf("  INFO: File has GeoTIFF definition but ImageToPCS transformation "
+                           "failed\n");
+                }
             } else {
-                printf("  INFO: File has no geotransform data (cannot compute coordinates)\n");
+                printf("  INFO: File has no complete GeoTIFF definition (cannot compute "
+                       "coordinates)\n");
             }
             GTIFFree(gtif_check);
         }
@@ -3500,8 +3520,6 @@ int RealFileComprehensiveTest(const char *filename)
         goto error;
     }
 
-    printf("  PASSED: Coordinates attribute exists\n");
-
     /* Get attribute dataspace to determine size */
     hid_t attr_space = H5Aget_space(attr_id);
     if (attr_space < 0) {
@@ -3510,16 +3528,8 @@ int RealFileComprehensiveTest(const char *filename)
     }
 
     hssize_t num_elements = H5Sget_simple_extent_npoints(attr_space);
-    /* Coordinates should be height * width (not including channels for RGB) */
-    hssize_t expected_coord_count;
-    if (is_rgb) {
-        /* For RGB, dims are [height, width, 3], so coordinates are height * width * 3 */
-        /* Actually, looking at the result, it appears the connector uses the full dataspace */
-        expected_coord_count = (hssize_t) (dims[0] * dims[1] * dims[2]);
-    } else {
-        /* For grayscale, dims are [height, width] */
-        expected_coord_count = (hssize_t) (dims[0] * dims[1]);
-    }
+    /* Coordinates are always per-pixel: height * width, regardless of samples per pixel */
+    hssize_t expected_coord_count = (hssize_t) (dims[0] * dims[1]);
 
     if (num_elements != expected_coord_count) {
         printf("  FAILED: Coordinates attribute has wrong number of elements (expected %lld, "
@@ -3542,29 +3552,46 @@ int RealFileComprehensiveTest(const char *filename)
         goto error;
     }
 
-    /* Try to read the coordinates */
-    herr_t read_status;
-    H5E_BEGIN_TRY
-    {
-        read_status = H5Aread(attr_id, H5T_NATIVE_DOUBLE, coords);
+    /* Get the attribute's type directly */
+    hid_t attr_type = H5Aget_type(attr_id);
+    if (attr_type < 0) {
+        printf("  FAILED: Could not get coordinates attribute type\n");
+        free(coords);
+        H5Sclose(attr_space);
+        goto error;
     }
-    H5E_END_TRY;
+
+    /* Check if it's a compound type and print its structure */
+    H5T_class_t attr_type_class = H5Tget_class(attr_type);
+    if (attr_type_class == H5T_COMPOUND) {
+        int nmembers = H5Tget_nmembers(attr_type);
+        for (int i = 0; i < nmembers; i++) {
+            char *member_name = H5Tget_member_name(attr_type, (unsigned) i);
+            H5free_memory(member_name);
+        }
+    }
+
+    /* Try to read the coordinates using the attribute's own type */
+    herr_t read_status;
+    read_status = H5Aread(attr_id, attr_type, coords);
+
+    H5Tclose(attr_type);
 
     if (read_status < 0) {
         if (has_spatial_data) {
             printf("  FAILED: File has geotransform but reading coordinates failed\n");
+            printf("  Printing HDF5 error stack:\n");
+            H5Eprint2(H5E_DEFAULT, stderr);
             free(coords);
             H5Sclose(attr_space);
             goto error;
         } else {
-            printf("  PASSED: Reading coordinates correctly fails for file without geotransform\n");
         }
     } else {
         if (!has_spatial_data) {
             printf(
                 "  WARNING: Reading coordinates succeeded even though file has no geotransform\n");
         } else {
-            printf("  PASSED: Read %lld coordinate pairs\n", (long long) num_elements);
 
             /* Print first few coordinate pairs for verification */
             int print_count = (num_elements < 3) ? (int) num_elements : 3;
@@ -3577,8 +3604,6 @@ int RealFileComprehensiveTest(const char *filename)
                 printf("...");
             }
             printf("\n");
-
-            printf("  PASSED: Coordinates attribute correctly exposed by VOL connector\n");
         }
     }
 
@@ -3633,7 +3658,6 @@ int RealFileComprehensiveTest(const char *filename)
     }
     vol_id = H5I_INVALID_HID;
 
-    printf("  PASSED: All comprehensive tests completed successfully\n\n");
     return 0;
 
 error:
