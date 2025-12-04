@@ -158,6 +158,10 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "num_images_attribute") == 0)
         num_failures += (NumImagesAttributeTest() != 0 ? 1 : 0);
 
+    /* TIFF tag attribute tests */
+    if (run_all || strcmp(test_name, "tiff_tag_attributes") == 0)
+        num_failures += (TiffTagAttributeReadTest() != 0 ? 1 : 0);
+
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
     } else {

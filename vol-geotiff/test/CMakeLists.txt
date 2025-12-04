@@ -110,6 +110,10 @@ set_tests_properties(refcount_close_file_with_multiple_children PROPERTIES ENVIR
 add_test(NAME num_images_attribute COMMAND test_runner num_images_attribute)
 set_tests_properties(num_images_attribute PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
+# TIFF tag attribute tests
+add_test(NAME tiff_tag_attributes COMMAND test_runner tiff_tag_attributes)
+set_tests_properties(tiff_tag_attributes PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
 # Real file comprehensive test
 add_test(NAME real_file_comprehensive COMMAND test_runner real_file_comprehensive)
 set_tests_properties(real_file_comprehensive PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")

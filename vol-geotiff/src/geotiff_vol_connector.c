@@ -50,8 +50,8 @@ hid_t H5_geotiff_err_class_g = H5I_INVALID_HID;
 
 /* Helper functions */
 static herr_t geotiff_read_image_data(geotiff_object_t *dset_obj);
-static herr_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample,
-                                              hid_t *type_id);
+static herr_t geotiff_get_hdf5_type_from_sample_format(uint16_t sample_format,
+                                                       uint16_t bits_per_sample, hid_t *type_id);
 
 /* The VOL class struct */
 static const H5VL_class_t geotiff_class_g = {
@@ -177,8 +177,8 @@ static const H5VL_class_t geotiff_class_g = {
 };
 
 /* Helper function to get HDF5 type from TIFF sample format and bits per sample */
-herr_t geotiff_get_hdf5_type_from_tiff(uint16_t sample_format, uint16_t bits_per_sample,
-                                       hid_t *type_id)
+herr_t geotiff_get_hdf5_type_from_sample_format(uint16_t sample_format, uint16_t bits_per_sample,
+                                                hid_t *type_id)
 {
     herr_t ret_value = SUCCEED;
     hid_t new_type = H5I_INVALID_HID;
@@ -257,6 +257,37 @@ done:
         H5E_END_TRY;
     }
     return ret_value;
+}
+
+/* Helper function to create compound type for TIFF RATIONAL/SRATIONAL values */
+static hid_t geotiff_create_rational_type(void)
+{
+    hid_t rational_type = H5I_INVALID_HID;
+    herr_t ret_value = SUCCEED;
+
+    /* Create compound type with numerator and denominator */
+    if ((rational_type = H5Tcreate(H5T_COMPOUND, sizeof(uint32_t) * 2)) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCREATE, H5I_INVALID_HID,
+                        "Failed to create compound type for RATIONAL");
+
+    if (H5Tinsert(rational_type, "numerator", 0, H5T_NATIVE_UINT32) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTINSERT, H5I_INVALID_HID,
+                        "Failed to insert numerator field");
+
+    if (H5Tinsert(rational_type, "denominator", sizeof(uint32_t), H5T_NATIVE_UINT32) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTINSERT, H5I_INVALID_HID,
+                        "Failed to insert denominator field");
+
+done:
+    if (ret_value < 0 && rational_type != H5I_INVALID_HID) {
+        H5E_BEGIN_TRY
+        {
+            H5Tclose(rational_type);
+        }
+        H5E_END_TRY;
+        rational_type = H5I_INVALID_HID;
+    }
+    return rational_type;
 }
 
 /* File operations */
@@ -527,7 +558,8 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
                             bits_per_sample);
     }
 
-    if (geotiff_get_hdf5_type_from_tiff(sample_format, bits_per_sample, &dset->type_id) < 0)
+    if (geotiff_get_hdf5_type_from_sample_format(sample_format, bits_per_sample, &dset->type_id) <
+        0)
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, NULL,
                         "Failed to get HDF5 datatype from TIFF sample format");
 
@@ -1110,6 +1142,9 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
         if ((attr->type_id = geotiff_create_coordinate_type()) < 0)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
                             "Failed to create coordinate compound type");
+
+        attr->tiff_tag = 0;
+        attr->tiff_data = NULL;
     } else if (parent_obj->obj_type == H5I_FILE && strcmp(name, "num_images") == 0) {
         /* Special "num_images" attribute on file object */
         attr->is_coordinate_attr = false; /* This is a different special attribute */
@@ -1121,8 +1156,150 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
 
         /* Use native uint64 type for the count */
         attr->type_id = H5T_NATIVE_UINT64;
+        attr->tiff_tag = 0;
+        attr->tiff_data = NULL;
+    } else if (parent_obj->obj_type == H5I_FILE) {
+        /* Try looking up as a TIFF tag name - support with/without TIFFTAG_ prefix */
+        const char *search_name = name;
+        uint16_t tag = 0;
+
+        /* Skip "TIFFTAG_" prefix if present */
+        if (strncmp(name, "TIFFTAG_", 8) == 0) {
+            search_name = name + 8;
+        }
+
+        /* Search the table */
+        for (int i = 0; tiff_tag_table[i].name != NULL; i++) {
+            if (strcmp(search_name, tiff_tag_table[i].name) == 0) {
+                tag = tiff_tag_table[i].tag_value;
+                break;
+            }
+        }
+
+        if (tag != 0) {
+            /* Valid TIFF tag - use libtiff introspection to get metadata */
+            geotiff_file_t *file = &parent_obj->u.file;
+            const TIFFField *field_info = NULL;
+            TIFFDataType tiff_dtype;
+            int read_count;
+
+            /* Get field metadata */
+            if ((field_info = TIFFFieldWithTag(file->tiff, tag)) == NULL) {
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL,
+                                "TIFF tag %u not recognized by libtiff", tag);
+            }
+
+            tiff_dtype = TIFFFieldDataType(field_info);
+            read_count = TIFFFieldReadCount(field_info);
+
+            /* Validate that the tag exists in this file */
+            /* Try a dummy read to check existence - for scalar types */
+            uint32_t dummy_uint32;
+            char *dummy_str;
+            int tag_exists = 0;
+
+            switch (tiff_dtype) {
+                case TIFF_ASCII:
+                    tag_exists = TIFFGetField(file->tiff, tag, &dummy_str);
+                    break;
+                default:
+                    tag_exists = TIFFGetField(file->tiff, tag, &dummy_uint32);
+                    break;
+            }
+
+            if (!tag_exists) {
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL,
+                                "TIFF tag '%s' (0x%x) not present in file", name, tag);
+            }
+
+            /* Map TIFFDataType to HDF5 type */
+            switch (tiff_dtype) {
+                case TIFF_BYTE:
+                case TIFF_UNDEFINED:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_UINT8);
+                    break;
+                case TIFF_SHORT:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_UINT16);
+                    break;
+                case TIFF_LONG:
+                case TIFF_IFD:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_UINT32);
+                    break;
+                case TIFF_LONG8:
+                case TIFF_IFD8:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_UINT64);
+                    break;
+                case TIFF_SBYTE:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_INT8);
+                    break;
+                case TIFF_SSHORT:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_INT16);
+                    break;
+                case TIFF_SLONG:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_INT32);
+                    break;
+                case TIFF_SLONG8:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_INT64);
+                    break;
+                case TIFF_FLOAT:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_FLOAT);
+                    break;
+                case TIFF_DOUBLE:
+                    attr->type_id = H5Tcopy(H5T_NATIVE_DOUBLE);
+                    break;
+                case TIFF_RATIONAL:
+                case TIFF_SRATIONAL:
+                    /* Use compound type for rationals */
+                    if ((attr->type_id = geotiff_create_rational_type()) < 0)
+                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
+                                        "Failed to create RATIONAL type");
+                    break;
+                case TIFF_ASCII:
+                    /* Variable-length string */
+                    attr->type_id = H5Tcopy(H5T_C_S1);
+                    if (H5Tset_size(attr->type_id, H5T_VARIABLE) < 0)
+                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTSET, NULL,
+                                        "Failed to set string type to variable length");
+                    break;
+                default:
+                    FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, NULL,
+                                    "Unsupported TIFF data type %d for tag %u", tiff_dtype, tag);
+            }
+
+            if (attr->type_id < 0)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
+                                "Failed to create HDF5 type for TIFF tag");
+
+            /* Create dataspace based on read count */
+            if (read_count == 1 || read_count == TIFF_VARIABLE) {
+                /* Scalar or single value */
+                attr->space_id = H5Screate(H5S_SCALAR);
+            } else if (read_count > 1) {
+                /* Fixed-size array */
+                hsize_t dims[1] = {(hsize_t) read_count};
+                attr->space_id = H5Screate_simple(1, dims, NULL);
+            } else if (read_count == TIFF_VARIABLE2) {
+                /* Variable count - use scalar for now, will handle in read */
+                attr->space_id = H5Screate(H5S_SCALAR);
+            } else {
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, NULL,
+                                "Unsupported read count %d for TIFF tag %u", read_count, tag);
+            }
+
+            if (attr->space_id < 0)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
+                                "Failed to create dataspace for TIFF tag");
+
+            /* Store tag value for use in read */
+            attr->tiff_tag = tag;
+            attr->tiff_data = NULL; /* Will allocate if needed during read */
+        } else {
+            /* Not a recognized TIFF tag */
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL, "Unknown attribute '%s' on file object",
+                            name);
+        }
     } else {
-        /* Unknown attribute - report error */
+        /* Unknown attribute on non-file object */
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL, "Unknown attribute '%s' on object type %d",
                         name, parent_obj->obj_type);
     }
@@ -1179,6 +1356,105 @@ herr_t geotiff_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, 
         /* Get number of directories and write to buffer */
         uint64_t num_dirs = (uint64_t) TIFFNumberOfDirectories(parent_obj->u.file.tiff);
         *((uint64_t *) buf) = num_dirs;
+    } else if (a->tiff_tag != 0) {
+        /* This is a TIFF tag attribute */
+        const geotiff_object_t *parent_obj = (const geotiff_object_t *) a->parent;
+
+        if (parent_obj->obj_type != H5I_FILE)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
+                            "TIFF tag attributes only valid on file objects");
+
+        const geotiff_file_t *file = &parent_obj->u.file;
+        const TIFFField *field_info = NULL;
+        TIFFDataType tiff_dtype;
+        int pass_count;
+
+        /* Get field info for type and pass_count */
+        if ((field_info = TIFFFieldWithTag(file->tiff, a->tiff_tag)) == NULL)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "TIFF tag %u not recognized",
+                            a->tiff_tag);
+
+        tiff_dtype = TIFFFieldDataType(field_info);
+        pass_count = TIFFFieldPassCount(field_info);
+
+        /* Read based on type and pass_count */
+        if (pass_count) {
+            /* Tag requires count parameter - data returned as pointer to array */
+            uint32_t count;
+            void *data_ptr;
+
+            if (TIFFGetField(file->tiff, a->tiff_tag, &count, &data_ptr) != 1)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_READERROR, FAIL, "Failed to read TIFF tag %u",
+                                a->tiff_tag);
+
+            /* Copy data based on type */
+            size_t element_size;
+            switch (tiff_dtype) {
+                case TIFF_BYTE:
+                case TIFF_SBYTE:
+                case TIFF_UNDEFINED:
+                    element_size = 1;
+                    break;
+                case TIFF_SHORT:
+                case TIFF_SSHORT:
+                    element_size = 2;
+                    break;
+                case TIFF_LONG:
+                case TIFF_SLONG:
+                case TIFF_IFD:
+                case TIFF_FLOAT:
+                    element_size = 4;
+                    break;
+                case TIFF_LONG8:
+                case TIFF_SLONG8:
+                case TIFF_IFD8:
+                case TIFF_DOUBLE:
+                case TIFF_RATIONAL:
+                case TIFF_SRATIONAL:
+                    element_size = 8;
+                    break;
+                default:
+                    element_size = 1;
+                    break;
+            }
+            memcpy(buf, data_ptr, count * element_size);
+        } else if (tiff_dtype == TIFF_ASCII) {
+            /* String type - returns pointer to string */
+            char *str_value = NULL;
+            if (TIFFGetField(file->tiff, a->tiff_tag, &str_value) != 1)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_READERROR, FAIL, "Failed to read TIFF tag %u",
+                                a->tiff_tag);
+
+            /* For variable-length string, copy pointer */
+            *((char **) buf) = str_value;
+        } else if (tiff_dtype == TIFF_RATIONAL || tiff_dtype == TIFF_SRATIONAL) {
+            /* RATIONAL type - TIFFGetField returns pointer to float */
+            float *rational_value = NULL;
+            if (TIFFGetField(file->tiff, a->tiff_tag, &rational_value) != 1)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_READERROR, FAIL, "Failed to read TIFF tag %u",
+                                a->tiff_tag);
+
+            /* Need to convert to compound type - read raw rational data */
+            /* For now, store as two uint32s by reading the raw tag */
+            uint32_t *rational_buf = (uint32_t *) buf;
+            uint32_t num, denom;
+
+            /* Try to get raw rational values */
+            if (TIFFGetField(file->tiff, a->tiff_tag, &num, &denom) == 1) {
+                rational_buf[0] = num;
+                rational_buf[1] = denom;
+            } else {
+                /* Fall back to converting from float */
+                /* Simple conversion: treat as num/1000000 */
+                rational_buf[0] = (uint32_t) (*rational_value * 1000000);
+                rational_buf[1] = 1000000;
+            }
+        } else {
+            /* Simple scalar type - TIFFGetField writes directly to buffer */
+            if (TIFFGetField(file->tiff, a->tiff_tag, buf) != 1)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_READERROR, FAIL, "Failed to read TIFF tag %u",
+                                a->tiff_tag);
+        }
     }
 
 done:
@@ -1272,6 +1548,12 @@ herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req)
         if (geotiff_file_close(o->parent_file, dxpl_id, req) < 0)
             FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
                             "Failed to close attribute file object");
+
+        /* Free any cached TIFF tag data */
+        if (a->tiff_data) {
+            free(a->tiff_data);
+            a->tiff_data = NULL;
+        }
 
         free(o);
     }

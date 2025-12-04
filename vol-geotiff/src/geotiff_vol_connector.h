@@ -65,6 +65,8 @@ typedef struct geotiff_attr_t {
     hid_t type_id;           /* HDF5 datatype */
     hid_t space_id;          /* HDF5 dataspace */
     bool is_coordinate_attr; /* True if this is the computed 'coordinates' attribute */
+    uint16_t tiff_tag;       /* TIFF tag value (0 if not a TIFF tag attr) */
+    void *tiff_data;         /* Cached TIFF tag data (for complex types) */
 } geotiff_attr_t;
 
 /* Unified GeoTIFF VOL object structure */
@@ -84,6 +86,40 @@ typedef struct {
     double lon;
     double lat;
 } coord_t;
+
+/* TIFF tag name to value mapping table */
+typedef struct {
+    const char *name;   /* Tag name without "TIFFTAG_" prefix */
+    uint16_t tag_value; /* TIFF tag numeric value */
+} tiff_tag_entry_t;
+
+/* Common TIFF tags - expand as needed */
+static const tiff_tag_entry_t tiff_tag_table[] = {
+    {"IMAGEWIDTH", TIFFTAG_IMAGEWIDTH},
+    {"IMAGELENGTH", TIFFTAG_IMAGELENGTH},
+    {"BITSPERSAMPLE", TIFFTAG_BITSPERSAMPLE},
+    {"COMPRESSION", TIFFTAG_COMPRESSION},
+    {"PHOTOMETRIC", TIFFTAG_PHOTOMETRIC},
+    {"SAMPLESPERPIXEL", TIFFTAG_SAMPLESPERPIXEL},
+    {"PLANARCONFIG", TIFFTAG_PLANARCONFIG},
+    {"XRESOLUTION", TIFFTAG_XRESOLUTION},
+    {"YRESOLUTION", TIFFTAG_YRESOLUTION},
+    {"RESOLUTIONUNIT", TIFFTAG_RESOLUTIONUNIT},
+    {"SOFTWARE", TIFFTAG_SOFTWARE},
+    {"DATETIME", TIFFTAG_DATETIME},
+    {"ARTIST", TIFFTAG_ARTIST},
+    {"COPYRIGHT", TIFFTAG_COPYRIGHT},
+    {"ORIENTATION", TIFFTAG_ORIENTATION},
+    {"ROWSPERSTRIP", TIFFTAG_ROWSPERSTRIP},
+    {"MINSAMPLEVALUE", TIFFTAG_MINSAMPLEVALUE},
+    {"MAXSAMPLEVALUE", TIFFTAG_MAXSAMPLEVALUE},
+    {"XPOSITION", TIFFTAG_XPOSITION},
+    {"YPOSITION", TIFFTAG_YPOSITION},
+    {"TILEWIDTH", TIFFTAG_TILEWIDTH},
+    {"TILELENGTH", TIFFTAG_TILELENGTH},
+    {"SAMPLEFORMAT", TIFFTAG_SAMPLEFORMAT},
+    {NULL, 0} /* Sentinel */
+};
 
 /* Function prototypes (HDF5 develop expects hid_t vipl_id) */
 herr_t geotiff_init_connector(hid_t vipl_id);
