@@ -35,6 +35,7 @@ int GroupGetInfoTest(void);
 int TiledTIFFReadTest(const char *filename, int is_rgb);
 int CoordinatesAttributeGeographicTest(const char *unused);
 int CoordinatesAttributeProjectedTest(const char *unused);
+int CoordinatesAttributePlainTIFFTest(void);
 int RefCountCloseFileBeforeDatasetTest(const char *filename);
 int RefCountCloseDatasetBeforeAttributeTest(void);
 int RefCountCloseFileWithMultipleChildrenTest(const char *filename);

@@ -2976,6 +2976,119 @@ error:
     return 1;
 }
 
+/* Test reading coordinates attribute from plain TIFF (should fail to open) */
+int CoordinatesAttributePlainTIFFTest(void)
+{
+    const char *filename = "test_plain_tiff.tif";
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+
+    printf("Testing coordinates attribute with plain TIFF (no geotransform)...");
+
+    /* Create a plain TIFF file without any GeoTIFF tags */
+    TIFF *tif = TIFFOpen(filename, "w");
+    if (!tif) {
+        printf("Failed to create TIFF file\n");
+        return 1;
+    }
+
+    /* Set basic TIFF tags for a simple grayscale image */
+    uint32_t width = 10, height = 10;
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, height);
+
+    /* Write some dummy data */
+    unsigned char *scanline = (unsigned char *) malloc(width);
+    if (!scanline) {
+        printf("Failed to allocate scanline\n");
+        TIFFClose(tif);
+        return 1;
+    }
+    memset(scanline, 128, width);
+    for (uint32_t row = 0; row < height; row++) {
+        TIFFWriteScanline(tif, scanline, row, 0);
+    }
+    free(scanline);
+    TIFFClose(tif);
+
+    /* Register GeoTIFF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register GeoTIFF VOL connector\n");
+        goto error;
+    }
+
+    /* Create FAPL for GeoTIFF VOL */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the plain TIFF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open TIFF file\n");
+        goto error;
+    }
+
+    /* Open the dataset */
+    if ((dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open dataset\n");
+        goto error;
+    }
+
+    /* Try to open coordinates attribute - this SHOULD fail for plain TIFF */
+    H5E_BEGIN_TRY
+    {
+        attr_id = H5Aopen(dset_id, "coordinates", H5P_DEFAULT);
+    }
+    H5E_END_TRY;
+
+    if (attr_id >= 0) {
+        printf("FAILED: coordinates attribute should not be available on plain TIFF\n");
+        H5Aclose(attr_id);
+        goto error;
+    }
+
+    /* Clean up */
+    H5Dclose(dset_id);
+    H5Fclose(file_id);
+    H5Pclose(fapl_id);
+    H5VLunregister_connector(vol_id);
+    unlink(filename);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        if (attr_id >= 0)
+            H5Aclose(attr_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+    unlink(filename);
+
+    printf("FAILED\n");
+    return 1;
+}
+
 /* Reference counting tests - verify out-of-order closing works correctly */
 
 /* Test: Close file before dataset */

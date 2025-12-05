@@ -1123,6 +1123,19 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL,
                             "coordinates attribute only available on image datasets");
 
+        /* Check if the GeoTIFF has valid geospatial metadata and can compute coordinates */
+        if (!dset->gtif)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL,
+                            "coordinates attribute requires valid GTIF handle");
+
+        /* Verify that we can actually perform coordinate transformations
+         * by testing pixel (0,0). If this fails, the file lacks the necessary
+         * geotransform data (tiepoints+pixelscale or transformation matrix). */
+        double test_x = 0.0, test_y = 0.0;
+        if (!GTIFImageToPCS(dset->gtif, &test_x, &test_y))
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL,
+                            "coordinates attribute not available: file lacks geotransform data");
+
         attr->is_coordinate_attr = true;
 
         /* Create 2D dataspace [height, width] for coordinates (one coord per pixel) */

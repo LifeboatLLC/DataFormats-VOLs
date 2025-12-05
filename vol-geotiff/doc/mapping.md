@@ -30,20 +30,30 @@ Similarly, GeoTIFF images with RGBA color data (4 samples per pixel) are represe
 
 #### Planar Configuration Limitations
 
-The VOL connector **only supports PLANARCONFIG_CONTIG** (interleaved pixel data). Images with PLANARCONFIG_SEPARATE (where RGB channels are stored as separate planes) are not supported and will fail to open. This is a design limitation as the connector expects all color channels for a pixel to be stored contiguously in memory.
+The VOL connector **only supports PLANARCONFIG_CONTIG** (interleaved pixel data). Images with PLANARCONFIG_SEPARATE (where RGB channels are stored as separate planes) are not currently supported and will fail to open.
 
 #### Photometric Interpretation Limitations
 
 The VOL connector supports the following photometric interpretations:
-- **PHOTOMETRIC_MINISBLACK**: Grayscale images where 0 is black
-- **PHOTOMETRIC_MINISWHITE**: Grayscale images where 0 is white
-- **PHOTOMETRIC_RGB**: RGB color images
+- PHOTOMETRIC_MINISBLACK (Grayscale images where 0 is black)
+- PHOTOMETRIC_MINISWHITE (Grayscale images where 0 is white)
+- PHOTOMETRIC_RGB (RGB color images)
 
 Unsupported photometric interpretations include:
 - PHOTOMETRIC_PALETTE (indexed/palette color)
 - PHOTOMETRIC_CIELAB (CIE L\*a\*b\* color space)
 - PHOTOMETRIC_YCBCR (YCbCr color space)
 - Other specialized color spaces
+
+### Coordinate Information
+
+Geographic coordinate information (longitude/latitude) can be retrieved from GeoTIFF images by reading the `coordinates` attribute on the dataset representing the image. This attribute is only available when the pixels can be meaningfully interpreted as geographic coordinates (i.e. whether `GTIFImageToPCS()` within libgeotiff will succeed).
+
+The `coordinates` attribute has a 2D dataspace with shape `[height, width]`, with one coordinate pair per pixel. It uses an HDF5 compound datatype with the two double fields `lon` and `lat` in decimal degrees.
+
+Coordinate values are computed dynamically when the attribute is read, based on the TIFF image's stored coordinate system. If the computation fails for any individual pixel, its coordinate values are set to NaN.
+
+This allows users to retrieve the geographic location of any pixel in the image by reading the corresponding element from the `coordinates` attribute array.
 
 #### Data Type Limitations
 
