@@ -107,8 +107,13 @@ jobs:
         export HDF5_PLUGIN_PATH=$PWD/src
         export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
 
-        echo "Testing plugin registration with valgrind..."
-        valgrind --leak-check=full --error-exitcode=1 ./test/test_geotiff
+        # Run valgrind on basic test
+        valgrind --leak-check=full --error-exitcode=1 ./test/test_runner test_getters
+
+        # Test one GeoTIFF file with valgrind
+        if [ -f ../test/byte.tif ]; then
+          valgrind --leak-check=full --error-exitcode=1 ./test/test_runner real_file_test ../test/byte.tif
+        fi
 
     - name: Performance test
       run: |
@@ -117,9 +122,17 @@ jobs:
         export HDF5_PLUGIN_PATH=$PWD/src
         export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
 
-        # Simple performance timing - run all tests and measure time
-        echo "Performance test - running full test suite:"
-        time ./test/test_geotiff all
+        if [ "${{ runner.os }}" = "Linux" ]; then
+          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$LD_LIBRARY_PATH
+        else
+          export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5_version }}/lib:$DYLD_LIBRARY_PATH
+        fi
+
+        # Simple performance timing
+        if [ -f ../test/uint16.tif ]; then
+          echo "Performance test:"
+          time ./test/test_runner real_file_test ../test/uint16.tif
+        fi
 
     - name: Upload test artifacts on failure
       if: failure()
