@@ -97,6 +97,7 @@ else()
     endif()
 
     if(_GEOTIFF_TARGET AND _TIFF_TARGET)
+        set(_have_config TRUE)
         message(STATUS "Using TIFF and GeoTIFF targets: ${_TIFF_TARGET}, ${_GEOTIFF_TARGET}")
     else()
         # Manual discovery for packages in standard system locations without config files

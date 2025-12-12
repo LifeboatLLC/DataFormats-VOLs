@@ -172,6 +172,7 @@ jobs:
           # Add Homebrew prefix on macOS so pkg-config can find packages
           if [ "$(uname)" = "Darwin" ]; then
             BREW_PREFIX=$(brew --prefix)
+            export PKG_CONFIG_PATH="${BREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
             CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${BREW_PREFIX}"
           else
             CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
