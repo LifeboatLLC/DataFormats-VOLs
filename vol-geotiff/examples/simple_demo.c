@@ -13,8 +13,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <geotiff/geotiffio.h>
-#include <geotiff/xtiffio.h>
+#include <geotiffio.h>
+#include <xtiffio.h>
 
 #define GEOTIFF_VOL_CONNECTOR_NAME "geotiff_vol_connector"
 

@@ -16,6 +16,7 @@ else()
         set(_HDF5_FOUND TRUE)
     endif()
 endif()
+
 # Ensure HDF5 target alias exists before extracting include dirs
 if (NOT _HDF5_FOUND)
     message(FATAL_ERROR "HDF5 CONFIG package not found. Set CMAKE_PREFIX_PATH or HDF5_DIR to your HDF5 install.")
@@ -44,13 +45,23 @@ if (TARGET HDF5::HDF5)
     get_target_property(HDF5_INCLUDE_DIRS HDF5::HDF5 INTERFACE_INCLUDE_DIRECTORIES)
 endif()
 
-# Note: This connector targets the modern HDF5 VOL API (1.15+). Ensure your HDF5 matches.
+# Find TIFF and create alias if needed (before libgeotiff is found)
+find_package(TIFF CONFIG QUIET)
+if(NOT TIFF_FOUND)
+    find_package(Tiff CONFIG QUIET)
+endif()
 
-# (moved aliasing section above)
+# Normalize TIFF target name - create TIFF::TIFF alias if needed
+if (TARGET TIFF::tiff AND NOT TARGET TIFF::TIFF)
+    add_library(TIFF::TIFF ALIAS TIFF::tiff)
+    message(STATUS "Created TIFF alias: TIFF::TIFF -> TIFF::tiff")
+endif()
 
-# It's really easy to pick up the wrong HDF5 library if you set the path
-# wrong. Turn this on for added confirmation that you got it right.
-#message (DEPRECATION "Include: ${HDF5_INCLUDE_DIR}")
+# Find GeoTIFF (after TIFF alias is created, since it may depend on TIFF::TIFF)
+find_package(GeoTIFF CONFIG QUIET)
+if (NOT GeoTIFF_FOUND)
+    find_package(geotiff CONFIG QUIET)
+endif()
 
 # Build options
 option (GEOTIFF_BUILD_EXAMPLES "Build example programs" ON)

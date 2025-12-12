@@ -1,31 +1,65 @@
 # Set the GeoTIFF VOL connector name
 set (GEOTIFF_VOL_NAME geotiff_vol_connector)
 
+# Note: TIFF and GeoTIFF are now found in the top-level CMakeLists.txt
 # Prefer vcpkg CONFIG packages for TIFF and libgeotiff; fall back to pkg-config/manual
 set(_have_config FALSE)
-find_package(TIFF CONFIG QUIET)
-# vcpkg recommends using GeoTIFF (note the case) as the package name
-find_package(GeoTIFF CONFIG QUIET)
-# Some ports may still use lowercase name
-if (NOT GeoTIFF_FOUND)
-    find_package(geotiff CONFIG QUIET)
+
+# Figure out which TIFF target name exists
+set(_TIFF_TARGET "")
+if (TARGET TIFF::TIFF)
+    set(_TIFF_TARGET TIFF::TIFF)
+elseif (TARGET TIFF::tiff)
+    set(_TIFF_TARGET TIFF::tiff)
 endif()
+
 # Figure out which GeoTIFF target name exists
 set(_GEOTIFF_TARGET "")
 if (TARGET geotiff::geotiff)
     set(_GEOTIFF_TARGET geotiff::geotiff)
+    message(STATUS "Found GeoTIFF target: geotiff::geotiff")
 elseif (TARGET GeoTIFF::geotiff)
     set(_GEOTIFF_TARGET GeoTIFF::geotiff)
+    message(STATUS "Found GeoTIFF target: GeoTIFF::geotiff")
 elseif (TARGET GeoTIFF::GeoTIFF)
     set(_GEOTIFF_TARGET GeoTIFF::GeoTIFF)
+    message(STATUS "Found GeoTIFF target: GeoTIFF::GeoTIFF")
+elseif (TARGET geotiff_library)
+    set(_GEOTIFF_TARGET geotiff_library)
+    message(STATUS "Found GeoTIFF target: geotiff_library")
+else()
+    message(STATUS "No GeoTIFF CMake target found")
 endif()
 
-if (TARGET TIFF::TIFF AND _GEOTIFF_TARGET)
+if (_TIFF_TARGET AND _GEOTIFF_TARGET)
     set(_have_config TRUE)
-    # Extract include directories from the imported GeoTIFF target for use by tests
+    message(STATUS "Using CMake config mode for TIFF and GeoTIFF")
+    # Extract include directories from the imported GeoTIFF target
     get_target_property(GEOTIFF_INCLUDE_DIRS ${_GEOTIFF_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+
+    # Check if headers are in a 'geotiff' subdirectory and adjust include path
+    set(_GEOTIFF_ADJUSTED_INCLUDES "")
+    foreach(_dir ${GEOTIFF_INCLUDE_DIRS})
+        if(EXISTS "${_dir}/geotiff/geotiff.h")
+            # Headers are in geotiff/ subdirectory, add that specific path
+            list(APPEND _GEOTIFF_ADJUSTED_INCLUDES "${_dir}/geotiff")
+            message(STATUS "GeoTIFF headers found in subdirectory: ${_dir}/geotiff")
+        elseif(EXISTS "${_dir}/geotiff.h")
+            # Headers are directly in include dir
+            list(APPEND _GEOTIFF_ADJUSTED_INCLUDES "${_dir}")
+            message(STATUS "GeoTIFF headers found directly in: ${_dir}")
+        else()
+            # Fallback: just add the dir
+            list(APPEND _GEOTIFF_ADJUSTED_INCLUDES "${_dir}")
+        endif()
+    endforeach()
+    set(GEOTIFF_INCLUDE_DIRS "${_GEOTIFF_ADJUSTED_INCLUDES}")
+
     # Propagate to parent scope so tests can include headers
     set(GEOTIFF_INCLUDE_DIRS "${GEOTIFF_INCLUDE_DIRS}" PARENT_SCOPE)
+else()
+    message(STATUS "_TIFF_TARGET=${_TIFF_TARGET}, _GEOTIFF_TARGET=${_GEOTIFF_TARGET}")
+    message(STATUS "Falling back to pkg-config/manual discovery")
 endif()
 
 if (NOT _have_config)
@@ -73,7 +107,7 @@ if (NOT _have_config)
     endif()
 
     set(GEOTIFF_LIBRARIES ${GEOTIFF_LIBRARY})
-    set(GEOTIFF_INCLUDE_DIRS ${GEOTIFF_INCLUDE_DIR})
+    set(GEOTIFF_INCLUDE_DIRS ${GEOTIFF_INCLUDE_DIR} "/usr/include/geotiff")
     # Propagate to parent scope so tests can include headers
     set(GEOTIFF_INCLUDE_DIRS "${GEOTIFF_INCLUDE_DIRS}" PARENT_SCOPE)
     set(GEOTIFF_LIBRARIES "${GEOTIFF_LIBRARIES}" PARENT_SCOPE)
@@ -87,6 +121,7 @@ endif()
 
 # Propagate _have_config to parent scope for test builds
 set(_have_config "${_have_config}" PARENT_SCOPE)
+set(_TIFF_TARGET "${_TIFF_TARGET}" PARENT_SCOPE)
 set(_GEOTIFF_TARGET "${_GEOTIFF_TARGET}" PARENT_SCOPE)
 
 # Build the GeoTIFF VOL connector
@@ -100,7 +135,7 @@ target_include_directories(${GEOTIFF_VOL_NAME} PRIVATE ${HDF5_INCLUDE_DIRS})
 
 # Link libraries
 if (_have_config)
-    target_link_libraries(${GEOTIFF_VOL_NAME} PRIVATE TIFF::TIFF ${_GEOTIFF_TARGET} HDF5::HDF5)
+    target_link_libraries(${GEOTIFF_VOL_NAME} PRIVATE ${_TIFF_TARGET} ${_GEOTIFF_TARGET} HDF5::HDF5)
 else()
     target_link_libraries(${GEOTIFF_VOL_NAME} PRIVATE ${TIFF_LIBRARIES} ${GEOTIFF_LIBRARIES} HDF5::HDF5)
     target_include_directories(${GEOTIFF_VOL_NAME} PRIVATE ${TIFF_INCLUDE_DIRS} ${GEOTIFF_INCLUDE_DIRS})
