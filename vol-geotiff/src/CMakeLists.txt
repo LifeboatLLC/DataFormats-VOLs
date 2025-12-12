@@ -10,6 +10,7 @@ find_package(GeoTIFF CONFIG QUIET)
 if (NOT GeoTIFF_FOUND)
     find_package(geotiff CONFIG QUIET)
 endif()
+
 # Figure out which GeoTIFF target name exists
 set(_GEOTIFF_TARGET "")
 if (TARGET geotiff::geotiff)
@@ -18,6 +19,8 @@ elseif (TARGET GeoTIFF::geotiff)
     set(_GEOTIFF_TARGET GeoTIFF::geotiff)
 elseif (TARGET GeoTIFF::GeoTIFF)
     set(_GEOTIFF_TARGET GeoTIFF::GeoTIFF)
+elseif (TARGET geotiff_library)
+    set(_GEOTIFF_TARGET geotiff_library)
 endif()
 
 if (TARGET TIFF::TIFF AND _GEOTIFF_TARGET)
