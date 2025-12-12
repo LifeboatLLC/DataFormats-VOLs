@@ -21,12 +21,12 @@
 #include <assert.h>
 #include <geo_normalize.h>
 #include <geovalues.h>
-#include <xtiffio.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <xtiffio.h>
 
 #ifdef _MSC_VER
 #ifndef strdup

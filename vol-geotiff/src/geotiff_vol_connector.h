@@ -18,8 +18,8 @@
 #define _geotiff_vol_connector_H
 
 /* Include geotiff headers (CMake adds the appropriate include path) */
-#include <geotiff.h>
 #include "geotiff_vol_err.h" /* Error reporting macros */
+#include <geotiff.h>
 #include <hdf5.h>
 #include <stdint.h>
 #include <tiffio.h>
