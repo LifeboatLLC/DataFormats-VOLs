@@ -4,7 +4,7 @@ target_include_directories(simple_demo PRIVATE "${PROJECT_SOURCE_DIR}/src" ${HDF
 
 # Link with HDF5, TIFF, GeoTIFF, and math libraries
 if (_have_config)
-    target_link_libraries(simple_demo PRIVATE HDF5::HDF5 TIFF::TIFF ${_GEOTIFF_TARGET} m)
+    target_link_libraries(simple_demo PRIVATE HDF5::HDF5 ${_TIFF_TARGET} ${_GEOTIFF_TARGET} m)
 else()
     target_link_libraries(simple_demo PRIVATE HDF5::HDF5 ${TIFF_LIBRARIES} ${GEOTIFF_LIBRARIES} m)
     target_include_directories(simple_demo PRIVATE ${TIFF_INCLUDE_DIRS} ${GEOTIFF_INCLUDE_DIRS})
@@ -17,7 +17,7 @@ target_include_directories(gnuplot_demo PRIVATE "${PROJECT_SOURCE_DIR}/src" ${HD
 
 # Link with HDF5, TIFF, GeoTIFF, and math libraries
 if (_have_config)
-    target_link_libraries(gnuplot_demo PRIVATE HDF5::HDF5 TIFF::TIFF ${_GEOTIFF_TARGET} m)
+    target_link_libraries(gnuplot_demo PRIVATE HDF5::HDF5 ${_TIFF_TARGET} ${_GEOTIFF_TARGET} m)
 else()
     target_link_libraries(gnuplot_demo PRIVATE HDF5::HDF5 ${TIFF_LIBRARIES} ${GEOTIFF_LIBRARIES} m)
     target_include_directories(gnuplot_demo PRIVATE ${TIFF_INCLUDE_DIRS} ${GEOTIFF_INCLUDE_DIRS})

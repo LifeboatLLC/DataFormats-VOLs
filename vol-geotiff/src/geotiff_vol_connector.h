@@ -17,17 +17,8 @@
 #ifndef _geotiff_vol_connector_H
 #define _geotiff_vol_connector_H
 
-/* Try to include geotiff headers in standard locations */
-// cppcheck-suppress preprocessorErrorDirective
-#if defined(__has_include) && __has_include(<geotiff/geotiff.h>)
-#include <geotiff/geotiff.h>
-// cppcheck-suppress preprocessorErrorDirective
-#elif defined(__has_include) && __has_include(<geotiff.h>)
+/* Include geotiff headers (CMake adds the appropriate include path) */
 #include <geotiff.h>
-#else
-/* Fallback to standard include */
-#include <geotiff.h>
-#endif
 #include "geotiff_vol_err.h" /* Error reporting macros */
 #include <hdf5.h>
 #include <stdint.h>

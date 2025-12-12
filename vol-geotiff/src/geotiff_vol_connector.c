@@ -19,9 +19,9 @@
 
 #include <H5PLextern.h>
 #include <assert.h>
-#include <geotiff/geo_normalize.h>
-#include <geotiff/geovalues.h>
-#include <geotiff/xtiffio.h>
+#include <geo_normalize.h>
+#include <geovalues.h>
+#include <xtiffio.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>

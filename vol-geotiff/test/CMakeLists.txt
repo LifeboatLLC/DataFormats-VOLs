@@ -8,7 +8,7 @@ target_compile_definitions(test_runner PRIVATE
 
 # Link test_runner with required libraries
 if (_have_config)
-    target_link_libraries (test_runner PRIVATE HDF5::HDF5 TIFF::TIFF ${_GEOTIFF_TARGET})
+    target_link_libraries (test_runner PRIVATE HDF5::HDF5 ${_TIFF_TARGET} ${_GEOTIFF_TARGET})
 else()
     target_link_libraries (test_runner PRIVATE HDF5::HDF5 ${TIFF_LIBRARIES} ${GEOTIFF_LIBRARIES})
 endif()

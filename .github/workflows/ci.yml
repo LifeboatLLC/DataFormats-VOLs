@@ -62,7 +62,7 @@ jobs:
           cd ${{ github.workspace }}
           git clone --depth 1 --branch v4.6.0 https://gitlab.com/libtiff/libtiff.git
           cd libtiff
-          mkdir build && cd build
+          mkdir tiffbuild && cd tiffbuild
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/libtiff-install \

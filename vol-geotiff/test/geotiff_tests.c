@@ -18,9 +18,9 @@
 #include "geotiff_vol_connector.h"
 #include "test_runner.h"
 #include <H5PLpublic.h>
-#include <geotiff/geo_normalize.h>
-#include <geotiff/geotiffio.h>
-#include <geotiff/xtiffio.h>
+#include <geo_normalize.h>
+#include <geotiffio.h>
+#include <xtiffio.h>
 
 #include <math.h>
 #include <stdlib.h>

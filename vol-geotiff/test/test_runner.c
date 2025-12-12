@@ -5,8 +5,8 @@
 
 #include "test_runner.h"
 #include "geotiff_vol_connector.h"
-#include <geotiff/geotiffio.h>
-#include <geotiff/xtiffio.h>
+#include <geotiffio.h>
+#include <xtiffio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
