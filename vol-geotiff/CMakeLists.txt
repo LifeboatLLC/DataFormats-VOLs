@@ -75,20 +75,41 @@ if(_TIFF_TARGET AND _GEOTIFF_TARGET)
     set(GEOTIFF_INCLUDE_DIRS "${_GEOTIFF_ADJUSTED_INCLUDES}")
 else()
     set(_have_config FALSE)
-    # Fallback: Manual discovery for systems without CMake configs
-    message(STATUS "Attempting manual discovery of libtiff/libgeotiff")
-    find_path(TIFF_INCLUDE_DIR tiffio.h)
-    find_library(TIFF_LIBRARY NAMES tiff)
-    find_path(GEOTIFF_INCLUDE_DIR geotiff/geotiff.h PATHS /usr/include)
-    find_library(GEOTIFF_LIBRARY NAMES geotiff PATHS /usr/lib /usr/lib/x86_64-linux-gnu)
-
-    if(NOT GEOTIFF_INCLUDE_DIR OR NOT GEOTIFF_LIBRARY)
-        message(FATAL_ERROR "libgeotiff not found. Ensure GeoTIFF is installed (e.g., via apt) or provide headers/libs.")
+    # Try pkg-config for packages that provide .pc files (e.g., Homebrew on macOS, apt packages)
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        message(STATUS "Attempting pkg-config discovery of libtiff/libgeotiff")
+        pkg_check_modules(GEOTIFF QUIET libgeotiff)
+        pkg_check_modules(TIFF QUIET libtiff-4)
     endif()
 
-    set(TIFF_LIBRARIES ${TIFF_LIBRARY})
-    set(GEOTIFF_LIBRARIES ${GEOTIFF_LIBRARY})
-    set(GEOTIFF_INCLUDE_DIRS ${GEOTIFF_INCLUDE_DIR} "/usr/include/geotiff")
+    if(GEOTIFF_FOUND AND TIFF_FOUND)
+        message(STATUS "Found GeoTIFF and TIFF via pkg-config")
+        # pkg-config sets GEOTIFF_LIBRARIES, GEOTIFF_INCLUDE_DIRS, etc.
+        set(_GEOTIFF_TARGET "pkgconfig::geotiff")
+        set(_TIFF_TARGET "pkgconfig::tiff")
+    else()
+        # Manual discovery for packages in standard system locations without config files
+        message(STATUS "Attempting manual discovery of libtiff/libgeotiff")
+        find_path(TIFF_INCLUDE_DIR tiffio.h)
+        find_library(TIFF_LIBRARY NAMES tiff)
+        find_path(GEOTIFF_INCLUDE_DIR geotiff/geotiff.h
+            PATHS /usr/include /opt/homebrew/include /usr/local/include)
+        find_library(GEOTIFF_LIBRARY NAMES geotiff
+            PATHS /usr/lib /usr/lib/x86_64-linux-gnu /opt/homebrew/lib /usr/local/lib)
+
+        if(NOT GEOTIFF_INCLUDE_DIR OR NOT GEOTIFF_LIBRARY)
+            message(FATAL_ERROR "libgeotiff not found. Ensure GeoTIFF is installed (e.g., via apt/brew) or provide headers/libs.")
+        endif()
+
+        set(TIFF_LIBRARIES ${TIFF_LIBRARY})
+        set(GEOTIFF_LIBRARIES ${GEOTIFF_LIBRARY})
+        set(GEOTIFF_INCLUDE_DIRS ${GEOTIFF_INCLUDE_DIR})
+        # Add common geotiff subdirectory to include path if it exists
+        if(EXISTS "${GEOTIFF_INCLUDE_DIR}/geotiff")
+            list(APPEND GEOTIFF_INCLUDE_DIRS "${GEOTIFF_INCLUDE_DIR}/geotiff")
+        endif()
+    endif()
 endif()
 
 # Build options

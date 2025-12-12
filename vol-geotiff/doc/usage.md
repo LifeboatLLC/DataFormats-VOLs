@@ -18,11 +18,6 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DHDF5_BUILD_TOOLS=ON
 make -j$(nproc) && sudo make install
 ```
 
-On CentOS/RHEL:
-```bash
-sudo yum install hdf5-devel libtiff-devel libgeotiff-devel
-```
-
 On macOS with Homebrew (HDF5 develop built from source is required):
 ```bash
 brew install cmake libtiff libgeotiff
@@ -44,9 +39,14 @@ This project uses CMake as the build system.
    cmake .. -DCMAKE_PREFIX_PATH=/opt/hdf5/
    ```
 
-   Or specify HDF5 location explicitly:
+   On macOS with Homebrew, include the Homebrew prefix so pkg-config can find system packages:
    ```bash
-   cmake .. -DHDF5_DIR=/opt/hdf5/install
+   cmake .. -DCMAKE_PREFIX_PATH="/opt/hdf5/;$(brew --prefix)"
+   ```
+
+   For custom-built libtiff/libgeotiff, add their paths:
+   ```bash
+   cmake .. -DCMAKE_PREFIX_PATH="/opt/hdf5/;/path/to/libtiff;/path/to/libgeotiff"
    ```
 
 3. Build the connector:
@@ -73,9 +73,7 @@ This project uses CMake as the build system.
   cmake .. -DGEOTIFF_BUILD_EXAMPLES=OFF
   ```
 
-### Alternative CMake Configuration
-
-This project requires HDF5 develop (1.14+/2.x). Ensure your `CMAKE_PREFIX_PATH` and/or `HDF5_DIR` point to that install.
+**Note:** This project requires HDF5 develop (1.14+/2.x). Ensure your `CMAKE_PREFIX_PATH` points to the HDF5 develop installation. On macOS with Homebrew, also include `$(brew --prefix)` in CMAKE_PREFIX_PATH to enable pkg-config discovery of system packages.
 
 ### Example Programs
 

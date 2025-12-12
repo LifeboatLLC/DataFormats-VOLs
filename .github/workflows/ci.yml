@@ -177,10 +177,17 @@ jobs:
         run: |
           cd vol-geotiff
           mkdir build && cd build
+          # Add Homebrew prefix on macOS so pkg-config can find packages
+          if [ "$(uname)" = "Darwin" ]; then
+            BREW_PREFIX=$(brew --prefix)
+            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${BREW_PREFIX}"
+          else
+            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+          fi
           cmake .. \
             -DSITE="ubu" -DBUILDNAME="vol-geotiff/${{ matrix.build-type }}"  \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
 
       - name: Configure CMake (external libgeotiff)
         if: matrix.libgeotiff-source == 'external'
