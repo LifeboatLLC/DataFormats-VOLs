@@ -53,20 +53,12 @@ jobs:
         if: matrix.libgeotiff-source == 'system' && runner.os == 'Linux'
         run: |
           sudo apt-get install -y libtiff5-dev
+          sudo apt-get install -y libgeotiff-dev
 
       - name: Install libtiff for system libgeotiff (macOS)
         if: matrix.libgeotiff-source == 'system' && runner.os == 'macOS'
         run: |
           brew install libtiff
-
-      - name: Install libgeotiff from system packages (Linux)
-        if: matrix.libgeotiff-source == 'system' && runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y libgeotiff-dev
-
-      - name: Install libgeotiff from system packages (macOS)
-        if: matrix.libgeotiff-source == 'system' && runner.os == 'macOS'
-        run: |
           brew install libgeotiff
 
       - name: Cache libtiff
