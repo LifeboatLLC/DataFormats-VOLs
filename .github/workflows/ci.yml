@@ -52,6 +52,11 @@ jobs:
             libgeotiff-external-${{ matrix.os }}-
             ${{ github.run_number }}-${{ hashFiles('.github/workflows/ci.yml') }}
 
+      - name: Install PROJ for external libgeotiff build
+        if: matrix.libgeotiff-source == 'external'
+        run: |
+          sudo apt-get install -y libproj-dev
+
       - name: Build libgeotiff from source
         if: matrix.libgeotiff-source == 'external' && steps.cache-libgeotiff.outputs.cache-hit != 'true'
         run: |
