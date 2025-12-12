@@ -63,8 +63,6 @@ if (NOT GeoTIFF_FOUND)
     find_package(geotiff CONFIG QUIET)
 endif()
 
-set(_have_tiff_geotiff  FALSE)
-
 # Figure out which TIFF target name exists
 set(_TIFF_TARGET "")
 if (TARGET TIFF::TIFF)
@@ -92,7 +90,6 @@ else()
 endif()
 
 if (_TIFF_TARGET AND _GEOTIFF_TARGET)
-    set(_have_tiff_geotiff  TRUE)
     message(STATUS "Using CMake config mode for TIFF and GeoTIFF")
     # Extract include directories from the imported GeoTIFF target
     get_target_property(GEOTIFF_INCLUDE_DIRS ${_GEOTIFF_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
@@ -114,9 +111,7 @@ if (_TIFF_TARGET AND _GEOTIFF_TARGET)
         endif()
     endforeach()
     set(GEOTIFF_INCLUDE_DIRS "${_GEOTIFF_ADJUSTED_INCLUDES}")
-endif()
-
-if (NOT _have_tiff_geotiff )
+else()
     message(STATUS "Attempting discovery of libtiff/libgeotiff")
     if (NOT TARGET TIFF::TIFF)
         find_path(TIFF_INCLUDE_DIR tiffio.h)
