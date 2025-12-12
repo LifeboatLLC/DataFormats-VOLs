@@ -16,6 +16,7 @@ jobs:
         os: [ubuntu-latest]
         hdf5-version: ['develop', 'hdf5_1_14_6']
         build-type: [Release, Debug]
+        libgeotiff-source: [system, external]
 
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +29,6 @@ jobs:
             cmake \
             pkg-config \
             libtiff5-dev \
-            libgeotiff-dev \
             zlib1g-dev \
             libcurl4-openssl-dev \
             libjpeg-dev \
@@ -36,6 +36,35 @@ jobs:
             libwebp-dev \
             libzstd-dev \
             liblzma-dev
+
+      - name: Install libgeotiff from system packages
+        if: matrix.libgeotiff-source == 'system'
+        run: |
+          sudo apt-get install -y libgeotiff-dev
+
+      - name: Cache libgeotiff
+        if: matrix.libgeotiff-source == 'external'
+        id: cache-libgeotiff
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/libgeotiff-install
+          key: >-
+            libgeotiff-external-${{ matrix.os }}-
+            ${{ github.run_number }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      - name: Build libgeotiff from source
+        if: matrix.libgeotiff-source == 'external' && steps.cache-libgeotiff.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ github.workspace }}
+          git clone --depth 1 https://github.com/OSGeo/libgeotiff.git
+          cd libgeotiff/libgeotiff
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/libgeotiff-install \
+            -DBUILD_SHARED_LIBS=ON
+          make -j$(nproc)
+          make install
 
       - name: Cache HDF5
         id: cache-hdf5
@@ -68,15 +97,25 @@ jobs:
           make -j$(nproc)
           make install
 
-      - name: Configure CMake
+      - name: Configure CMake (system libgeotiff)
+        if: matrix.libgeotiff-source == 'system'
         run: |
           cd vol-geotiff
           mkdir build && cd build
           cmake .. \
             -DSITE="ubu" -DBUILDNAME="vol-geotiff/${{ matrix.build-type }}"  \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DHDF5_DIR=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/share/cmake \
-            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+
+      - name: Configure CMake (external libgeotiff)
+        if: matrix.libgeotiff-source == 'external'
+        run: |
+          cd vol-geotiff
+          mkdir build && cd build
+          cmake .. \
+            -DSITE="ubu" -DBUILDNAME="vol-geotiff/${{ matrix.build-type }}"  \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${{ github.workspace }}/libgeotiff-install"
 
       - name: Build
         run: |
