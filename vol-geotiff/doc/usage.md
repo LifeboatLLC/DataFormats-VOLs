@@ -6,13 +6,12 @@ The GeoTIFF VOL connector has the following dependencies:
 - **libtiff** (TIFF library)
 - **libgeotiff** (GeoTIFF library)
 - **CMake 3.9 or later**
-- **pkg-config** for finding TIFF and GeoTIFF libraries
 
 ### Installing Dependencies
 
 On Ubuntu/Debian (using HDF5 develop built from source):
 ```bash
-sudo apt-get install -y build-essential cmake pkg-config libtiff5-dev libgeotiff-dev
+sudo apt-get install -y build-essential cmake libtiff5-dev libgeotiff-dev
 git clone --depth 1 --branch develop https://github.com/HDFGroup/hdf5.git
 cd hdf5 && mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DHDF5_BUILD_TOOLS=ON -DHDF5_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=/opt/hdf5-develop
@@ -21,12 +20,12 @@ make -j$(nproc) && sudo make install
 
 On CentOS/RHEL:
 ```bash
-sudo yum install hdf5-devel libtiff-devel libgeotiff-devel pkgconfig
+sudo yum install hdf5-devel libtiff-devel libgeotiff-devel
 ```
 
 On macOS with Homebrew (HDF5 develop built from source is required):
 ```bash
-brew install cmake pkg-config libtiff libgeotiff
+brew install cmake libtiff libgeotiff
 # Build and install HDF5 develop similarly to the Linux instructions above
 ```
 
