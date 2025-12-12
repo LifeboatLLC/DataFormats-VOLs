@@ -79,15 +79,15 @@ else()
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
         message(STATUS "Attempting pkg-config discovery of libtiff/libgeotiff")
-        pkg_check_modules(GEOTIFF QUIET libgeotiff)
-        pkg_check_modules(TIFF QUIET libtiff-4)
+        pkg_check_modules(GEOTIFF QUIET IMPORTED_TARGET libgeotiff)
+        pkg_check_modules(TIFF QUIET IMPORTED_TARGET libtiff-4)
     endif()
 
     if(GEOTIFF_FOUND AND TIFF_FOUND)
         message(STATUS "Found GeoTIFF and TIFF via pkg-config")
-        # pkg-config sets GEOTIFF_LIBRARIES, GEOTIFF_INCLUDE_DIRS, etc.
-        set(_GEOTIFF_TARGET "pkgconfig::geotiff")
-        set(_TIFF_TARGET "pkgconfig::tiff")
+        # pkg_check_modules with IMPORTED_TARGET creates PkgConfig::<prefix> targets
+        set(_GEOTIFF_TARGET "PkgConfig::GEOTIFF")
+        set(_TIFF_TARGET "PkgConfig::TIFF")
     else()
         # Manual discovery for packages in standard system locations without config files
         message(STATUS "Attempting manual discovery of libtiff/libgeotiff")
