@@ -445,7 +445,8 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
     }
 
     /* Check if this image directory exists in the TIFF file */
-    num_dirs = TIFFNumberOfDirectories(file->tiff);
+    /* Manual cast because some versions of TIFF return tdir_t */
+    num_dirs = (uint16_t) TIFFNumberOfDirectories(file->tiff);
     if (image_index >= num_dirs) {
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_NOTFOUND, NULL,
                         "Image %d does not exist (file has %d image%s)", image_index, num_dirs,
@@ -991,7 +992,8 @@ herr_t geotiff_group_get(void *obj, H5VL_group_get_args_t *args,
                 FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid file object");
 
             /* Get number of TIFF directories (images) in the file */
-            num_dirs = TIFFNumberOfDirectories(o->parent_file->u.file.tiff);
+            /* Manual cast because some versions of TIFF return tdir_t */
+            num_dirs = (uint16_t) TIFFNumberOfDirectories(o->parent_file->u.file.tiff);
 
             /* Fill in group info structure */
             ginfo->storage_type = H5G_STORAGE_TYPE_COMPACT;
@@ -1913,8 +1915,8 @@ herr_t geotiff_introspect_get_cap_flags(const void __attribute__((unused)) * inf
 
     /* Basic flags are not entirely accurate,
        since dataset/attr/group creation is architecturally unsupported */
-    *cap_flags = H5VL_CAP_FLAG_FILE_BASIC | H5VL_CAP_FLAG_ATTR_BASIC |
-                 H5VL_CAP_FLAG_DATASET_BASIC | H5VL_CAP_FLAG_GROUP_BASIC;
+    *cap_flags = H5VL_CAP_FLAG_FILE_BASIC | H5VL_CAP_FLAG_ATTR_BASIC | H5VL_CAP_FLAG_DATASET_BASIC |
+                 H5VL_CAP_FLAG_GROUP_BASIC;
 
     return ret_value;
 }
