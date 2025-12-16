@@ -133,8 +133,7 @@ set(GDAL_TEST_FILES
     "byte_point.tif"
     "byte.tif"
     "byte_with_ovr.tif"
-    "byte_zstd.tif"
-    # "cielab.tif" # colorpsace ot yet supported
+    # "cielab.tif" # colorpsace not yet supported
     # "float32.tif" # floats not yet supported
     # "float64.tif" # floats not yet supported
     "GTModelTypeGeoKey_only.tif"
@@ -171,5 +170,6 @@ foreach(TEST_FILE ${GDAL_TEST_FILES})
                          "PATH=$ENV{PATH}"
                          "HDF5_VOL_CONNECTOR="
                          $<TARGET_FILE:test_runner> real_file_test "${PROJECT_SOURCE_DIR}/test/${TEST_FILE}")
+
     endif()
 endforeach()
