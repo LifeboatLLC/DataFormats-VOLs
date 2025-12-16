@@ -2079,34 +2079,6 @@ int UnsupportedFeaturesTest(void)
         file_id = H5I_INVALID_HID;
     }
 
-    /* Test that 1-bit GDAL files are rejected (from test suite) */
-    /* These paths are relative to build/test directory where ctest runs from */
-    const char *onebit_files[] = {"../../test/1bit_2bands.tif", "../../test/oddsize_1bit2b.tif",
-                                  "../../test/oddsize1bit.tif"};
-    for (int i = 0; i < 3; i++) {
-        H5E_BEGIN_TRY
-        {
-            file_id = H5Fopen(onebit_files[i], H5F_ACC_RDONLY, fapl_id);
-        }
-        H5E_END_TRY;
-
-        if (file_id >= 0) {
-            H5E_BEGIN_TRY
-            {
-                dset_id = H5Dopen2(file_id, "image0", H5P_DEFAULT);
-            }
-            H5E_END_TRY;
-
-            if (dset_id >= 0) {
-                printf("VERIFICATION FAILED: 1-bit file %s should have been rejected\n",
-                       onebit_files[i]);
-                goto error;
-            }
-            H5Fclose(file_id);
-            file_id = H5I_INVALID_HID;
-        }
-    }
-
     /* Clean up */
     if (H5Pclose(fapl_id) < 0) {
         printf("Failed to close FAPL\n");

@@ -66,18 +66,18 @@ This project uses CMake as the build system.
 
 ### CMake Configuration Options
 
-- **`GEOTIFF_BUILD_EXAMPLES`** (default: `ON`): Build example programs
+- **`GEOTIFF_VOL_BUILD_EXAMPLES`** (default: `ON`): Build example programs
 
   To disable building examples:
   ```bash
-  cmake .. -DGEOTIFF_BUILD_EXAMPLES=OFF
+  cmake .. -DGEOTIFF_VOL_BUILD_EXAMPLES=OFF
   ```
 
 **Note:** This project requires HDF5 develop (1.14+/2.x). Ensure your `CMAKE_PREFIX_PATH` points to the HDF5 develop installation. On macOS with Homebrew, also include `$(brew --prefix)` in CMAKE_PREFIX_PATH to enable pkg-config discovery of system packages.
 
 ### Example Programs
 
-The example programs demonstrate how to use the GeoTIFF VOL connector and visualize GeoTIFF data. They are built by default but can be disabled with `-DGEOTIFF_BUILD_EXAMPLES=OFF`.
+The example programs demonstrate how to use the GeoTIFF VOL connector and visualize GeoTIFF data. They are built by default but can be disabled with `-DGEOTIFF_VOL_BUILD_EXAMPLES=OFF`.
 
 **Runtime Dependencies for Examples:**
 - **gnuplot** (for visualization demo)
