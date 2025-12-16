@@ -5,6 +5,10 @@ project (geotiff_vol VERSION 1.0.0 DESCRIPTION "HDF5 VOL connector for GeoTIFF f
 enable_testing ()
 include (CTest)
 
+# Embed the paths to TIFF/GEOTIFF libraries in the built library
+# so that HDF5 can find them at runtime
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 # Find HDF5 (prefer CONFIG mode). Try lowercase first (HDF5 develop installs 'hdf5'), then uppercase
 find_package(hdf5 COMPONENTS C CONFIG QUIET)
 find_package(HDF5 COMPONENTS C CONFIG QUIET)
