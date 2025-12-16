@@ -155,9 +155,9 @@ static const H5VL_class_t geotiff_class_g = {
     },
     {
         /* introscpect_cls */
-        geotiff_introspect_get_conn_cls, /* get_conn_cls  */
-        NULL,                            /* get_cap_flags */
-        geotiff_introspect_opt_query     /* opt_query     */
+        geotiff_introspect_get_conn_cls,  /* get_conn_cls  */
+        geotiff_introspect_get_cap_flags, /* get_cap_flags */
+        geotiff_introspect_opt_query      /* opt_query     */
     },
     {
         /* request_cls */
@@ -1899,5 +1899,22 @@ herr_t geotiff_compute_coordinates(const geotiff_dataset_t *dset, void *buf,
     }
 
 done:
+    return ret_value;
+}
+
+herr_t geotiff_introspect_get_cap_flags(const void __attribute__((unused)) * info,
+                                        uint64_t *cap_flags)
+{
+    herr_t ret_value = SUCCEED;
+
+    assert(cap_flags);
+
+    /* Set capability flags for the GeoTIFF VOL connector */
+
+    /* Basic flags are not entirely accurate,
+       since dataset/attr/group creation is architecturally unsupported */
+    *cap_flags = H5VL_CAP_FLAG_FILE_BASIC | H5VL_CAP_FLAG_ATTR_BASIC |
+                 H5VL_CAP_FLAG_DATASET_BASIC | H5VL_CAP_FLAG_GROUP_BASIC;
+
     return ret_value;
 }
