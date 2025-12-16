@@ -7,19 +7,24 @@ include (CTest)
 
 # Embed the paths to TIFF/GEOTIFF libraries in the built library
 # so that HDF5 can find them at runtime
+# set(CMAKE_BUILD_RPATH_USE_LINK_PATH TRUE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-# Find HDF5 (prefer CONFIG mode). Try lowercase first (HDF5 develop installs 'hdf5'), then uppercase
-find_package(hdf5 COMPONENTS C CONFIG QUIET)
-find_package(HDF5 COMPONENTS C CONFIG QUIET)
+# Find HDF5 (prefer CONFIG mode).
+# TODO - is this case sensitive? which does HDF5 directly output?
+find_package(hdf5 COMPONENTS C CONFIG)
+
 if(NOT hdf5_FOUND AND NOT HDF5_FOUND)
     message(FATAL_ERROR "HDF5 CONFIG package not found. Set CMAKE_PREFIX_PATH or HDF5_DIR to your HDF5 install.")
 endif()
 
 # Normalize HDF5 target name so downstream can always link HDF5::HDF5
 if(NOT TARGET HDF5::HDF5)
+    message(STATUS "Normalizing HDF5 target name to HDF5::HDF5")
     foreach(hdf5_candidate IN ITEMS hdf5::hdf5 hdf5::hdf5-shared HDF5::HDF5_C hdf5-shared hdf5-static hdf5)
         if(TARGET ${hdf5_candidate})
+            message(STATUS "Found HDF5 target: ${hdf5_candidate}")
+            set(_HDF5_REAL_TARGET ${hdf5_candidate})
             add_library(HDF5::HDF5 ALIAS ${hdf5_candidate})
             break()
         endif()
@@ -30,16 +35,33 @@ if(NOT TARGET HDF5::HDF5)
     endif()
 endif()
 
+get_target_property(HDF5_LOCATION ${_HDF5_REAL_TARGET} IMPORTED_LOCATION)
+get_target_property(HDF5_LOCATION_DEBUG ${_HDF5_REAL_TARGET} IMPORTED_LOCATION_DEBUG)
+get_target_property(HDF5_INTERFACE_LINK_LIBRARIES ${_HDF5_REAL_TARGET} INTERFACE_LINK_LIBRARIES)
+message(STATUS "HDF5 location: ${HDF5_LOCATION}")
+message(STATUS "HDF5 debug location: ${HDF5_LOCATION_DEBUG}")
+message(STATUS "HDF5 interface libs: ${HDF5_INTERFACE_LINK_LIBRARIES}")
+
+get_target_property(HDF5_LOCATION_RELEASE ${_HDF5_REAL_TARGET} IMPORTED_LOCATION_RELEASE)
+get_target_property(HDF5_LOCATION_DEBUG ${_HDF5_REAL_TARGET} IMPORTED_LOCATION_DEBUG)
+get_target_property(HDF5_LOCATION_NOCONFIG ${_HDF5_REAL_TARGET} IMPORTED_LOCATION_NOCONFIG)
+get_target_property(HDF5_SONAME ${_HDF5_REAL_TARGET} IMPORTED_SONAME_RELEASE)
+
+message(STATUS "HDF5 release location: ${HDF5_LOCATION_RELEASE}")
+message(STATUS "HDF5 debug location: ${HDF5_LOCATION_DEBUG}")
+message(STATUS "HDF5 no-config location: ${HDF5_LOCATION_NOCONFIG}")
+message(STATUS "HDF5 soname: ${HDF5_SONAME}")
+
 # Find TIFF - try config first, then allow CMake's FindTIFF.cmake module
-find_package(TIFF CONFIG QUIET)
+find_package(TIFF CONFIG)
 if(NOT TIFF_FOUND)
-    find_package(TIFF QUIET)  # Let CMake use FindTIFF module (works with Homebrew)
+    find_package(TIFF)  # Try to use FindTIFF module
 endif()
 
-# Find GeoTIFF - only try config mode (no standard Find module for GeoTIFF)
-find_package(GeoTIFF CONFIG QUIET)
+# Find GeoTIFF
+find_package(GeoTIFF CONFIG)
 if(NOT GeoTIFF_FOUND)
-    find_package(geotiff CONFIG QUIET)
+    find_package(geotiff CONFIG)
 endif()
 
 # Determine which TIFF target is available
@@ -64,6 +86,7 @@ if(NOT _GEOTIFF_TARGET)
     message(STATUS "No GeoTIFF CMake target found")
 endif()
 
+# TODO - isolate TIFF from GEOTIFF here, TIFF first
 if(_TIFF_TARGET AND _GEOTIFF_TARGET)
     set(_have_config TRUE)
     message(STATUS "Using CMake config mode for TIFF and GeoTIFF")

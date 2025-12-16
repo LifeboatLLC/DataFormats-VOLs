@@ -2,7 +2,7 @@
 
 The GeoTIFF VOL connector has the following dependencies:
 
-- **HDF5 develop branch (1.14+/2.x)** with VOL support
+- **HDF5 develop branch (1.14+/2.x)** with VOL support. If building from source, make sure the CPP library is disabled, as attempts to open it during VOL registration can break parts of the test runner.
 - **libtiff** (TIFF library)
 - **libgeotiff** (GeoTIFF library)
 - **CMake 3.9 or later**
