@@ -22,7 +22,7 @@ if (NOT TARGET hdf5-shared)
     message(FATAL_ERROR "hdf5-shared target not found in HDF5 package.")
 endif()
 
-# Create alias target to papaer over specific HDF5 provided
+# Create alias target to paper over specific HDF5 provided
 add_library(HDF5::HDF5 ALIAS hdf5-shared)
 
 # Extract HDF5 include directories for use by targets/tests
@@ -37,12 +37,10 @@ endif()
 
 # Determine which TIFF target is available
 set(_TIFF_TARGET "")
-foreach(tiff_candidate IN ITEMS TIFF::TIFF TIFF::tiff)
-    if(TARGET ${tiff_candidate})
-        set(_TIFF_TARGET ${tiff_candidate})
-        break()
-    endif()
-endforeach()
+if(TARGET TIFF::TIFF)
+    set(_TIFF_TARGET TIFF::TIFF)
+    message(STATUS "Found TIFF target: ${_TIFF_TARGET}")
+endif()
 
 # If no TIFF target was found via config, try pkg-config then manual discovery
 if(NOT _TIFF_TARGET)
@@ -67,8 +65,19 @@ if(NOT _TIFF_TARGET)
         message(FATAL_ERROR "libtiff not found. Ensure TIFF is installed (e.g., via apt/brew) or provide headers/libs.")
     endif()
 
-    set(TIFF_LIBRARIES ${TIFF_LIBRARY})
     message(STATUS "Found TIFF via manual discovery: ${TIFF_LIBRARY}")
+endif()
+
+# Create unified TIFF target for all potential TIFF sources
+add_library(Tiff::Tiff INTERFACE IMPORTED)
+if(_TIFF_TARGET)
+    # Wrap the found target
+    target_link_libraries(Tiff::Tiff INTERFACE ${_TIFF_TARGET})
+else()
+    # Wrap manual discovery results
+    set_target_properties(Tiff::Tiff PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${TIFF_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${TIFF_INCLUDE_DIR}")
 endif()
 
 # === GeoTIFF Setup ===
@@ -84,7 +93,7 @@ foreach(geotiff_candidate IN ITEMS geotiff::geotiff GeoTIFF::geotiff GeoTIFF::Ge
     if(TARGET ${geotiff_candidate})
         set(_GEOTIFF_TARGET ${geotiff_candidate})
         message(STATUS "Found GeoTIFF target: ${_GEOTIFF_TARGET}")
-        break()
+        # break()
     endif()
 endforeach()
 if(NOT _GEOTIFF_TARGET)
@@ -116,17 +125,16 @@ if(NOT _GEOTIFF_TARGET)
         message(FATAL_ERROR "libgeotiff not found. Ensure GeoTIFF is installed (e.g., via apt/brew) or provide headers/libs.")
     endif()
 
-    set(GEOTIFF_LIBRARIES ${GEOTIFF_LIBRARY})
-    set(GEOTIFF_INCLUDE_DIRS ${GEOTIFF_INCLUDE_DIR})
-    # Add common geotiff subdirectory to include path if it exists
-    if(EXISTS "${GEOTIFF_INCLUDE_DIR}/geotiff")
-        list(APPEND GEOTIFF_INCLUDE_DIRS "${GEOTIFF_INCLUDE_DIR}/geotiff")
-    endif()
     message(STATUS "Found GeoTIFF via manual discovery: ${GEOTIFF_LIBRARY}")
 endif()
 
-# Extract and adjust include directories from the imported GeoTIFF target if using config mode
+# Create unified GeoTIFF target for all potential GeoTIFF sources
+add_library(GeoTiff::GeoTiff INTERFACE IMPORTED)
 if(_GEOTIFF_TARGET)
+    # Wrap the found target
+    target_link_libraries(GeoTiff::GeoTiff INTERFACE ${_GEOTIFF_TARGET})
+
+    # Extract and adjust include directories from the imported GeoTIFF target
     get_target_property(GEOTIFF_INCLUDE_DIRS ${_GEOTIFF_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
     if(GEOTIFF_INCLUDE_DIRS)
         set(_GEOTIFF_ADJUSTED_INCLUDES "")
@@ -139,6 +147,17 @@ if(_GEOTIFF_TARGET)
         endforeach()
         set(GEOTIFF_INCLUDE_DIRS "${_GEOTIFF_ADJUSTED_INCLUDES}")
     endif()
+else()
+    # Wrap manual discovery results
+    set(GEOTIFF_INCLUDE_DIRS ${GEOTIFF_INCLUDE_DIR})
+    # Add common geotiff subdirectory to include path if it exists
+    if(EXISTS "${GEOTIFF_INCLUDE_DIR}/geotiff")
+        list(APPEND GEOTIFF_INCLUDE_DIRS "${GEOTIFF_INCLUDE_DIR}/geotiff")
+    endif()
+
+    set_target_properties(GeoTiff::GeoTiff PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${GEOTIFF_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${GEOTIFF_INCLUDE_DIRS}")
 endif()
 
 # Build options

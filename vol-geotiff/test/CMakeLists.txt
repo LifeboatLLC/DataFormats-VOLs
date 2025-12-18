@@ -7,13 +7,7 @@ target_compile_definitions(test_runner PRIVATE
     GEOTIFF_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src")
 
 # Link test_runner with required libraries
-# TODO - treat HDF5 here same way as tiff/gt with var instead of alias
-# TODO - elide target/lib distinction for t/gt?
-if (_have_config)
-    target_link_libraries (test_runner PRIVATE HDF5::HDF5 ${_TIFF_TARGET} ${_GEOTIFF_TARGET})
-else()
-    target_link_libraries (test_runner PRIVATE HDF5::HDF5 ${TIFF_LIBRARIES} ${GEOTIFF_LIBRARIES})
-endif()
+target_link_libraries (test_runner PRIVATE HDF5::HDF5 Tiff::Tiff GeoTiff::GeoTiff)
 
 # Add the GeoTIFF test (if a sample GeoTIFF file exists)
 if(EXISTS "${PROJECT_SOURCE_DIR}/test/sample.tif")

@@ -19,6 +19,7 @@ make -j$(nproc) && sudo make install
 ```
 
 On macOS with Homebrew (HDF5 develop built from source is required):
+
 ```bash
 brew install cmake libtiff libgeotiff
 # Build and install HDF5 develop similarly to the Linux instructions above
