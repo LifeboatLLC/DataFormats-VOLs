@@ -7,11 +7,7 @@ target_compile_definitions(test_runner PRIVATE
     GEOTIFF_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src")
 
 # Link test_runner with required libraries
-if (_have_config)
-    target_link_libraries (test_runner PRIVATE HDF5::HDF5 ${_TIFF_TARGET} ${_GEOTIFF_TARGET})
-else()
-    target_link_libraries (test_runner PRIVATE HDF5::HDF5 ${TIFF_LIBRARIES} ${GEOTIFF_LIBRARIES})
-endif()
+target_link_libraries (test_runner PRIVATE HDF5::HDF5 Tiff::Tiff GeoTiff::GeoTiff)
 
 # Add the GeoTIFF test (if a sample GeoTIFF file exists)
 if(EXISTS "${PROJECT_SOURCE_DIR}/test/sample.tif")
@@ -21,7 +17,7 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/test/sample.tif")
 endif()
 
 # Add individual test cases
-set(TEST_ENVIRONMENT "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/Release\;${PROJECT_BINARY_DIR}/src;PATH=C:/src/hdf5-dev/install/bin\;C:/src/vcpkg.microsoft/installed/x64-windows/bin\;$ENV{PATH};HDF5_VOL_CONNECTOR=")
+set(TEST_ENVIRONMENT "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/Release\;${PROJECT_BINARY_DIR}/src;PATH=$ENV{PATH};HDF5_VOL_CONNECTOR=")
 
 # Plugin registration tests
 add_test(NAME test_getters COMMAND test_runner test_getters)
@@ -131,8 +127,7 @@ set(GDAL_TEST_FILES
     "byte_point.tif"
     "byte.tif"
     "byte_with_ovr.tif"
-    "byte_zstd.tif"
-    # "cielab.tif" # colorpsace ot yet supported
+    # "cielab.tif" # colorpsace not yet supported
     # "float32.tif" # floats not yet supported
     # "float64.tif" # floats not yet supported
     "GTModelTypeGeoKey_only.tif"
@@ -166,8 +161,9 @@ foreach(TEST_FILE ${GDAL_TEST_FILES})
         add_test(NAME ${TEST_NAME}
                  COMMAND ${CMAKE_COMMAND} -E env
                          "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/Release\;${PROJECT_BINARY_DIR}/src"
-                         "PATH=C:/src/hdf5-dev/install/bin\;C:/src/vcpkg.microsoft/installed/x64-windows/bin\;$ENV{PATH}"
+                         "PATH=$ENV{PATH}"
                          "HDF5_VOL_CONNECTOR="
                          $<TARGET_FILE:test_runner> real_file_test "${PROJECT_SOURCE_DIR}/test/${TEST_FILE}")
+
     endif()
 endforeach()

@@ -142,7 +142,6 @@ jobs:
           clang \
           libtiff5-dev \
           libgeotiff-dev \
-          pkg-config \
           zlib1g-dev \
           libjpeg-dev \
           libpng-dev

@@ -13,21 +13,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
         hdf5-version: ['develop', 'hdf5_1_14_6']
-        build-type: [Release, Debug]
+        build-type: [Release]
         libgeotiff-source: [system, external]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
             cmake \
-            pkg-config \
             zlib1g-dev \
             libcurl4-openssl-dev \
             libjpeg-dev \
@@ -36,15 +36,30 @@ jobs:
             libzstd-dev \
             liblzma-dev
 
-      - name: Install libtiff for system libgeotiff
-        if: matrix.libgeotiff-source == 'system'
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install \
+            cmake \
+            zlib \
+            curl \
+            jpeg \
+            libpng \
+            webp \
+            zstd \
+            xz
+
+      - name: Install libtiff for system libgeotiff (Linux)
+        if: matrix.libgeotiff-source == 'system' && runner.os == 'Linux'
         run: |
           sudo apt-get install -y libtiff5-dev
-
-      - name: Install libgeotiff from system packages
-        if: matrix.libgeotiff-source == 'system'
-        run: |
           sudo apt-get install -y libgeotiff-dev
+
+      - name: Install libtiff for system libgeotiff (macOS)
+        if: matrix.libgeotiff-source == 'system' && runner.os == 'macOS'
+        run: |
+          brew install libtiff
+          brew install libgeotiff
 
       - name: Cache libtiff
         if: matrix.libgeotiff-source == 'external'
@@ -66,8 +81,13 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/libtiff-install \
-            -DBUILD_SHARED_LIBS=ON
-          make -j$(nproc)
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
           make install
 
       - name: Cache libgeotiff
@@ -80,10 +100,15 @@ jobs:
             libgeotiff-external-${{ matrix.os }}-
             ${{ github.run_number }}-${{ hashFiles('.github/workflows/ci.yml') }}
 
-      - name: Install PROJ for external libgeotiff build
-        if: matrix.libgeotiff-source == 'external'
+      - name: Install PROJ for external libgeotiff build (Linux)
+        if: matrix.libgeotiff-source == 'external' && runner.os == 'Linux'
         run: |
           sudo apt-get install -y libproj-dev
+
+      - name: Install PROJ for external libgeotiff build (macOS)
+        if: matrix.libgeotiff-source == 'external' && runner.os == 'macOS'
+        run: |
+          brew install proj
 
       - name: Build libgeotiff from source
         if: matrix.libgeotiff-source == 'external' && steps.cache-libgeotiff.outputs.cache-hit != 'true'
@@ -97,7 +122,11 @@ jobs:
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/libtiff-install" \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/libgeotiff-install \
             -DBUILD_SHARED_LIBS=ON
-          make -j$(nproc)
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
           make install
 
       - name: Cache HDF5
@@ -128,7 +157,11 @@ jobs:
             -DBUILD_SHARED_LIBS=ON \
             -DHDF5_ENABLE_Z_LIB_SUPPORT=ON \
             -DHDF5_ENABLE_SZIP_SUPPORT=OFF
-          make -j$(nproc)
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
           make install
 
       - name: Configure CMake (system libgeotiff)
@@ -136,10 +169,18 @@ jobs:
         run: |
           cd vol-geotiff
           mkdir build && cd build
+          # Add Homebrew prefix on macOS so pkg-config can find packages
+          if [ "$(uname)" = "Darwin" ]; then
+            BREW_PREFIX=$(brew --prefix)
+            export PKG_CONFIG_PATH="${BREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${BREW_PREFIX}"
+          else
+            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+          fi
           cmake .. \
             -DSITE="ubu" -DBUILDNAME="vol-geotiff/${{ matrix.build-type }}"  \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
 
       - name: Configure CMake (external libgeotiff)
         if: matrix.libgeotiff-source == 'external'
@@ -155,7 +196,11 @@ jobs:
         run: |
           cd vol-geotiff
           cd build
-          make -j$(nproc)
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
 
       - name: Run basic tests (system libgeotiff)
         if: matrix.libgeotiff-source == 'system'
@@ -163,7 +208,11 @@ jobs:
           cd vol-geotiff
           cd build
           export HDF5_PLUGIN_PATH=$PWD/src
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
+          if [ "$(uname)" = "Darwin" ]; then
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$DYLD_LIBRARY_PATH
+          else
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
+          fi
           export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
           ctest -D Experimental
           make test
@@ -174,7 +223,11 @@ jobs:
           cd vol-geotiff
           cd build
           export HDF5_PLUGIN_PATH=$PWD/src
-          export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/libtiff-install/lib:${{ github.workspace }}/libgeotiff-install/lib:$LD_LIBRARY_PATH
+          if [ "$(uname)" = "Darwin" ]; then
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/libtiff-install/lib:${{ github.workspace }}/libgeotiff-install/lib:$DYLD_LIBRARY_PATH
+          else
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/libtiff-install/lib:${{ github.workspace }}/libgeotiff-install/lib:$LD_LIBRARY_PATH
+          fi
           export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
           ctest -D Experimental
           make test

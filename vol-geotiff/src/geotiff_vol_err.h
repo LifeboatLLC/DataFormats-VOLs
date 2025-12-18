@@ -254,28 +254,6 @@ extern hid_t H5_geotiff_object_table_iter_err_min_g;
  * should print additional information to stdout indented by at least four
  * spaces.
  */
-#ifdef RV_CONNECTOR_DEBUG
-#define TESTING(S)                                                                                 \
-    {                                                                                              \
-        printf("Testing %-66s\n\n", S);                                                            \
-        fflush(stdout);                                                                            \
-    }
-#define PASSED()                                                                                   \
-    {                                                                                              \
-        puts("PASSED\n");                                                                          \
-        fflush(stdout);                                                                            \
-    }
-#define H5_FAILED()                                                                                \
-    {                                                                                              \
-        puts("*FAILED*\n");                                                                        \
-        fflush(stdout);                                                                            \
-    }
-#define SKIPPED()                                                                                  \
-    {                                                                                              \
-        puts("- SKIPPED -\n");                                                                     \
-        fflush(stdout);                                                                            \
-    }
-#else
 #define TESTING(S)                                                                                 \
     {                                                                                              \
         printf("Testing %-66s", S);                                                                \
@@ -296,7 +274,6 @@ extern hid_t H5_geotiff_object_table_iter_err_min_g;
         puts("- SKIPPED -");                                                                       \
         fflush(stdout);                                                                            \
     }
-#endif
 
 #define TEST_ERROR                                                                                 \
     {                                                                                              \

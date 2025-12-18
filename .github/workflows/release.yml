@@ -62,7 +62,6 @@ jobs:
         sudo apt-get install -y \
           build-essential \
           cmake \
-          pkg-config \
           libtiff5-dev \
           libgeotiff-dev \
           zlib1g-dev
@@ -131,7 +130,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        brew install cmake pkg-config libtiff libgeotiff
+        brew install cmake libtiff libgeotiff
 
     - name: Build HDF5
       run: |

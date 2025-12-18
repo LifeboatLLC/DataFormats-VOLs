@@ -134,4 +134,7 @@ herr_t geotiff_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_t
 herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
                                        H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
                                        const H5VL_class_t __attribute__((unused)) * *conn_cls);
+
+herr_t geotiff_introspect_get_cap_flags(const void __attribute__((unused)) * info,
+                                        uint64_t *cap_flags);
 #endif /* _geotiff_vol_connector_H */
