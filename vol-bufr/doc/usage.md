@@ -88,19 +88,19 @@ The example programs demonstrate how to use the BUFR VOL connector. They are bui
 int main() {
     hid_t vol_id, fapl_id, file_id, dset_id;
 
-    // Tell the library where to find the GeoTIFF VOL connector library
+    // Tell the library where to find the BUFR VOL connector.
     // (May be skipped if HDF5_VOL_CONNECTOR/HDF5_PLUGIN_PATH are defined in env)
     // Define the path and uncomment the line if not using environment variable.
-    // H5PLappend(GEOTIFF_VOL_PLUGIN_PATH);
+    // H5PLappend(BUFR_VOL_PLUGIN_PATH);
 
-    // Register the GeoTIFF VOL connector
-    vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT);
+    // Register the BUFR VOL connector
+    vol_id = H5VLregister_connector_by_name(BUFR_VOL_CONNECTOR_NAME, H5P_DEFAULT);
 
     // Create file access property list and set VOL connector
     fapl_id = H5Pcreate(H5P_FILE_ACCESS);
     H5Pset_vol(fapl_id, vol_id, NULL);
 
-    // Open GeoTIFF file
+    // Open BUFR file
     file_id = H5Fopen("temp.bufr", H5F_ACC_RDONLY, fapl_id);
 
     // Open latitude variable from the first message
