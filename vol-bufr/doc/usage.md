@@ -3,7 +3,7 @@
 The BUFR VOL connector has the following dependencies:
 
 - **HDF5 develop branch (1.14+/2.x)** with VOL support. If building from source, make sure the CPP library is disabled, as attempts to open it during VOL registration can break parts of the test runner.
-- **ecCodes library (https://confluence.ecmwf.int/display/ECC/ecCodes+Home)
+- **ecCodes library** (https://confluence.ecmwf.int/display/ECC/ecCodes+Home)
 - **CMake 3.10 or later**
 
 ### Installing Dependencies
