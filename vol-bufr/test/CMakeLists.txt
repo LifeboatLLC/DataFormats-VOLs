@@ -54,6 +54,7 @@ set(TEST_ENVIRONMENT
 
 # BUFR functionality tests
 add_test(NAME open_close COMMAND test_runner open_close)
+add_test(NAME dataset_open_close COMMAND test_runner dataset_open_close)
 set_tests_properties(open_close PROPERTIES
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
     ENVIRONMENT "${TEST_ENVIRONMENT}"

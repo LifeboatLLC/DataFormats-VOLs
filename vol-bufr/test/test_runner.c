@@ -20,6 +20,8 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "open_close") == 0)
         num_failures += (OpenBUFRTest("temp.bufr") != 0 ? 1 : 0);
 
+    if (run_all || strcmp(test_name, "dataset_open_close") == 0)
+        num_failures += (OpenBUFRDatasetTest("temp.bufr", "/message_1/pressure") != 0 ? 1 : 0);
 
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
