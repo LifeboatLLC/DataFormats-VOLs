@@ -7,17 +7,11 @@ set_target_properties (${CDF_VOL_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
 set_target_properties (${CDF_VOL_NAME} PROPERTIES SOVERSION 1)
 set_target_properties (${CDF_VOL_NAME} PROPERTIES PUBLIC_HEADER "cdf_vol_connector.h;cdf_vol_err.h")
 
-# Always add HDF5 include directories explicitly
-target_include_directories(${CDF_VOL_NAME} PRIVATE ${HDF5_INCLUDE_DIRS})
+# Add HDF5 and CDF include directories explicitly
+target_include_directories(${CDF_VOL_NAME} PRIVATE ${HDF5_INCLUDE_DIRS} ${CDF_INCLUDE_DIR})
 
-# Add CDF include directory
-target_include_directories(${CDF_VOL_NAME} PRIVATE "/home/raylu/Lifeboat/cdf/cdf39_1-dist/include")
-
-# Link libraries
-target_link_libraries(${CDF_VOL_NAME} PRIVATE HDF5::HDF5)
-
-# Link CDF libraries
-target_link_libraries(${CDF_VOL_NAME} PRIVATE "/home/raylu/Lifeboat/cdf/cdf39_1-dist/lib/libcdf.so")
+# Link HDF5 and CDF libraries
+target_link_libraries(${CDF_VOL_NAME} PRIVATE HDF5::HDF5 cdf::cdf)
 
 # Install rules
 install(TARGETS ${CDF_VOL_NAME}

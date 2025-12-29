@@ -44,13 +44,26 @@ if (TARGET HDF5::HDF5)
     get_target_property(HDF5_INCLUDE_DIRS HDF5::HDF5 INTERFACE_INCLUDE_DIRECTORIES)
 endif()
 
-# Note: This connector targets the modern HDF5 VOL API (1.15+). Ensure your HDF5 matches.
+# Link to CDF library specified through CMAKE_PREFIX_PATH in the command line
+find_library(CDF_LIBRARY NAMES cdf HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib)
+find_path(CDF_INCLUDE_DIR NAMES cdf.h PATHS ${CMAKE_PREFIX_PATH} PATH__SUFFIXES include)
 
-# (moved aliasing section above)
+if(CDF_LIBRARY)
+    message(STATUS "Found CDF library at: ${CDF_LIBRARY}")
+    add_library(cdf::cdf SHARED IMPORTED)
+else()
+    message(FATAL_ERROR "CDF library is not found.")
+endif()
 
-# It's really easy to pick up the wrong HDF5 library if you set the path
-# wrong. Turn this on for added confirmation that you got it right.
-#message (DEPRECATION "Include: ${HDF5_INCLUDE_DIR}")
+if(CDF_INCLUDE_DIR)
+    message(STATUS "Found CDF header under: ${CDF_INCLUDE_DIR}")
+else()
+    message(FATAL_ERROR "CDF header is not found.")
+endif()
+
+set_target_properties(cdf::cdf PROPERTIES
+	IMPORTED_LOCATION "${CDF_LIBRARY}"
+	INTERFACE_INCLUDE_DIRECTORIES "${CDF_INCLUDE_DIR}")
 
 add_subdirectory (src)
 add_subdirectory (test)

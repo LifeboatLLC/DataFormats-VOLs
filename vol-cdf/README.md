@@ -39,14 +39,9 @@ This project uses CMake as the build system.
    mkdir build && cd build
    ```
 
-2. Configure with CMake (point to HDF5 install).  But remember to modify the hard-coded include directory and library path for CDF in the CMakeLists.txt under vol-cdf/src and vol-cdf/test with your installed CDF location:
+2. Configure with CMake (point to HDF5 installation and CDF installed location). 
    ```bash
-   cmake .. -DCMAKE_PREFIX_PATH=/opt/hdf5-develop/
-   ```
-
-   Or specify HDF5 location explicitly:
-   ```bash
-   cmake .. -DHDF5_DIR=/opt/hdf5-develop/install
+   cmake .. -DCMAKE_PREFIX_PATH="/opt/hdf5-develop/;/path/of/installed/cdf"
    ```
 
 3. Build the connector:
@@ -59,7 +54,7 @@ This project uses CMake as the build system.
    sudo make install
    ```
 
-5. Run tests.  But first copy the CDF file called example1.cdf from vol-cdf/test to your build directory (build/test):
+5. Run tests.
    ```bash
    make test
    ```
