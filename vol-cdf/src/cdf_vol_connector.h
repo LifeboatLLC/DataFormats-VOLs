@@ -33,7 +33,7 @@ typedef struct cdf_file_t {
     hid_t plist_id;     /* Property list ID */
 } cdf_file_t;
 
-struct cdf_dataset_t {
+typedef struct cdf_dataset_t {
     char *name;          /* Dataset name */
     long var_num;        /* CDF variable number */
     long num_records;    /* Number of records in the variable */
@@ -44,7 +44,7 @@ struct cdf_dataset_t {
     long dim_varys[CDF_MAX_DIMS]; /* Does each dimension vary */
     hid_t type_id;       /* HDF5 datatype */
     hid_t space_id;      /* HDF5 dataspace */
-};
+} cdf_dataset_t;
 
 /* Forward declaration for unified object type */
 typedef struct cdf_object_t cdf_object_t;

@@ -79,7 +79,7 @@ int main() {
     // (May be skipped if HDF5_VOL_CONNECTOR/HDF5_PLUGIN_PATH are defined in env)
     H5PLappend(CDF_VOL_PLUGIN_PATH);
 
-    // Register the GeoTIFF VOL connector
+    // Register the CDF VOL connector
     vol_id = H5VLregister_connector_by_name(CDF_VOL_CONNECTOR_NAME, H5P_DEFAULT);
 
     // Create file access property list and set VOL connector

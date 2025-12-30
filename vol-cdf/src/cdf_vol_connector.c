@@ -190,7 +190,7 @@ herr_t cdf_get_hdf5_type_from_cdf(long cdf_datatype, hid_t *type_id)
             predef_type = H5T_NATIVE_INT8;
             break;
         
-        case CDF_UNIT1: /* 1-byte, unsigned integer */
+        case CDF_UINT1: /* 1-byte, unsigned integer */
             predef_type = H5T_NATIVE_UINT8;
             break;
         
@@ -199,7 +199,7 @@ herr_t cdf_get_hdf5_type_from_cdf(long cdf_datatype, hid_t *type_id)
             predef_type = H5T_NATIVE_INT16;
             break;
 
-        case CDF_UNIT2: /* 2-byte, unsigned integer */
+        case CDF_UINT2: /* 2-byte, unsigned integer */
             predef_type = H5T_NATIVE_UINT16;
             break;
 
@@ -348,6 +348,22 @@ done:
     return ret_value;
 } /* end prepare_converted_buffer() */
 
+/* Struct for H5Dscatter's callback that allows it to scatter from a non-global response buffer */
+typedef struct response_read_info {
+    void *buffer;
+    void *read_size;
+} response_read_info;
+
+static herr_t dataset_read_scatter_op(const void **src_buf, size_t *src_buf_bytes_used,
+                                      void *op_data)
+{
+    response_read_info *resp_info = (response_read_info *) op_data;
+    *src_buf = resp_info->buffer;
+    *src_buf_bytes_used = *((size_t *) resp_info->read_size);
+
+    return 0;
+} /* end dataset_read_scatter_op() */
+
 /* Helper function: Transfer data from source buffer to user buffer.
  * Handles both simple memcpy (when both selections are ALL) and scatter operations.
  */
@@ -492,7 +508,6 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
                        void __attribute__((unused)) * *req)
 {
     CDFstatus status;
-    CDFdataType data_type;
 
     cdf_object_t *file_obj = (cdf_object_t *) obj;
     cdf_object_t *dset_obj = NULL;
@@ -500,6 +515,8 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
 
     cdf_dataset_t *dset = NULL;           /* Convenience pointer */
     cdf_file_t *file = &file_obj->u.file; /* Convenience pointer */
+
+    hsize_t dspace_dims[dset->num_dims];
 
     H5T_class_t dtype_class = H5T_NO_CLASS; 
 
@@ -531,10 +548,10 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     memset(dset->dim_sizes, 0, sizeof(dset->dim_sizes));
     dset->type_id = H5I_INVALID_HID;
     dset->space_id = H5I_INVALID_HID;
-
+    long data_type = -1;
 
     /* Parse dataset name to extract variable number */
-    dset->var_num = CDFgetVarNum (file->id, name);
+    dset->var_num = CDFgetVarNum (file->id, (char *)name);
     if (dset->var_num < CDF_OK) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL,
                         "Failed to get variable number from name: %s", name);
@@ -561,27 +578,24 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     }
 
     /* Get the maximum number of records written to this variable*/
-    status = CDFgetNumRecords(file->id, dset->var_num, &dset->num_records);
+    status = CDFgetzVarNumRecsWritten(file->id, dset->var_num, &dset->num_records);
     if (status < CDF_OK) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL,
                         "Failed to get number of records in CDF file");
     }
-
-    /* Set up dataspace dimensions */
-    hsize_t dims[dset->num_dims];
     
     /* First dimension is record dimension */
-    dims[0] = (hsize_t)(dset->num_records); 
+    dspace_dims[0] = (hsize_t)(dset->num_records); 
     
     /* Set remaining dimensions */
     for (int i = 1; i < dset->num_dims; i++) {
-        dims[i] = (hsize_t)(dset->dim_sizes[i]);
+        dspace_dims[i] = (hsize_t)(dset->dim_sizes[i]);
     }
 
     int rank = dset->num_dims;
 
     /* Create dataspace */
-    if ((dset->space_id = H5Screate_simple(rank, dims, NULL)) < 0) {
+    if ((dset->space_id = H5Screate_simple(rank, dspace_dims, NULL)) < 0) {
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL, "Failed to create dataspace");
     }
 
@@ -704,7 +718,7 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
     long counts[CDF_MAX_DIMS] = {1}; /* Read all records along record dimension */
     long intervals[CDF_MAX_DIMS] = {1}; /* No striding */
 
-    status = CDFhyperGetVarData(id,
+    status = CDFhyperGetzVarData(id,
                                 d->var_num,
                                 0L, /* start reading from first record */
                                 d->num_records, /* number of records to read (ALL) */
@@ -787,10 +801,10 @@ done:
 
 herr_t cdf_dataset_close(void *dset, hid_t dxpl_id, void **req)
 {
-    cdf_object_t *o = (cdf_object_t *) dset;
+    cdf_object_t *d = (cdf_object_t *) dset;
     herr_t ret_value = SUCCEED;
 
-    assert(o);
+    assert(d);
 
     /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
     if (!d->parent_file){
@@ -799,14 +813,14 @@ herr_t cdf_dataset_close(void *dset, hid_t dxpl_id, void **req)
     }
 
     /* Decrement dataset's ref count */
-    if (o->ref_count == 0) {
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCLOSEOBJ, FAIL,
+    if (d->ref_count == 0) {
+        FUNC_DONE_ERROR(H5E_VOL, H5E_CANTCLOSEOBJ, FAIL,
                         "Dataset already closed (ref_count is 0)");
     }
-    o->ref_count--;
+    d->ref_count--;
 
     /* Only do the real close when ref_count reaches 0 */
-    if (o->ref_count == 0) {
+    if (d->ref_count == 0) {
         if (d->u.dataset.name) {
             free(d->u.dataset.name);
         }
@@ -821,11 +835,11 @@ herr_t cdf_dataset_close(void *dset, hid_t dxpl_id, void **req)
             }
         }
         /* Decrement parent file's reference count */
-        if (cdf_file_close(o->parent_file, dxpl_id, req) < 0) {
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "Failed to close dataset file object");
+        if (cdf_file_close(d->parent_file, dxpl_id, req) < 0) {
+            FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "Failed to close dataset file object");
         }
 
-        free(o);
+        free(d);
     }
 
     return ret_value;
