@@ -280,9 +280,10 @@ done:
  * If conversion is needed, allocates a new buffer and performs conversion.
  * If no conversion needed, returns pointer to original data.
  */
-static herr_t prepare_converted_buffer(const cdf_dataset_t *dset, hid_t mem_type_id,
-                                       size_t num_elements, void **out_buffer,
-                                       size_t *out_buffer_size, hbool_t *out_tconv_buf_allocated)
+static herr_t prepare_converted_buffer(hid_t type_id, hid_t mem_type_id, size_t num_elements,
+                                       void *source_buf, size_t source_size,
+                                       void **out_buffer, size_t *out_buffer_size,
+                                       hbool_t *out_tconv_buf_allocated)
 {
     herr_t ret_value = SUCCEED;
     htri_t types_equal = 0;
@@ -290,28 +291,27 @@ static herr_t prepare_converted_buffer(const cdf_dataset_t *dset, hid_t mem_type
     size_t mem_type_size = 0;
     void *conversion_buf = NULL;
 
-    if (!dset || !out_buffer || !out_buffer_size || !out_tconv_buf_allocated) {
+    if (!source_buf || !source_size || !out_buffer || !out_buffer_size || !out_tconv_buf_allocated) {
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
     }
 
     /* Check if types are equal */
-    if ((types_equal = H5Tequal(mem_type_id, dset->type_id)) < 0) {
+    if ((types_equal = H5Tequal(mem_type_id, type_id)) < 0) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCOMPARE, FAIL, "failed to compare datatypes");
     }
     
     if (types_equal) {
         /* No conversion needed - return borrowed pointer to cached data */
-        *out_buffer = dset->data;
-        *out_buffer_size = dset->data_size;
+        *out_buffer = source_buf;
+        *out_buffer_size = source_size;
         *out_tconv_buf_allocated = FALSE;
         FUNC_GOTO_DONE(SUCCEED);
     }
 
-    /* Conversion needed - allocate buffer and convert */
-    if ((dataset_type_size = H5Tget_size(dset->type_id)) == 0) {
+     /* Conversion needed - allocate buffer and convert */
+    if ((dataset_type_size = H5Tget_size(type_id)) == 0) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "failed to get dataset type size");
     }
-
     if ((mem_type_size = H5Tget_size(mem_type_id)) == 0) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "failed to get memory type size");
     }
@@ -327,10 +327,10 @@ static herr_t prepare_converted_buffer(const cdf_dataset_t *dset, hid_t mem_type
     }
 
     /* Copy source data */
-    memcpy(conversion_buf, dset->data, src_data_size);
+    memcpy(conversion_buf, source_buf, src_data_size);
 
     /* Perform in-place conversion */
-    if (H5Tconvert(dset->type_id, mem_type_id, num_elements, conversion_buf, NULL, H5P_DEFAULT) < 0) {
+    if (H5Tconvert(type_id, mem_type_id, num_elements, conversion_buf, NULL, H5P_DEFAULT) < 0) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCONVERT, FAIL,
                         "failed to convert data from dataset type to memory type");
     }
@@ -542,7 +542,7 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
 
     /* Get variable info. Passing NULL to 'name' since we already have it. */
     status = CDFinquirezVar(file->id, dset->var_num, NULL, &data_type,
-                            &dset->num_dims, dset->dim_sizes, &dset->num_elements, 
+                            &dset->num_elements, &dset->num_dims, dset->dim_sizes, 
                             &dset->rec_vary, dset->dim_varys);
     if (status != CDF_OK) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL,
@@ -560,9 +560,9 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL, "Failed to get datatype class");
     }
 
-    /* Get number of records */
-    dset->num_records = CDFgetNumRecords(file->id);
-    if (dset->num_records < CDF_OK) {
+    /* Get the maximum number of records written to this variable*/
+    status = CDFgetNumRecords(file->id, dset->var_num, &dset->num_records);
+    if (status < CDF_OK) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL,
                         "Failed to get number of records in CDF file");
     }
@@ -608,17 +608,21 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
     const cdf_dataset_t *d = NULL; /* Convenience pointer */
     
     herr_t ret_value = SUCCEED;
-    H5S_sel_type file_space_type = H5S_SEL_ERROR;
-    H5S_sel_type mem_space_type = H5S_SEL_ERROR;
+    H5S_sel_type file_sel_type = H5S_SEL_ERROR;
+    H5S_sel_type mem_sel_type = H5S_SEL_ERROR;
     hssize_t num_elements = 0;
-    void *source_buf = NULL;
-    size_t source_size = 0;
-    hbool_t tconv_buf_allocated = FALSE;
     /* To follow H5S_ALL semantics, we set up local vars for effective values of mem/filespace */
     hid_t effective_file_space_id = file_space_id[0];
     hid_t effective_mem_space_id = mem_space_id[0];
 
+    void *cdf_buf = NULL;
+    void *selected_buf = NULL;
     void *gathered_buf = NULL;
+    size_t selected_size = 0;
+    size_t dataset_type_size = 0;
+    size_t cdf_data_size = 0;
+
+
 
     assert(dset_obj);
     d = (const cdf_dataset_t *) &dset_obj->u.dataset;
@@ -629,29 +633,29 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
 
     /* Get file dataspace selection type */
     if (file_space_id[0] == 0) {
-        file_space_type = H5S_SEL_ALL;
-    } else if ((file_space_type = H5Sget_select_type(file_space_id[0])) < 0) {
+        file_sel_type = H5S_SEL_ALL;
+    } else if ((file_sel_type = H5Sget_select_type(file_space_id[0])) < 0) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL,
                         "failed to get file dataspace selection type");
     }
 
     /* Get memory dataspace selection type */
     if (mem_space_id[0] == 0) {
-        mem_space_type = H5S_SEL_ALL;
-    } else if ((mem_space_type = H5Sget_select_type(mem_space_id[0])) < 0) {
+        mem_sel_type = H5S_SEL_ALL;
+    } else if ((mem_sel_type = H5Sget_select_type(mem_space_id[0])) < 0) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL,
                         "failed to get memory dataspace selection type");
     }
 
     /* Determine number of elements to read based on selections */
-    if (file_space_type == H5S_SEL_ALL && mem_space_type == H5S_SEL_ALL) {
+    if (file_sel_type == H5S_SEL_ALL && mem_sel_type == H5S_SEL_ALL) {
         num_elements = H5Sget_simple_extent_npoints(d->space_id);
         effective_file_space_id = d->space_id;
         effective_mem_space_id = d->space_id;
-    } else if (file_space_type == H5S_SEL_ALL && mem_space_type != H5S_SEL_ALL) {
+    } else if (file_sel_type == H5S_SEL_ALL && mem_sel_type != H5S_SEL_ALL) {
         num_elements = H5Sget_select_npoints(mem_space_id[0]);
         effective_file_space_id = d->space_id;
-    } else if (file_space_type != H5S_SEL_ALL && mem_space_type == H5S_SEL_ALL) {
+    } else if (file_sel_type != H5S_SEL_ALL && mem_sel_type == H5S_SEL_ALL) {
         num_elements = H5Sget_select_npoints(file_space_id[0]);
         effective_mem_space_id = d->space_id;
     } else {
@@ -663,10 +667,7 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
         }
     }
 
-    /* Prepare source buffer with type conversion if needed.
-     * If we have a non-trivial file selection, we need the full dataset in the source buffer
-     * for H5Dgather to extract the selection from. Otherwise, we only need num_elements.
-     */
+    /* Prepare for gathering selected data from dataset */
     size_t prepare_num_elements;
     hssize_t temp_npoints;
 
@@ -683,11 +684,50 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
         }
         prepare_num_elements = (size_t) num_elements;
     }
+    
+    /* Calculate size of data to prepare */
+    if ((dataset_type_size = H5Tget_size(d->type_id)) == 0) {
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "failed to get dataset type size");
+    }
 
-    if (prepare_converted_buffer(d, mem_type_id[0], prepare_num_elements, &source_buf, &source_size, 
-        &tconv_buf_allocated) < 0) {
+    cdf_data_size = prepare_num_elements * dataset_type_size;
+
+    /* Allocate buffer for CDF data */
+    if((cdf_buf = malloc(cdf_data_size)) == NULL) {
+        FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL, "failed to allocate buffer for CDF data");
+    }
+    
+    /* Call CDF library to read data */
+    CDFstatus status;
+    CDFid id = dset_obj->parent_file->u.file.id;
+    long indices[CDF_MAX_DIMS] = {0}; /* Start at beginning of each dimension */
+    long counts[CDF_MAX_DIMS] = {1}; /* Read all records along record dimension */
+    long intervals[CDF_MAX_DIMS] = {1}; /* No striding */
+
+    status = CDFhyperGetVarData(id,
+                                d->var_num,
+                                0L, /* start reading from first record */
+                                d->num_records, /* number of records to read (ALL) */
+                                1L, /* stride */
+                                indices,
+                                counts,
+                                intervals,
+                                cdf_buf);
+    if (status != CDF_OK) {
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL, "failed to read data from CDF variable");
+    }
+
+    /* Prepare converted buffer if needed */
+    hbool_t tconv_buf_allocated = FALSE;
+    if (prepare_converted_buffer(d->type_id, mem_type_id[0], prepare_num_elements,
+            cdf_buf, cdf_data_size, &selected_buf, &selected_size, 
+            &tconv_buf_allocated) < 0) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "failed to prepare converted buffer");
     }
+
+    /* Free CDF buffer */
+    free(cdf_buf);
+    cdf_buf = NULL;
 
     /* If file selection is non-trivial (hyperslab, points), gather selected data first */
     if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
@@ -696,42 +736,46 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
             FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "invalid number of elements for gather");
         }
         size_t gathered_size = (size_t) num_elements * H5Tget_size(mem_type_id[0]);
-
+        
         if ((gathered_buf = malloc(gathered_size)) == NULL) {
             FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL, "failed to allocate buffer for gathered data");
         }
 
         /* Gather selected data from source buffer according to file space selection.
-         * Note: We pass file_space_id[0] which has the selection, and source_buf which
+         * Note: We pass file_space_id[0] which has the selection, and selected_buf which
          * must be sized according to the full extent described by the selection's dataspace.
          */
-        if (H5Dgather(file_space_id[0], source_buf, mem_type_id[0], gathered_size, gathered_buf,
+        if (H5Dgather(file_space_id[0], selected_buf, mem_type_id[0], gathered_size, gathered_buf,
                       NULL, NULL) < 0) {
             FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL, "failed to gather selected data");
         }
 
         /* Free original buffer if we allocated it for type conversion */
-        if (tconv_buf_allocated && source_buf) {
-            free(source_buf);
-            source_buf = NULL;
+        if (tconv_buf_allocated && selected_buf) {
+            free(selected_buf);
+            selected_buf = NULL;
         }
 
         /* Use gathered buffer as new source */
-        source_buf = gathered_buf;
-        source_size = gathered_size;
+        selected_buf = gathered_buf;
+        selected_size = gathered_size;
         tconv_buf_allocated = TRUE;
     }
 
     /* Transfer data to user buffer (handles selections via scatter if needed) */
-    if (transfer_data_to_user(source_buf, source_size, mem_type_id[0], effective_mem_space_id,
+    if (transfer_data_to_user(selected_buf, selected_size, mem_type_id[0], effective_mem_space_id,
         buf[0]) < 0) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL, "failed to transfer data to user buffer");
     }
 
 done:
     /* Clean up allocated buffer if needed */
-    if (tconv_buf_allocated && source_buf) {
-        free(source_buf);
+    if (tconv_buf_allocated && selected_buf) {
+        free(selected_buf);
+    }
+
+    if (cdf_buf) {
+        free(cdf_buf);
     }
 
     if (ret_value < 0 && gathered_buf) {
