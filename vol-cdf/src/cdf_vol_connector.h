@@ -1,17 +1,16 @@
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- * Copyright by The HDF Group.                                               *
+ * Copyright by Lifeboat, LLC                                                *
  * All rights reserved.                                                      *
  *                                                                           *
- * This file is part of HDF5.  The full HDF5 copyright notice, including     *
- * terms governing use, modification, and redistribution, is contained in    *
- * the COPYING file, which can be found at the root of the source code       *
- * distribution tree, or in https://support.hdfgroup.org/ftp/HDF5/releases.  *
+ * The full copyright notice, including terms governing use, modification,   *
+ * and redistribution, is contained in the COPYING file, which can be found  *
+ * at the root of the source code distribution tree.                         *
  * If you do not have access to either file, you may request a copy from     *
- * help@hdfgroup.org.                                                        *
+ * help@lifeboat.llc                                                         *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-/* Purpose:     HDF5 Virtual Object Layer (VOL) connector for GeoTIFF files
- *              Enables reading GeoTIFF files through HDF5 tools and netCDF-C
+/*
+ * Purpose:     HDF5 Virtual Object Layer (VOL) connector for CDF files
  */
 
 #ifndef _cdf_vol_connector_H
