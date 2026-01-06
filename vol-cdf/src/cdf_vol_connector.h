@@ -9,8 +9,8 @@
  * help@lifeboat.llc                                                         *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-/* Purpose:     HDF5 Virtual Object Layer (VOL) connector for CDF files
- *              Enables reading CDF files through HDF5 tools and netCDF-C
+/*
+ * Purpose:     HDF5 Virtual Object Layer (VOL) connector for CDF files
  */
 
 #ifndef _cdf_vol_connector_H

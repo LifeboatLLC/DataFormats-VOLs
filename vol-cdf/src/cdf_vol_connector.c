@@ -9,7 +9,8 @@
  * help@lifeboat.llc                                                         *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-/* Purpose:     HDF5 Virtual Object Layer (VOL) connector for CDF files 
+/*
+ * Purpose:     HDF5 Virtual Object Layer (VOL) connector for CDF files
  */
 
 /* This connector's header */
