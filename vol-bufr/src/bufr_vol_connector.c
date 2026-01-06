@@ -82,9 +82,9 @@ static const H5VL_class_t bufr_class_g = {
         /* dataset_cls */
         NULL,                 /* create       */
         bufr_dataset_open,    /* open         */
-        NULL,                 /* read         */
+        bufr_dataset_read,    /* read         */
         NULL,                 /* write        */
-        NULL,                 /* get          */
+        bufr_dataset_get,     /* get          */
         NULL,                 /* specific     */
         NULL,                 /* optional     */
         bufr_dataset_close    /* close        */
@@ -102,7 +102,7 @@ static const H5VL_class_t bufr_class_g = {
         /* file_cls */
         NULL,                /* create       */
         bufr_file_open,      /* open         */
-        NULL,                /* get          */
+        bufr_file_get,       /* get          */
         NULL,                /* specific     */
         NULL,                /* optional     */
         bufr_file_close      /* close        */
@@ -398,6 +398,7 @@ static herr_t bufr_read_data(bufr_dataset_t *dset)
     if (nvals == 0) {
         dset->data = NULL;
         dset->data_size = 0;
+        dset->nvals = 0;
         FUNC_GOTO_DONE(SUCCEED);
     }
 
@@ -427,6 +428,7 @@ static herr_t bufr_read_data(bufr_dataset_t *dset)
 
             dset->data = s;
             dset->data_size = sizeof(char *);
+            dset->nvals = 1;
             FUNC_GOTO_DONE(SUCCEED);
         }
 
@@ -457,6 +459,7 @@ static herr_t bufr_read_data(bufr_dataset_t *dset)
 
         dset->data = arr;
         dset->data_size = nvals * sizeof(char *);
+        dset->nvals = nvals;
         FUNC_GOTO_DONE(SUCCEED);
 
 string_array_fail:
@@ -485,6 +488,7 @@ string_array_fail:
 
         dset->data = buf;
         dset->data_size = nvals * sizeof(long);
+        dset->nvals = nvals;
         FUNC_GOTO_DONE(SUCCEED);
     }
 
@@ -501,6 +505,7 @@ string_array_fail:
 
         dset->data = buf;
         dset->data_size = nvals * sizeof(double);
+        dset->nvals = nvals;
         FUNC_GOTO_DONE(SUCCEED);
     }
 
@@ -595,6 +600,37 @@ done:
 
     return ret_value;
 }
+
+/* VOL file get callback */
+
+// cppcheck-suppress constParameterCallback
+herr_t bufr_file_get(void *file, H5VL_file_get_args_t *args,
+                        hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
+{
+    const bufr_object_t *o = (const bufr_object_t *) file;
+    const bufr_file_t *f = &o->u.file;
+    herr_t ret_value = SUCCEED;
+
+    switch (args->op_type) {
+        case H5VL_FILE_GET_NAME:
+            /* HDF5 1.14+/develop uses buf, buf_size, buf_len */
+            if (args->args.get_name.buf && args->args.get_name.buf_size > 0) {
+                size_t ncopy = strlen(f->filename);
+                if (ncopy >= args->args.get_name.buf_size)
+                    ncopy = args->args.get_name.buf_size - 1;
+                memcpy(args->args.get_name.buf, f->filename, ncopy);
+                args->args.get_name.buf[ncopy] = '\0';
+            }
+            /* Some HDF5 versions may not provide buf_len. If available, setting it is optional. */
+            break;
+        default:
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "Unsupported file get operation");
+    }
+done:
+    return ret_value;
+}
+
+
 /* VOL file close callback */
 herr_t bufr_file_close(void *file, hid_t __attribute__((unused)) dxpl_id,
                           void __attribute__((unused)) * *req)
@@ -677,7 +713,7 @@ void *bufr_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused
     dset->space_id = H5I_INVALID_HID;
     dset->type_id = H5I_INVALID_HID;
     dset->data = NULL;
-    dset->data_size = 0;
+    dset->data_size = 0; /* The value is set to the size of the data buffer; see bufr_read_data function below */
 
     /* Fast open using message offsets */
     h = bufr_open_message_by_index(file, (size_t)msg_index);
@@ -715,7 +751,6 @@ void *bufr_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused
 
     /* Find corresponding HDF5 native type; set a special flag if BUFR type is string */
     dset->codes_type = message_type;
-    dset->codes_type = message_type;
     if (dset->codes_type == CODES_TYPE_STRING) dset->is_vlen_string = 1; 
     if (bufr_get_hdf5_type(dset->codes_type, &dset->type_id) < 0) {
                 FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
@@ -728,14 +763,14 @@ void *bufr_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused
     if (len == 0) {
         dset->space_id = H5Screate(H5S_NULL);
         if (dset->space_id == H5I_INVALID_HID) {
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCREATE, NULL,
                         "Failed to create NULL dataspace for dataset");
         }
     }
     else if (len == 1) {
         dset->space_id = H5Screate(H5S_SCALAR);
         if (dset->space_id == H5I_INVALID_HID) {
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCREATE, NULL,
                             "Failed to create SCALAR dataspace for dataset");
         }
     }
@@ -744,7 +779,7 @@ void *bufr_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused
         dims[0] = (hsize_t)len;
         dset->space_id = H5Screate_simple(1, dims, NULL);
         if (dset->space_id == H5I_INVALID_HID) {
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTCREATE, NULL,
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCREATE, NULL,
                         "Failed to create simple dataspace for dataset");
         }
     }
@@ -767,6 +802,307 @@ done:
     return ret_value;
 }
 
+/* Helper functions below are resused from the GeoTIFF connector.                     
+ * Support for selections in BUFR are overkill since size of raw data is not large,          
+ * but we support it since HDF5 apps may use partial reads/writes. In most cases   
+ * H5S_ALL selectiosn will be used (and recommended). Datatype conversion is a valid 
+ * operation for numeric ecCodes types only.
+ */   
+
+/* Struct for H5Dscatter's callback that allows it to scatter from a non-global response buffer */
+
+typedef struct response_read_info {
+    void *buffer;
+    void *read_size;
+} response_read_info;
+
+static herr_t dataset_read_scatter_op(const void **src_buf, size_t *src_buf_bytes_used,
+                                      void *op_data)
+{
+    response_read_info *resp_info = (response_read_info *) op_data;
+    *src_buf = resp_info->buffer;
+    *src_buf_bytes_used = *((size_t *) resp_info->read_size);
+
+    return 0;
+} /* end dataset_read_scatter_op() */
+
+/* Helper function: Prepare a buffer with data in the requested memory type.
+ * If conversion is needed, allocates a new buffer and performs conversion.
+ * If no conversion needed, returns pointer to original data.
+ */
+static herr_t prepare_converted_buffer(const bufr_dataset_t *dset, hid_t mem_type_id,
+                                       size_t num_elements, void **out_buffer,
+                                       size_t *out_buffer_size, hbool_t *out_tconv_buf_allocated)
+{
+    herr_t ret_value = SUCCEED;
+    htri_t types_equal = 0;
+    size_t dataset_type_size = 0;
+    size_t mem_type_size = 0;
+    void *conversion_buf = NULL;
+
+    if (!dset || !out_buffer || !out_buffer_size || !out_tconv_buf_allocated)
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "invalid arguments");
+
+    /* Check if types are equal */
+    if ((types_equal = H5Tequal(mem_type_id, dset->type_id)) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCOMPARE, FAIL, "failed to compare datatypes");
+
+    if (types_equal) {
+        /* No conversion needed - return borrowed pointer to cached data */
+        *out_buffer = dset->data;
+        *out_buffer_size = dset->data_size;
+        *out_tconv_buf_allocated = FALSE;
+        FUNC_GOTO_DONE(SUCCEED);
+    }
+
+   /* Conversion needed - allocate buffer and convert */
+    if ((dataset_type_size = H5Tget_size(dset->type_id)) == 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTGET, FAIL, "failed to get dataset type size");
+
+    if ((mem_type_size = H5Tget_size(mem_type_id)) == 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTGET, FAIL, "failed to get memory type size");
+
+    /* Allocate buffer large enough for in-place conversion (max of src/dst) */
+    size_t src_data_size = num_elements * dataset_type_size;
+    size_t dst_data_size = num_elements * mem_type_size;
+    size_t conversion_buf_size = (src_data_size > dst_data_size) ? src_data_size : dst_data_size;
+
+    if ((conversion_buf = malloc(conversion_buf_size)) == NULL)
+        FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
+                        "failed to allocate memory for datatype conversion");
+
+    /* Copy source data */
+    memcpy(conversion_buf, dset->data, src_data_size);
+
+    /* Perform in-place conversion */
+    if (H5Tconvert(dset->type_id, mem_type_id, num_elements, conversion_buf, NULL, H5P_DEFAULT) < 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCONVERT, FAIL,
+                        "failed to convert data from dataset type to memory type");
+
+    /* Return owned buffer */
+    *out_buffer = conversion_buf;
+    *out_buffer_size = dst_data_size;
+    *out_tconv_buf_allocated = TRUE;
+    conversion_buf = NULL; /* Transfer ownership */
+
+done:
+    if (conversion_buf)
+        free(conversion_buf);
+
+    return ret_value;
+} /* end prepare_converted_buffer() */
+
+/* Helper function: Transfer data from source buffer to user buffer.
+ * Handles both simple memcpy (when both selections are ALL) and scatter operations.
+ */
+static herr_t transfer_data_to_user(const void *source_buf, size_t source_size, hid_t mem_type_id,
+                                    hid_t mem_space_id, void *user_buf)
+{
+    herr_t ret_value = SUCCEED;
+    H5S_sel_type mem_sel_type = H5S_SEL_ERROR;
+
+    if (!source_buf || !user_buf)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
+
+    /* Determine if we can use simple memcpy or need scatter */
+    if (mem_space_id == 0 || mem_space_id == H5S_ALL) {
+        /* Simple case: copy entire buffer directly */
+        memcpy(user_buf, source_buf, source_size);
+        FUNC_GOTO_DONE(SUCCEED);
+    }
+
+    /* Check selection type */
+    if ((mem_sel_type = H5Sget_select_type(mem_space_id)) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_CANTGET, FAIL,
+                        "failed to get memory space selection type");
+
+    if (mem_sel_type == H5S_SEL_ALL) {
+        /* Simple case: copy entire buffer directly */
+        memcpy(user_buf, source_buf, source_size);
+    } else {
+        /* Use scatter for non-trivial selections */
+        response_read_info resp_info;
+        resp_info.read_size = &source_size;
+        resp_info.buffer = (void *) source_buf;
+
+        if (H5Dscatter(dataset_read_scatter_op, &resp_info, mem_type_id, mem_space_id, user_buf) <
+            0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "can't scatter data to user buffer");
+    }
+
+done:
+    return ret_value;
+} /* end transfer_data_to_user() */
+
+herr_t bufr_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_t mem_type_id[],
+                            hid_t __attribute__((unused)) mem_space_id[], hid_t file_space_id[],
+                            hid_t __attribute__((unused)) dxpl_id, void *buf[],
+                            void __attribute__((unused)) * *req)
+{
+    const bufr_object_t *dset_obj = (const bufr_object_t *) dset[0];
+    const bufr_dataset_t *d = NULL; /* Convenience pointer */
+
+    herr_t ret_value = SUCCEED;
+    H5S_sel_type file_sel_type = H5S_SEL_ERROR;
+    H5S_sel_type mem_sel_type = H5S_SEL_ERROR;
+    hssize_t num_elements = 0;
+    void *source_buf = NULL;
+    size_t source_size = 0;
+    hbool_t tconv_buf_allocated = FALSE;
+    /* To follow H5S_ALL semantics, we set up local vars for effective values of mem/filespace */
+    hid_t effective_file_space_id = file_space_id[0];
+    hid_t effective_mem_space_id = mem_space_id[0];
+
+    void *gathered_buf = NULL;
+
+    assert(dset_obj);
+    d = (const bufr_dataset_t *) &dset_obj->u.dataset;
+
+    if (!buf[0])
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid dataset buffer");
+
+    /* Set up dataspaces and element count */
+    if (file_space_id[0] == 0) {
+        file_sel_type = H5S_SEL_ALL;
+    } else if ((file_sel_type = H5Sget_select_type(file_space_id[0])) < 0) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                        "failed to get file dataspace selection type");
+    }
+
+    if (mem_space_id[0] == 0) {
+        mem_sel_type = H5S_SEL_ALL;
+    } else if ((mem_sel_type = H5Sget_select_type(mem_space_id[0])) < 0) {
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                        "failed to get memory dataspace selection type");
+    }
+
+    if (file_sel_type == H5S_SEL_ALL && mem_sel_type == H5S_SEL_ALL) {
+        num_elements = H5Sget_simple_extent_npoints(d->space_id);
+        effective_file_space_id = d->space_id;
+        effective_mem_space_id = d->space_id;
+    } else if (file_sel_type == H5S_SEL_ALL && mem_sel_type != H5S_SEL_ALL) {
+        num_elements = H5Sget_select_npoints(mem_space_id[0]);
+        effective_file_space_id = d->space_id;
+    } else if (file_sel_type != H5S_SEL_ALL && mem_sel_type == H5S_SEL_ALL) {
+        num_elements = H5Sget_select_npoints(file_space_id[0]);
+        effective_mem_space_id = d->space_id;
+    } else {
+        /* Both selections are provided - verify equivalence */
+        num_elements = H5Sget_select_npoints(file_space_id[0]);
+        if (num_elements != H5Sget_select_npoints(mem_space_id[0]))
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                            "file and memory selections have different number of points");
+    }
+
+    /* Prepare source buffer with type conversion if needed.
+     * If we have a non-trivial file selection, we need the full dataset in the source buffer
+     * for H5Dgather to extract the selection from. Otherwise, we only need num_elements.
+     */
+    size_t prepare_num_elements;
+    hssize_t temp_npoints;
+
+    if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
+        /* Will need to gather - prepare full dataset */
+        if ((temp_npoints = H5Sget_simple_extent_npoints(d->space_id)) < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "failed to get dataset extent");
+        prepare_num_elements = (size_t) temp_npoints;
+    } else {
+        /* No gather needed - prepare only selected elements */
+        if (num_elements < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "invalid number of elements");
+        prepare_num_elements = (size_t) num_elements;
+    }
+
+    if (prepare_converted_buffer(d, mem_type_id[0], prepare_num_elements, &source_buf, &source_size,
+                                 &tconv_buf_allocated) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "failed to prepare converted buffer");
+
+    /* If file selection is non-trivial (hyperslab, points), gather selected data first */
+    if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
+        /* Allocate buffer for gathered data */
+        if (num_elements < 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                            "invalid number of elements for gather");
+        size_t gathered_size = (size_t) num_elements * H5Tget_size(mem_type_id[0]);
+
+        if ((gathered_buf = malloc(gathered_size)) == NULL)
+            FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
+                            "failed to allocate buffer for gathered data");
+
+        /* Gather selected data from source buffer according to file space selection.
+         * Note: We pass file_space_id[0] which has the selection, and source_buf which
+         * must be sized according to the full extent described by the selection's dataspace.
+         */
+        if (H5Dgather(file_space_id[0], source_buf, mem_type_id[0], gathered_size, gathered_buf,
+                      NULL, NULL) < 0) {
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "failed to gather selected data");
+        }
+
+        /* Free original buffer if we allocated it for type conversion */
+        if (tconv_buf_allocated && source_buf) {
+            free(source_buf);
+            source_buf = NULL;
+        }
+
+        /* Use gathered buffer as new source */
+        source_buf = gathered_buf;
+        source_size = gathered_size;
+        tconv_buf_allocated = TRUE;
+    }
+
+    /* Transfer data to user buffer (handles selections via scatter if needed) */
+    if (transfer_data_to_user(source_buf, source_size, mem_type_id[0], effective_mem_space_id,
+                              buf[0]) < 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_READERROR, FAIL, "failed to transfer data to user buffer");
+
+done:
+    /* Clean up allocated buffer if needed */
+    if (tconv_buf_allocated && source_buf)
+        free(source_buf);
+
+    if (ret_value < 0 && gathered_buf)
+        free(gathered_buf);
+
+    return ret_value;
+}
+
+/* VOL dataset get callback */
+
+// cppcheck-suppress constParameterCallback   
+herr_t bufr_dataset_get(void *dset, H5VL_dataset_get_args_t *args,
+                           hid_t __attribute__((unused)) dxpl_id,
+                           void __attribute__((unused)) * *req)
+{       
+    const bufr_object_t *o = (const bufr_object_t *) dset;
+    const bufr_dataset_t *d = &o->u.dataset;
+        
+    herr_t ret_value = SUCCEED;
+        
+    switch (args->op_type) {  
+        case H5VL_DATASET_GET_SPACE:
+            /* Return a copy of the dataspace */
+            assert(d->space_id != H5I_INVALID_HID);
+    
+            args->args.get_space.space_id = H5Scopy(d->space_id);
+            if (args->args.get_space.space_id < 0)
+                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to copy dataspace");
+            break;
+        
+        case H5VL_DATASET_GET_TYPE:
+            /* Return a copy of the datatype */
+            args->args.get_type.type_id = H5Tcopy(d->type_id);
+            if (args->args.get_type.type_id < 0)
+                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to copy datatype");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL,
+                            "Unsupported dataset get operation");
+            break;
+    }
+done:
+    return ret_value;
+}
 
 /* VOL dataset close callback */
 herr_t bufr_dataset_close(void *dset, hid_t dxpl_id, void **req)
