@@ -48,12 +48,13 @@ typedef struct bufr_message_t {
 /* BUFR VOL dataset object structure */
 typedef struct bufr_dataset_t {
     char *name;              /* Dataset (key) name */
-    bufr_message_t *msg;   /* BUFR message handle */
+    bufr_message_t *msg;     /* BUFR message handle */
     int   codes_type;        /* ecCodes datatype */
     hid_t type_id;           /* HDF5 datatype */
     hid_t space_id;          /* HDF5 dataspace */
     void *data;              /* Cached data for the key */
     size_t data_size;        /* Data size in bytes */
+    size_t nvals;            /* Number of values (key replication is a message) */  
     bool is_vlen_string;     /* True iff type_id/data use HDF5 VL-string semantics */
 } bufr_dataset_t;
 
@@ -74,14 +75,15 @@ herr_t bufr_term_connector(void);
 
 /* File operations */
 void *bufr_file_open(const char *name, unsigned flags, hid_t fapl_id, hid_t dxpl_id, void **req);
+herr_t bufr_file_get(void *file, H5VL_file_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t bufr_file_close(void *file, hid_t dxpl_id, void **req);
 
 /* Dataset operations */
 void *bufr_dataset_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
                            hid_t dapl_id, hid_t dxpl_id, void **req);
-//herr_t bufr_dataset_read(size_t count, void *dset[], hid_t mem_type_id[], hid_t mem_space_id[],
-//                            hid_t file_space_id[], hid_t dxpl_id, void *buf[], void **req);
-//herr_t bufr_dataset_get(void *dset, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req);
+herr_t bufr_dataset_read(size_t count, void *dset[], hid_t mem_type_id[], hid_t mem_space_id[],
+                            hid_t file_space_id[], hid_t dxpl_id, void *buf[], void **req);
+herr_t bufr_dataset_get(void *dset, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t bufr_dataset_close(void *dset, hid_t dxpl_id, void **req);
 
 
