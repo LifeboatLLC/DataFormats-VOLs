@@ -55,8 +55,22 @@ typedef struct bufr_dataset_t {
     void *data;              /* Cached data for the key */
     size_t data_size;        /* Data size in bytes */
     size_t nvals;            /* Number of values (key replication is a message) */  
-    bool is_vlen_string;     /* True iff type_id/data use HDF5 VL-string semantics */
+    bool is_vlen_string;     /* True if type_id/data use HDF5 VL-string semantics */
 } bufr_dataset_t;
+
+/* BUFR VOL attribute object structure */
+typedef struct bufr_attr_t {
+    void *parent;            /* Parent object (currently only file) */
+    char *name;              /* Attribute (key) name */
+    bufr_message_t *msg;     /* BUFR message handle */
+    int   codes_type;        /* ecCodes datatype */
+    hid_t type_id;           /* HDF5 datatype */
+    hid_t space_id;          /* HDF5 dataspace */
+    void *data;              /* Cached data for the key */
+    size_t data_size;        /* Data size in bytes */
+    size_t nvals;            /* Number of values - should be 1 for an attribute */
+    bool is_vlen_string;     /* True if type_id/data use HDF5 VL-string semantics */
+} bufr_attr_t;
 
 /* Unified BUFR VOL object structure */
 struct bufr_object_t {
@@ -66,6 +80,7 @@ struct bufr_object_t {
     union {
         bufr_file_t file;
         bufr_dataset_t dataset;
+        bufr_attr_t attr;
     } u;
 };
 
@@ -86,7 +101,12 @@ herr_t bufr_dataset_read(size_t count, void *dset[], hid_t mem_type_id[], hid_t 
 herr_t bufr_dataset_get(void *dset, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t bufr_dataset_close(void *dset, hid_t dxpl_id, void **req);
 
-
+/* Attribute operations */
+void *bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
+                        hid_t aapl_id, hid_t dxpl_id, void **req);
+herr_t bufr_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req);
+herr_t bufr_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
+herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req);
 
 herr_t bufr_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type,
                                     uint64_t *flags);

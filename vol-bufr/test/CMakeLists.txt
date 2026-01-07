@@ -48,14 +48,18 @@ add_custom_command(TARGET test_runner POST_BUILD
 # Environment for VOL plugin loading
 # Note: include both ".../src/Release" (multi-config generators) and ".../src" (single-config)
 set(TEST_ENVIRONMENT
-    "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/Release;${PROJECT_BINARY_DIR}/src;"
+    "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src;${PROJECT_BINARY_DIR}/src/Release;"
     "HDF5_VOL_CONNECTOR="
 )
 
 # BUFR functionality tests
 add_test(NAME open_close COMMAND test_runner open_close)
-add_test(NAME dataset_open_close COMMAND test_runner dataset_open_close)
 set_tests_properties(open_close PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
+    ENVIRONMENT "${TEST_ENVIRONMENT}"
+)
+add_test(NAME dataset_open_close COMMAND test_runner dataset_open_close)
+set_tests_properties(dataset_open_close PROPERTIES
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
     ENVIRONMENT "${TEST_ENVIRONMENT}"
 )

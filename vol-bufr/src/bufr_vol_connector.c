@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #ifdef _MSC_VER
 #ifndef strdup
@@ -70,13 +71,13 @@ static const H5VL_class_t bufr_class_g = {
     {
         /* attribute_cls */
         NULL,              /* create       */
-        NULL,              /* open         */
-        NULL,              /* read         */
+        bufr_attr_open,    /* open         */
+        bufr_attr_read,    /* read         */
         NULL,              /* write        */
-        NULL,              /* get          */
+        bufr_attr_get,     /* get          */
         NULL,              /* specific     */
         NULL,              /* optional     */
-        NULL               /* close        */
+        bufr_attr_close    /* close        */
     },
     {
         /* dataset_cls */
@@ -183,6 +184,9 @@ herr_t bufr_get_hdf5_type(int codes_type, hid_t *type_id)
 // Add error checking
             predef_type = H5Tcopy(H5T_C_S1); 
             H5Tset_size(predef_type, H5T_VARIABLE);
+            break;
+        case CODES_TYPE_BYTES: 
+            predef_type = H5T_NATIVE_UCHAR;
             break;
         default:
             predef_type = H5I_INVALID_HID;
@@ -1163,7 +1167,445 @@ herr_t bufr_dataset_close(void *dset, hid_t dxpl_id, void **req)
    }
     return ret_value;
 }
+/* Helper functions to check valid attribute name */
 
+
+/* ---------- helpers ---------- */
+
+static bool contains_arrow(const char *key) {
+    return strstr(key, "->") != NULL;
+}
+
+static bool starts_with(const char *s, const char *p) {
+    return s && p && strncmp(s, p, strlen(p)) == 0;
+}
+
+static bool equals_any(const char *s, const char *const *list) {
+    for (size_t i = 0; list[i]; i++) {
+        if (strcmp(s, list[i]) == 0)
+            return true;
+    }
+    return false;
+}
+
+/* ---------- Per-subset keys checkers ---------- */
+
+static bool varies_per_subset(const char *key) {
+
+    /* Exact canonical per-observation keys */
+    static const char *const exact_keys[] = {
+        "latitude",
+        "longitude",
+        "height",
+        "pressure",
+        "depth",
+        "elevation",
+        "subsetNumber",
+        NULL
+    };
+
+    if (equals_any(key, exact_keys))
+        return true;
+
+    /* Common per-subset prefixes */
+    static const char *const prefixes[] = {
+        "time",          /* time, timePeriod, timeIncrement */
+        "year", "month", "day", "hour", "minute", "second",
+        "station",
+        "sensor",
+        "quality",
+        "confidence",
+        "wind",
+        "temperature",
+        "humidity",
+        NULL
+    };
+
+    for (size_t i = 0; prefixes[i]; i++) {
+        if (starts_with(key, prefixes[i]))
+            return true;
+    }
+
+    return false;
+}
+
+/* ---------- Decision function ---------- */
+
+static bool reject_key(const char *key) {
+
+    if (!key || !*key)
+        return true;
+
+    /* Rule 1: reject key attributes */
+    if (contains_arrow(key))
+        return true;
+
+    /* Rule 2: reject per-subset varying keys */
+    if (varies_per_subset(key))
+        return true;
+
+    return false;
+}
+
+
+/* Helper functionto read BUFR data into attr->data and set attr->data_size */ 
+static herr_t bufr_read_attr_data(bufr_attr_t *attr)
+{
+    herr_t ret_value = SUCCEED;
+    int err;
+    assert(attr);
+    assert(attr->msg);
+    assert(attr->msg->h);
+    assert(attr->nvals == 1);
+
+    codes_handle *h = attr->msg->h;
+    const char *key = attr->name;
+
+    /* -----------------------------
+     * STRING (VL)
+     * ----------------------------- */
+    if (attr->codes_type == CODES_TYPE_STRING) {
+
+        size_t len = 0;
+
+        err = codes_get_string(h, key, NULL, &len);
+        if (err != 0)
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to get length for key string");
+
+        char *s = (char *)malloc(len*sizeof(char));
+        if (!s)
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, FAIL, "Failed to allocate buffer for a key string");
+
+        err = codes_get_string(h, key, s, &len);
+        if (err != 0) {
+            H5free_memory(s);
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to read key string");
+        }
+
+        attr->data = s;
+        attr->data_size = len;
+        FUNC_GOTO_DONE(SUCCEED);
+   }
+
+    /* -----------------------------
+     * NUMERIC (LONG / DOUBLE)
+     * ----------------------------- */
+
+    if (attr->codes_type == CODES_TYPE_LONG) {
+        long *buf = (long *)malloc(sizeof(long));
+        if (!buf)
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, FAIL, "Failed to allocate buffer for long attribute value");
+
+        err = codes_get_long(h, key, buf);
+        if (err != 0) {
+            free(buf);
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to get long attribute value");
+        }
+        attr->data = buf;
+        attr->data_size = sizeof(long);
+        FUNC_GOTO_DONE(SUCCEED);
+    }
+
+    if (attr->codes_type == CODES_TYPE_DOUBLE) {
+        double *buf = (double *)malloc(sizeof(double));
+        if (!buf)
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, FAIL, "Failed to allocate buffer for double attribute value");
+
+        err = codes_get_double(h, key, buf);
+        if (err != 0) {
+            free(buf);
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to get double values");
+        }
+
+        attr->data = buf;
+        attr->data_size = sizeof(double);
+        FUNC_GOTO_DONE(SUCCEED);
+    }
+
+    /* Unsupported type */
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "Discovered unknown datatype");
+done:
+    return ret_value;
+}
+
+/* Helper function to free cached attribute data */
+static void bufr_free_cached_attr_data(bufr_attr_t *attr)
+{
+    assert(attr);
+    assert(attr->data);
+
+    free(attr->data);
+
+    attr->data = NULL;
+    attr->data_size = 0;
+}
+
+
+/* Attribute operations */
+void *bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
+                        hid_t __attribute__((unused)) aapl_id,
+                        hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
+{
+    bufr_object_t *parent_obj = NULL;
+    bufr_object_t *attr_obj = NULL;
+    bufr_object_t *ret_value = NULL;
+
+    bufr_attr_t *attr = NULL; /* Convenience pointer */
+
+    bufr_object_t *file_obj = (bufr_object_t *) obj;
+
+    bufr_file_t *file = &file_obj->u.file; /* Convenience pointer */
+
+    const char *key_view = NULL;
+    codes_handle *h = NULL;
+    bufr_message_t *msg = NULL;
+    int message_type = 0;
+    long msg_index = 0;
+    size_t len = 0;
+    size_t string_len = 0;
+    int parse_return = -1;
+
+
+    if (!obj || !name || !loc_params)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Invalid object or attribute name");
+
+    /* Currenlty the code only accepts canonical BUFR keys that can be treated as attributes.
+     * <name> string should be in the form of /massage_<N>/<key_name>, where <key_name> doesn't 
+     * contain ->, and is one of a known per-subset varying values, or matches common
+     * per-observation prefixes. Only file ID can be an object ID in the call to H5Aopen.
+     * We will lift this restriction in the future.
+     */
+   
+    parent_obj = (bufr_object_t *) obj;
+    if (parent_obj->obj_type != H5I_FILE) 
+       FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, NULL, "Unsupported object identifier for attribute open"); 
+    
+    /* Parse "/message_<N>/<key>" */
+    parse_return = parse_message_key_path(name, &msg_index, &key_view);
+    if (parse_return != 0) {
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL, "Invalid message number or  key path");
+    }   
+    if (reject_key(key_view))
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, NULL, "Unsupported name for attribute open");
+
+
+    /* Determine the type of the parent object */
+    if (loc_params->type != H5VL_OBJECT_BY_SELF)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, NULL,
+                        "Unsupported location parameter type for attribute open");
+
+    if ((attr_obj = (bufr_object_t *) calloc(1, sizeof(bufr_object_t))) == NULL)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL,
+                        "Failed to allocate memory for BUFR attribute struct");
+
+    attr_obj->obj_type = H5I_ATTR;
+    attr_obj->parent_file = parent_obj->parent_file;
+    attr_obj->ref_count = 1; /* Initialize attribute's own ref count */
+    /* Increment file reference count since this attribute holds a reference */
+    attr_obj->parent_file->ref_count++;
+    /* Increment parent object's reference count since this attribute holds a reference */
+    parent_obj->ref_count++;
+    attr = &attr_obj->u.attr;
+
+    if ((attr->name = bufr_strdup(key_view)) == NULL)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL, "Failed to duplicate attribute name string");
+
+    attr->parent = obj;
+    attr->space_id = H5I_INVALID_HID;
+    attr->type_id = H5I_INVALID_HID;
+    attr->data = NULL;
+    attr->data_size = 0; /* The value is set to the size of the data buffer; see bufr_read_data function below */ 
+
+       /* Fast open using message offsets */
+    h = bufr_open_message_by_index(file, (size_t)msg_index);
+    if (!h)  {
+       FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+                          "Failed to get BUFR message handle ");
+    }
+    /* Unpack the  message data */
+    if (codes_set_long(h, "unpack", 1) < 0) {
+       FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+                          "Failed to unpack BUFR message handle");
+    }
+
+    msg = (bufr_message_t *)calloc(1, sizeof(*msg));
+    if (!msg)  {
+       FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, NULL,
+                          "Failed to initialize message handle for dataset object");
+    }
+    msg->h = h;
+    attr->msg = msg;
+
+
+    /* Find BUFR datatype and size (replication) for the key */
+    if (bufr_key_type_and_size(h, key_view, &message_type, &len) != 0) {
+                FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+                            "Failed to discover datatype and size for the key");
+    }
+    
+    /* We allow to read as attributes only the keys with size 1 (not arrays) */
+    if (len != 1)  {
+               FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+                            "Provided key is an array; use H5Dopen instead");            
+    } 
+
+    attr->nvals = 1;
+
+    /* Find corresponding HDF5 native type; set a special flag if BUFR type is string */
+    /* EP-later need to add for BYTE type too */
+    attr->codes_type = message_type;
+    if (attr->codes_type == CODES_TYPE_STRING) attr->is_vlen_string = 1;
+    if (bufr_get_hdf5_type(attr->codes_type, &attr->type_id) < 0) {
+                FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+                            "Failed to covert BUFR datatype to native HDF5 type");
+    }
+
+    attr->space_id = H5Screate(H5S_SCALAR);
+    if (attr->space_id == H5I_INVALID_HID) {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCREATE, NULL,
+                            "Failed to create SCALAR dataspace for attribute");
+    }
+    /* Cache the key data */
+    if (bufr_read_attr_data(attr) !=0)
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL, "Failed to read data for the key");    
+
+   ret_value = attr_obj;
+
+done:
+    if (!ret_value && attr_obj) {
+        H5E_BEGIN_TRY
+        {
+            bufr_attr_close(attr_obj, dxpl_id, req);
+        }
+        H5E_END_TRY;
+    }
+    return ret_value;
+}
+
+
+herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req)
+{
+    bufr_object_t *o = (bufr_object_t *) attr;
+    bufr_attr_t *a = &o->u.attr;
+    bufr_object_t *parent_obj = NULL;
+    herr_t ret_value = SUCCEED;
+
+    assert(a);
+
+    /* Decrement attribute's ref count */
+    if (o->ref_count == 0)
+        FUNC_DONE_ERROR(H5E_ATTR, H5E_CANTCLOSEOBJ, FAIL,
+                        "Attribute already closed (ref_count is 0)");
+
+    o->ref_count--;
+
+    /* Only do the real close when ref_count reaches 0 */
+    if (o->ref_count == 0) {
+        
+        /* Free cached data */        
+        bufr_free_cached_attr_data(a);         
+
+        /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
+        if (a->name)
+            free(a->name);
+        if (a->space_id != H5I_INVALID_HID)
+            if (H5Sclose(a->space_id) < 0)
+                FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                "Failed to close attribute dataspace");
+        /* Only close type_id if it's not a predefined type (like H5T_NATIVE_*) */
+        if ((a->type_id != H5I_INVALID_HID) && a->is_vlen_string)
+            if (H5Tclose(a->type_id) < 0)
+                FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                "Failed to close attribute datatype");
+
+        /* Close parent object (dataset, group, or file) */
+        parent_obj = (bufr_object_t *) a->parent;
+        if (parent_obj) {
+            switch (parent_obj->obj_type) {
+                case H5I_FILE:
+                    if (bufr_file_close(parent_obj, dxpl_id, req) < 0)
+                        FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                        "Failed to close attribute's parent file");
+                    break;
+                /* EP-later Not implemented yet
+                case H5I_DATASET:
+                    if (bufr_dataset_close(parent_obj, dxpl_id, req) < 0)
+                        FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                        "Failed to close attribute's parent dataset");
+                    break;
+                case H5I_GROUP:
+                    if (bufr_group_close(parent_obj, dxpl_id, req) < 0)
+                        FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                                        "Failed to close attribute's parent group");
+                    break;
+                */ 
+                default:
+                    FUNC_DONE_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid parent object type");
+            }
+        }
+
+        /* Also decrement the file reference count */
+        if (bufr_file_close(o->parent_file, dxpl_id, req) < 0)
+            FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
+                            "Failed to close attribute file object");
+
+        free(o);
+    }
+
+    return ret_value;
+}
+
+herr_t bufr_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, void *buf,
+                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
+{
+    const bufr_object_t *o = (const bufr_object_t *) attr;
+    const bufr_attr_t *a = NULL; /* Convenience pointer */
+    htri_t types_equal = 0;
+    herr_t ret_value = SUCCEED;
+
+    assert(o);
+
+    a = &o->u.attr;
+
+    if (!buf)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid attribute or buffer");
+
+    /* Check if memory datatype corresponds to BUFR datatype before transferring data */
+    /* EP-later: add type conversion */
+    if ((types_equal = H5Tequal(mem_type_id, a->type_id)) <= 0)
+        FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_BADVALUE, FAIL, "failed to compare datatypes or datatypes are different"); 
+    memcpy(buf, a->data, a->data_size); 
+    
+done:
+    return ret_value;
+}
+
+// cppcheck-suppress constParameterCallback
+herr_t bufr_attr_get(void *obj, H5VL_attr_get_args_t *args,
+                        hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
+{
+    const bufr_object_t *o = (const bufr_object_t *) obj;
+    const bufr_attr_t *a = &o->u.attr;
+
+    herr_t ret_value = SUCCEED;
+
+    switch (args->op_type) {
+        case H5VL_ATTR_GET_SPACE:
+            if ((args->args.get_space.space_id = H5Scopy(a->space_id)) < 0)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, FAIL, "Failed to copy attribute dataspace");
+            break;
+        case H5VL_ATTR_GET_TYPE:
+            if ((args->args.get_type.type_id = H5Tcopy(a->type_id)) < 0)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, FAIL, "Failed to copy attribute datatype");
+            break;
+        default:
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL, "Unsupported attribute get operation");
+            break;
+    }
+
+done:
+    return ret_value;
+}
 
 /* These two functions are necessary to load this plugin using  the HDF5 library */
 H5PL_type_t H5PLget_plugin_type(void)

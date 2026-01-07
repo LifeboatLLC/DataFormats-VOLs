@@ -17,6 +17,12 @@ target_link_libraries(bufr_example
         ECCODES::eccodes
 )
 
+# Define the plugin path for the tests to use
+target_compile_definitions(bufr_example
+    PRIVATE
+        BUFR_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src"
+)
+
 install(TARGETS bufr_example
     RUNTIME DESTINATION bin
 )
@@ -43,7 +49,7 @@ add_custom_command(TARGET bufr_example POST_BUILD
 
 # Environment for VOL plugin loading (if the example uses the VOL)
 set(EXAMPLE_TEST_ENV
-    "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/Release;${PROJECT_BINARY_DIR}/src;"
+    "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/;${PROJECT_BINARY_DIR}/src/Release;"
     "HDF5_VOL_CONNECTOR="
 )
 
