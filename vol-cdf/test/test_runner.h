@@ -5,5 +5,6 @@
 
 /* CDF functionality tests */
 int OpenCDFTest(const char *filename);
+int ReadCDFTest(const char *filename);
 
 #endif /* TEST_CDF_H */

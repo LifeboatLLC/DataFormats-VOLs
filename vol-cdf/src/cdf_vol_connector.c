@@ -88,7 +88,7 @@ static const H5VL_class_t cdf_class_g = {
         cdf_dataset_open,     /* open         */
         cdf_dataset_read,     /* read         */
         NULL,                 /* write        */
-        NULL,                 /* get          */
+        cdf_dataset_get,      /* get          */
         NULL,                 /* specific     */
         NULL,                 /* optional     */
         cdf_dataset_close     /* close        */
@@ -516,9 +516,8 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     cdf_dataset_t *dset = NULL;           /* Convenience pointer */
     cdf_file_t *file = &file_obj->u.file; /* Convenience pointer */
 
-    hsize_t dspace_dims[dset->num_dims];
-
     H5T_class_t dtype_class = H5T_NO_CLASS; 
+    hsize_t dspace_dims[CDF_MAX_DIMS];    /* Dataspace dimensions */
 
     if (!file_obj || !name) {
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or dataset name");
@@ -556,9 +555,10 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL,
                         "Failed to get variable number from name: %s", name);
     }
-
+    
+    char tmp[CDF_VAR_NAME_LEN256];
     /* Get variable info. Passing NULL to 'name' since we already have it. */
-    status = CDFinquirezVar(file->id, dset->var_num, NULL, &data_type,
+    status = CDFinquirezVar(file->id, dset->var_num, tmp, &data_type,
                             &dset->num_elements, &dset->num_dims, dset->dim_sizes, 
                             &dset->rec_vary, dset->dim_varys);
     if (status != CDF_OK) {
@@ -583,16 +583,17 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL,
                         "Failed to get number of records in CDF file");
     }
-    
+
     /* First dimension is record dimension */
     dspace_dims[0] = (hsize_t)(dset->num_records); 
     
-    /* Set remaining dimensions */
-    for (int i = 1; i < dset->num_dims; i++) {
-        dspace_dims[i] = (hsize_t)(dset->dim_sizes[i]);
+    /* Copy remaining dimensions. The 0th element will always be the number of records */
+    for (int i = 0; i < dset->num_dims; i++) {
+        dspace_dims[i+1] = (hsize_t)(dset->dim_sizes[i]);
     }
 
-    int rank = dset->num_dims;
+    /* Dataspace rank is number of variable dimensions + 1 for record dimension */
+    int rank = dset->num_dims + 1;
 
     /* Create dataspace */
     if ((dset->space_id = H5Screate_simple(rank, dspace_dims, NULL)) < 0) {
@@ -635,8 +636,6 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
     size_t selected_size = 0;
     size_t dataset_type_size = 0;
     size_t cdf_data_size = 0;
-
-
 
     assert(dset_obj);
     d = (const cdf_dataset_t *) &dset_obj->u.dataset;
@@ -714,9 +713,16 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
     /* Call CDF library to read data */
     CDFstatus status;
     CDFid id = dset_obj->parent_file->u.file.id;
-    long indices[CDF_MAX_DIMS] = {0}; /* Start at beginning of each dimension */
-    long counts[CDF_MAX_DIMS] = {1}; /* Read all records along record dimension */
-    long intervals[CDF_MAX_DIMS] = {1}; /* No striding */
+    long indices[CDF_MAX_DIMS];
+    long counts[CDF_MAX_DIMS];
+    long intervals[CDF_MAX_DIMS];
+
+    /* Initialize counts array */
+    for (int i = 0; i < d->num_dims; i++) {
+        indices[i] = 0L;
+        intervals[i] = 1L;
+        counts[i] = d->dim_sizes[i];
+    }
 
     status = CDFhyperGetzVarData(id,
                                 d->var_num,
@@ -728,7 +734,13 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
                                 intervals,
                                 cdf_buf);
     if (status != CDF_OK) {
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL, "failed to read data from CDF variable");
+        /* Get detailed error message from CDF */
+        char error_text[CDF_STATUSTEXT_LEN+1];
+        CDFgetStatusText(status, error_text);
+        printf("CDF ERROR: %s (status code: %ld)\n", error_text, status);
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL, 
+                        "failed to read data from CDF variable '%s': %s", 
+                        d->name, error_text);
     }
 
     /* Prepare converted buffer if needed */
@@ -739,9 +751,11 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "failed to prepare converted buffer");
     }
 
-    /* Free CDF buffer */
-    free(cdf_buf);
-    cdf_buf = NULL;
+    /* Free temporary CDF buffer if new buffer was allocated in prepare_converted_buffer() */
+    if (tconv_buf_allocated && selected_buf) {
+        free(cdf_buf);
+        cdf_buf = NULL;
+    }
 
     /* If file selection is non-trivial (hyperslab, points), gather selected data first */
     if (file_sel_type != H5S_SEL_ALL && effective_file_space_id != d->space_id) {
@@ -776,6 +790,7 @@ herr_t cdf_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid_
         tconv_buf_allocated = TRUE;
     }
 
+
     /* Transfer data to user buffer (handles selections via scatter if needed) */
     if (transfer_data_to_user(selected_buf, selected_size, mem_type_id[0], effective_mem_space_id,
         buf[0]) < 0) {
@@ -798,6 +813,41 @@ done:
 
     return ret_value;
 } /* end cdf_dataset_read() */
+
+herr_t cdf_dataset_get(void *dset, H5VL_dataset_get_args_t *args,
+                           hid_t __attribute__((unused)) dxpl_id,
+                           void __attribute__((unused)) * *req)
+{
+    const cdf_object_t *o = (const cdf_object_t *) dset;
+    const cdf_dataset_t *d = &o->u.dataset;
+
+    herr_t ret_value = SUCCEED;
+
+    switch (args->op_type) {
+        case H5VL_DATASET_GET_SPACE:
+            /* Return a copy of the dataspace */
+            assert(d->space_id != H5I_INVALID_HID);
+
+            args->args.get_space.space_id = H5Scopy(d->space_id);
+            if (args->args.get_space.space_id < 0)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to copy dataspace");
+            break;
+
+        case H5VL_DATASET_GET_TYPE:
+            /* Return a copy of the datatype */
+            args->args.get_type.type_id = H5Tcopy(d->type_id);
+            if (args->args.get_type.type_id < 0)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to copy datatype");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL,
+                            "Unsupported dataset get operation");
+            break;
+    }
+done:
+    return ret_value;
+}
 
 herr_t cdf_dataset_close(void *dset, hid_t dxpl_id, void **req)
 {

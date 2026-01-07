@@ -73,7 +73,9 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t *loc_params, const cha
                        hid_t dapl_id, hid_t dxpl_id, void **req);
 herr_t cdf_dataset_read(size_t count, void *dset[], hid_t mem_type_id[], hid_t mem_space_id[],
                             hid_t file_space_id[], hid_t dxpl_id, void *buf[], void **req);
+herr_t cdf_dataset_get(void *dset, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t cdf_dataset_close(void *dset, hid_t dxpl_id, void **req);
+
 
 
 herr_t cdf_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type,
