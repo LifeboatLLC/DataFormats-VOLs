@@ -52,6 +52,7 @@ hid_t H5_geotiff_err_class_g = H5I_INVALID_HID;
 static herr_t geotiff_read_image_data(geotiff_object_t *dset_obj);
 static herr_t geotiff_get_hdf5_type_from_sample_format(uint16_t sample_format,
                                                        uint16_t bits_per_sample, hid_t *type_id);
+static herr_t hdf5_type_from_tiff_data_type(TIFFDataType tiff_dtype, hid_t *type_id);
 
 /* The VOL class struct */
 static const H5VL_class_t geotiff_class_g = {
@@ -288,6 +289,90 @@ done:
         rational_type = H5I_INVALID_HID;
     }
     return rational_type;
+}
+
+/* Helper function to map TIFF data type to HDF5 type */
+static herr_t hdf5_type_from_tiff_data_type(TIFFDataType tiff_dtype, hid_t *type_id)
+{
+    herr_t ret_value = SUCCEED;
+    hid_t new_type = H5I_INVALID_HID;
+    hid_t predef_type = H5I_INVALID_HID;
+
+    if (!type_id)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "NULL type_id pointer");
+
+    switch (tiff_dtype) {
+        case TIFF_BYTE:
+        case TIFF_UNDEFINED:
+            predef_type = H5T_NATIVE_UINT8;
+            break;
+        case TIFF_SHORT:
+            predef_type = H5T_NATIVE_UINT16;
+            break;
+        case TIFF_LONG:
+        case TIFF_IFD:
+            predef_type = H5T_NATIVE_UINT32;
+            break;
+        case TIFF_LONG8:
+        case TIFF_IFD8:
+            predef_type = H5T_NATIVE_UINT64;
+            break;
+        case TIFF_SBYTE:
+            predef_type = H5T_NATIVE_INT8;
+            break;
+        case TIFF_SSHORT:
+            predef_type = H5T_NATIVE_INT16;
+            break;
+        case TIFF_SLONG:
+            predef_type = H5T_NATIVE_INT32;
+            break;
+        case TIFF_SLONG8:
+            predef_type = H5T_NATIVE_INT64;
+            break;
+        case TIFF_FLOAT:
+            predef_type = H5T_NATIVE_FLOAT;
+            break;
+        case TIFF_DOUBLE:
+            predef_type = H5T_NATIVE_DOUBLE;
+            break;
+        case TIFF_RATIONAL:
+        case TIFF_SRATIONAL:
+            /* Use compound type for rationals */
+            if ((new_type = geotiff_create_rational_type()) < 0)
+                FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCREATE, FAIL,
+                                "Failed to create compound for (S)RATIONAL type");
+            break;
+        case TIFF_ASCII:
+            /* Variable-length string - delay setting size */
+            predef_type = H5T_C_S1;
+            break;
+        default:
+            FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_UNSUPPORTED, FAIL, "Unsupported TIFF data type %d",
+                            tiff_dtype);
+    }
+
+    if (tiff_dtype != TIFF_RATIONAL && tiff_dtype != TIFF_SRATIONAL)
+        if ((new_type = H5Tcopy(predef_type)) < 0)
+            FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCREATE, FAIL,
+                            "Failed to create HDF5 type from TIFF data type");
+
+    if (tiff_dtype == TIFF_ASCII) {
+        if (H5Tset_size(new_type, H5T_VARIABLE) < 0)
+            FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTSET, FAIL,
+                            "Failed to set string type to variable length");
+    }
+
+    *type_id = new_type;
+
+done:
+    if (ret_value < 0 && new_type != H5I_INVALID_HID) {
+        H5E_BEGIN_TRY
+        {
+            H5Tclose(new_type);
+        }
+        H5E_END_TRY;
+    }
+    return ret_value;
 }
 
 /* File operations */
@@ -1226,62 +1311,9 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
             }
 
             /* Map TIFFDataType to HDF5 type */
-            switch (tiff_dtype) {
-                case TIFF_BYTE:
-                case TIFF_UNDEFINED:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_UINT8);
-                    break;
-                case TIFF_SHORT:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_UINT16);
-                    break;
-                case TIFF_LONG:
-                case TIFF_IFD:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_UINT32);
-                    break;
-                case TIFF_LONG8:
-                case TIFF_IFD8:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_UINT64);
-                    break;
-                case TIFF_SBYTE:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_INT8);
-                    break;
-                case TIFF_SSHORT:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_INT16);
-                    break;
-                case TIFF_SLONG:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_INT32);
-                    break;
-                case TIFF_SLONG8:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_INT64);
-                    break;
-                case TIFF_FLOAT:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_FLOAT);
-                    break;
-                case TIFF_DOUBLE:
-                    attr->type_id = H5Tcopy(H5T_NATIVE_DOUBLE);
-                    break;
-                case TIFF_RATIONAL:
-                case TIFF_SRATIONAL:
-                    /* Use compound type for rationals */
-                    if ((attr->type_id = geotiff_create_rational_type()) < 0)
-                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
-                                        "Failed to create RATIONAL type");
-                    break;
-                case TIFF_ASCII:
-                    /* Variable-length string */
-                    attr->type_id = H5Tcopy(H5T_C_S1);
-                    if (H5Tset_size(attr->type_id, H5T_VARIABLE) < 0)
-                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTSET, NULL,
-                                        "Failed to set string type to variable length");
-                    break;
-                default:
-                    FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, NULL,
-                                    "Unsupported TIFF data type %d for tag %u", tiff_dtype, tag);
-            }
-
-            if (attr->type_id < 0)
+            if (hdf5_type_from_tiff_data_type(tiff_dtype, &attr->type_id) < 0)
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
-                                "Failed to create HDF5 type for TIFF tag");
+                                "Failed to create HDF5 type for TIFF tag %u", tag);
 
             /* Create dataspace based on read count */
             if (read_count == 1 || read_count == TIFF_VARIABLE) {
