@@ -1259,7 +1259,7 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
     } else if (parent_obj->obj_type == H5I_FILE) {
         /* Try looking up as a TIFF tag name - support with/without TIFFTAG_ prefix */
         const char *search_name = name;
-        uint16_t tag = 0;
+        uint32_t tag = 0;
 
         /* Skip "TIFFTAG_" prefix if present */
         if (strncmp(name, "TIFFTAG_", 8) == 0) {

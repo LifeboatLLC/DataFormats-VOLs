@@ -3564,7 +3564,7 @@ int RealFileComprehensiveTest(const char *filename)
     /* Check if file has spatial metadata using libgeotiff directly */
     printf("  Checking for spatial metadata...\n");
     TIFF *tif_check = NULL;
-    
+
     if (XTIFFOpen(filename, "r") == NULL) {
         printf("  FAILED: Could not open file with libtiff for geotiff check\n");
         goto error;
@@ -3607,8 +3607,8 @@ int RealFileComprehensiveTest(const char *filename)
 
         if (num_elements != expected_coord_count) {
             printf("  FAILED: Coordinates attribute has wrong number of elements (expected %lld, "
-                "got %lld)\n",
-                (long long) expected_coord_count, (long long) num_elements);
+                   "got %lld)\n",
+                   (long long) expected_coord_count, (long long) num_elements);
             H5Sclose(attr_space);
             goto error;
         }
@@ -3619,7 +3619,8 @@ int RealFileComprehensiveTest(const char *filename)
             double lat;
         } coord_pair_t;
 
-        coord_pair_t *coords = (coord_pair_t *) malloc((size_t) num_elements * sizeof(coord_pair_t));
+        coord_pair_t *coords =
+            (coord_pair_t *) malloc((size_t) num_elements * sizeof(coord_pair_t));
         if (!coords) {
             printf("  FAILED: Could not allocate memory for coordinates\n");
             H5Sclose(attr_space);
@@ -3921,6 +3922,88 @@ static int CreateComprehensiveTiffTagFile(const char *filename)
     /* For grayscale (1 sample), libtiff may not write these if they match defaults */
     /* We'll skip these in the test file creation and remove from test expectations */
 
+    /* Additional string tags */
+    TIFFSetField(tif, TIFFTAG_DOCUMENTNAME, "Test Document");
+    TIFFSetField(tif, TIFFTAG_IMAGEDESCRIPTION, "Test image for comprehensive tag coverage");
+    TIFFSetField(tif, TIFFTAG_MAKE, "Test Scanner Make");
+    TIFFSetField(tif, TIFFTAG_MODEL, "Test Scanner Model");
+    TIFFSetField(tif, TIFFTAG_HOSTCOMPUTER, "Test Computer");
+    TIFFSetField(tif, TIFFTAG_PAGENAME, "Page 1");
+    TIFFSetField(tif, TIFFTAG_TARGETPRINTER, "Test Printer");
+
+    /* Numeric tags */
+    TIFFSetField(tif, TIFFTAG_SUBFILETYPE, (uint32_t) 0);
+    TIFFSetField(tif, TIFFTAG_FILLORDER, (uint16_t) FILLORDER_MSB2LSB);
+    TIFFSetField(tif, TIFFTAG_THRESHHOLDING, (uint16_t) THRESHHOLD_BILEVEL);
+    // TIFFSetField(tif, TIFFTAG_PREDICTOR, (uint16_t) 1);
+    TIFFSetField(tif, TIFFTAG_IMAGEDEPTH, (uint32_t) 1);
+    TIFFSetField(tif, TIFFTAG_TILEDEPTH, (uint32_t) 1);
+    TIFFSetField(tif, TIFFTAG_MATTEING, (uint16_t) 0);
+    // TIFFTAG_DATATYPE is obsolete, replaced by TIFFTAG_SAMPLEFORMAT
+    // TIFFSetField(tif, TIFFTAG_DATATYPE, (uint16_t) SAMPLEFORMAT_UINT);
+
+    /* FAX-related tags */
+    // TIFFSetField(tif, TIFFTAG_BADFAXLINES, (uint32_t) 0);
+    // TIFFSetField(tif, TIFFTAG_CLEANFAXDATA, (uint16_t) CLEANFAXDATA_CLEAN);
+    // TIFFSetField(tif, TIFFTAG_CONSECUTIVEBADFAXLINES, (uint32_t) 0);
+    // TIFFSetField(tif, TIFFTAG_FAXMODE, (int) FAXMODE_CLASSIC);
+    // TIFFSetField(tif, TIFFTAG_GROUP3OPTIONS, (uint32_t) 0);
+    // TIFFSetField(tif, TIFFTAG_GROUP4OPTIONS, (uint32_t) 0);
+
+    /* JPEG-related tags */
+    // TIFFSetField(tif, TIFFTAG_JPEGQUALITY, (int) 75);
+    // TIFFSetField(tif, TIFFTAG_JPEGCOLORMODE, (int) JPEGCOLORMODE_RGB);
+    // TIFFSetField(tif, TIFFTAG_JPEGTABLESMODE, (int) JPEGTABLESMODE_QUANT | JPEGTABLESMODE_HUFF);
+
+    /* Array tags - page number */
+    uint16_t pagenumber[2] = {1, 3}; /* Page 1 of 3 */
+    TIFFSetField(tif, TIFFTAG_PAGENUMBER, pagenumber[0], pagenumber[1]);
+
+    /* Array tags - halftone hints */
+    uint16_t halftonehints[2] = {0, 255};
+    TIFFSetField(tif, TIFFTAG_HALFTONEHINTS, halftonehints[0], halftonehints[1]);
+
+    /* Array tags - dot range */
+    uint16_t dotrange[2] = {0, 255};
+    TIFFSetField(tif, TIFFTAG_DOTRANGE, dotrange[0], dotrange[1]);
+
+    /* Reference black/white (2 values for grayscale: black, white) */
+    float refblackwhite[2] = {0.0f, 255.0f};
+    TIFFSetField(tif, TIFFTAG_REFERENCEBLACKWHITE, refblackwhite);
+
+    /* Min/max sample values (floating point versions) */
+    double sminsamplevalue = 0.0;
+    double smaxsamplevalue = 255.0;
+    TIFFSetField(tif, TIFFTAG_SMINSAMPLEVALUE, sminsamplevalue);
+    TIFFSetField(tif, TIFFTAG_SMAXSAMPLEVALUE, smaxsamplevalue);
+
+    /* Stone units */
+    double stonits = 1.0;
+    TIFFSetField(tif, TIFFTAG_STONITS, stonits);
+
+    /* Binary/opaque data tags */
+    const char *xmlpacket = "<?xml version=\"1.0\"?><test>XML data</test>";
+    TIFFSetField(tif, TIFFTAG_XMLPACKET, (uint32_t) strlen(xmlpacket), xmlpacket);
+
+    const unsigned char iccprofile[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    TIFFSetField(tif, TIFFTAG_ICCPROFILE, (uint32_t) 10, iccprofile);
+
+    const unsigned char photoshop[8] = {0x38, 0x42, 0x49, 0x4D, 0, 0, 0, 0}; /* "8BIM" header */
+    TIFFSetField(tif, TIFFTAG_PHOTOSHOP, (uint32_t) 8, photoshop);
+
+    const unsigned char richtiffiptc[12] = {0x1C, 0x02, 0x00, 0x00, 0x08, 0, 0, 0, 0, 0, 0, 0};
+    TIFFSetField(tif, TIFFTAG_RICHTIFFIPTC, (uint32_t) 12, richtiffiptc);
+
+    /* Transfer function - gamma correction table (grayscale needs 1 array of 256 values) */
+    uint16_t *transferfunction = (uint16_t *) malloc(256 * sizeof(uint16_t));
+    if (transferfunction) {
+        for (int i = 0; i < 256; i++) {
+            transferfunction[i] = (uint16_t) (i * 257); /* Linear 8-bit to 16-bit */
+        }
+        TIFFSetField(tif, TIFFTAG_TRANSFERFUNCTION, transferfunction);
+        free(transferfunction);
+    }
+
     /* Set GeoTIFF keys */
     const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
     const double pixscale[3] = {1.0, 1.0, 0.0};
@@ -4149,7 +4232,7 @@ int TiffTagAttributeReadTest(void)
                 printf("FAILED: Could not read uint32 value for '%s'\n", test_tags[i].tag_name);
                 test_failed = 1;
             } else if (val != test_tags[i].expected_value.u32) {
-                printf("FAILED: Value mismatch for '%s': expected %u, got %u\n",
+                printf("FAILED: Value mismatch for uint32 '%s': expected %u, got %u\n",
                        test_tags[i].tag_name, test_tags[i].expected_value.u32, val);
                 test_failed = 1;
             }
@@ -4159,7 +4242,7 @@ int TiffTagAttributeReadTest(void)
                 printf("FAILED: Could not read uint16 value for '%s'\n", test_tags[i].tag_name);
                 test_failed = 1;
             } else if (val != test_tags[i].expected_value.u16) {
-                printf("FAILED: Value mismatch for '%s': expected %u, got %u\n",
+                printf("FAILED: Value mismatch for uint16 '%s': expected %u, got %u\n",
                        test_tags[i].tag_name, (unsigned) test_tags[i].expected_value.u16,
                        (unsigned) val);
                 test_failed = 1;
@@ -4191,12 +4274,16 @@ int TiffTagAttributeReadTest(void)
         H5Aclose(attr_id);
     }
 
-    /* Cleanup */
+    /* Close first file */
     if (H5Fclose(file_id) < 0) {
-        printf("FAILED: Could not close file\n");
+        printf("FAILED: Could not close first file\n");
         test_failed = 1;
     }
+    file_id = H5I_INVALID_HID;
 
+    unlink(filename);
+
+    /* Final cleanup */
     if (H5Pclose(fapl_id) < 0) {
         printf("FAILED: Could not close FAPL\n");
         test_failed = 1;
@@ -4206,8 +4293,6 @@ int TiffTagAttributeReadTest(void)
         printf("FAILED: Could not unregister VOL connector\n");
         test_failed = 1;
     }
-
-    unlink(filename);
 
     if (test_failed) {
         printf("FAILED\n");
@@ -4230,5 +4315,6 @@ error:
     }
     H5E_END_TRY;
     unlink(filename);
+    unlink("test_rgb_tags.tif");
     return -1;
 }
