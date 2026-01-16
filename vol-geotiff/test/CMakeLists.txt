@@ -1,5 +1,5 @@
 # Build the GeoTIFF test (now includes test file generation)
-add_executable (test_runner test_runner.c plugin_tests.c geotiff_tests.c)
+add_executable (test_runner test_runner.c plugin_tests.c test_helpers.c geotiff_tests.c)
 target_include_directories (test_runner PRIVATE "${PROJECT_SOURCE_DIR}/src" ${HDF5_INCLUDE_DIRS} ${GEOTIFF_INCLUDE_DIRS})
 
 # Define the plugin path for the tests to use
