@@ -3415,7 +3415,7 @@ int RealFileComprehensiveTest(const char *filename)
     hid_t dset_id = H5I_INVALID_HID;
     hid_t space_id = H5I_INVALID_HID;
     hid_t type_id = H5I_INVALID_HID;
-    hid_t attr_id = H5I_INVALID_HID;
+    hid_t coords_attr_id = H5I_INVALID_HID;
     hid_t group_id = H5I_INVALID_HID;
     hsize_t dims[3];
     int ndims;
@@ -3563,139 +3563,107 @@ int RealFileComprehensiveTest(const char *filename)
 
     /* Check if file has spatial metadata using libgeotiff directly */
     printf("  Checking for spatial metadata...\n");
-    TIFF *tif_check = XTIFFOpen(filename, "r");
+    TIFF *tif_check = NULL;
+    
+    if (XTIFFOpen(filename, "r") == NULL) {
+        printf("  FAILED: Could not open file with libtiff for geotiff check\n");
+        goto error;
+    }
+
     GTIF *gtif_check = NULL;
-    int has_spatial_data = 0;
+    bool has_spatial_data = false;
 
-    if (tif_check) {
-        gtif_check = GTIFNew(tif_check);
-        if (gtif_check) {
-            /* Use GTIFGetDefn to properly check if we have complete geotransform data */
-            GTIFDefn defn;
-            if (GTIFGetDefn(gtif_check, &defn)) {
-                /* Also verify we can actually convert coordinates */
-                double x = 0.0, y = 0.0;
-                if (GTIFImageToPCS(gtif_check, &x, &y)) {
-                    has_spatial_data = 1;
-                    printf(
-                        "  INFO: File has complete geotransform data (can compute coordinates)\n");
-                } else {
-                    printf("  INFO: File has GeoTIFF definition but ImageToPCS transformation "
-                           "failed\n");
-                }
-            } else {
-                printf("  INFO: File has no complete GeoTIFF definition (cannot compute "
-                       "coordinates)\n");
-            }
-            GTIFFree(gtif_check);
-        }
+    if ((gtif_check = GTIFNew(tif_check)) == NULL) {
+        printf("  FAILED: Could not create GTIF structure for geotiff check\n");
         XTIFFClose(tif_check);
-    }
-
-    /* Try to open coordinates attribute - it's always present for image datasets */
-    printf("  Checking coordinates attribute...\n");
-    H5E_BEGIN_TRY
-    {
-        attr_id = H5Aopen(dset_id, "coordinates", H5P_DEFAULT);
-    }
-    H5E_END_TRY;
-
-    if (attr_id < 0) {
-        printf("  FAILED: Coordinates attribute should always exist for image datasets\n");
         goto error;
     }
 
-    /* Get attribute dataspace to determine size */
-    hid_t attr_space = H5Aget_space(attr_id);
-    if (attr_space < 0) {
-        printf("  FAILED: Could not get coordinates attribute dataspace\n");
-        goto error;
-    }
+    /* Use GTIFGetDefn/GTIFImageToPCS to check if we have complete geotransform data */
+    GTIFDefn defn;
+    double x = 0.0, y = 0.0;
+    /* Also verify we can actually convert coordinates */
+    if (GTIFGetDefn(gtif_check, &defn) && GTIFImageToPCS(gtif_check, &x, &y))
+        has_spatial_data = true;
+    GTIFFree(gtif_check);
+    XTIFFClose(tif_check);
 
-    hssize_t num_elements = H5Sget_simple_extent_npoints(attr_space);
-    /* Coordinates are always per-pixel: height * width, regardless of samples per pixel */
-    hssize_t expected_coord_count = (hssize_t) (dims[0] * dims[1]);
-
-    if (num_elements != expected_coord_count) {
-        printf("  FAILED: Coordinates attribute has wrong number of elements (expected %lld, "
-               "got %lld)\n",
-               (long long) expected_coord_count, (long long) num_elements);
-        H5Sclose(attr_space);
-        goto error;
-    }
-
-    /* Allocate and read coordinates (lon/lat pairs as compound type) */
-    typedef struct {
-        double lon;
-        double lat;
-    } coord_pair_t;
-
-    coord_pair_t *coords = (coord_pair_t *) malloc((size_t) num_elements * sizeof(coord_pair_t));
-    if (!coords) {
-        printf("  FAILED: Could not allocate memory for coordinates\n");
-        H5Sclose(attr_space);
-        goto error;
-    }
-
-    /* Get the attribute's type directly */
-    hid_t attr_type = H5Aget_type(attr_id);
-    if (attr_type < 0) {
-        printf("  FAILED: Could not get coordinates attribute type\n");
-        free(coords);
-        H5Sclose(attr_space);
-        goto error;
-    }
-
-    /* Check if it's a compound type and print its structure */
-    H5T_class_t attr_type_class = H5Tget_class(attr_type);
-    if (attr_type_class == H5T_COMPOUND) {
-        int nmembers = H5Tget_nmembers(attr_type);
-        for (int i = 0; i < nmembers; i++) {
-            char *member_name = H5Tget_member_name(attr_type, (unsigned) i);
-            H5free_memory(member_name);
+    if (has_spatial_data) {
+        if ((coords_attr_id = H5Aopen(dset_id, "coordinates", H5P_DEFAULT)) < 0) {
+            printf("  FAILED: Could not open coordinates attribute\n");
+            goto error;
         }
-    }
 
-    /* Try to read the coordinates using the attribute's own type */
-    herr_t read_status;
-    read_status = H5Aread(attr_id, attr_type, coords);
+        /* Get attribute dataspace to determine size */
+        hid_t attr_space = H5Aget_space(coords_attr_id);
+        if (attr_space < 0) {
+            printf("  FAILED: Could not get coordinates attribute dataspace\n");
+            goto error;
+        }
 
-    H5Tclose(attr_type);
+        hssize_t num_elements = H5Sget_simple_extent_npoints(attr_space);
+        /* Coordinates are always per-pixel: height * width, regardless of samples per pixel */
+        hssize_t expected_coord_count = (hssize_t) (dims[0] * dims[1]);
 
-    if (read_status < 0) {
-        if (has_spatial_data) {
+        if (num_elements != expected_coord_count) {
+            printf("  FAILED: Coordinates attribute has wrong number of elements (expected %lld, "
+                "got %lld)\n",
+                (long long) expected_coord_count, (long long) num_elements);
+            H5Sclose(attr_space);
+            goto error;
+        }
+
+        /* Allocate and read coordinates (lon/lat pairs as compound type) */
+        typedef struct {
+            double lon;
+            double lat;
+        } coord_pair_t;
+
+        coord_pair_t *coords = (coord_pair_t *) malloc((size_t) num_elements * sizeof(coord_pair_t));
+        if (!coords) {
+            printf("  FAILED: Could not allocate memory for coordinates\n");
+            H5Sclose(attr_space);
+            goto error;
+        }
+
+        /* Get the attribute's type directly */
+        hid_t attr_type = H5Aget_type(coords_attr_id);
+        if (attr_type < 0) {
+            printf("  FAILED: Could not get coordinates attribute type\n");
+            free(coords);
+            H5Sclose(attr_space);
+            goto error;
+        }
+
+        /* Check if it's a compound type and print its structure */
+        H5T_class_t attr_type_class = H5Tget_class(attr_type);
+        if (attr_type_class == H5T_COMPOUND) {
+            int nmembers = H5Tget_nmembers(attr_type);
+            for (int i = 0; i < nmembers; i++) {
+                char *member_name = H5Tget_member_name(attr_type, (unsigned) i);
+                H5free_memory(member_name);
+            }
+        }
+
+        /* Try to read the coordinates using the attribute's own type */
+        herr_t read_status;
+        read_status = H5Aread(coords_attr_id, attr_type, coords);
+
+        H5Tclose(attr_type);
+
+        if (read_status < 0) {
             printf("  FAILED: File has geotransform but reading coordinates failed\n");
             printf("  Printing HDF5 error stack:\n");
             H5Eprint2(H5E_DEFAULT, stderr);
             free(coords);
             H5Sclose(attr_space);
             goto error;
-        } else {
         }
-    } else {
-        if (!has_spatial_data) {
-            printf(
-                "  WARNING: Reading coordinates succeeded even though file has no geotransform\n");
-        } else {
-
-            /* Print first few coordinate pairs for verification */
-            int print_count = (num_elements < 3) ? (int) num_elements : 3;
-            printf("  First coordinates: ");
-            for (int i = 0; i < print_count; i++) {
-                printf("(%.6f, %.6f)%s", coords[i].lon, coords[i].lat,
-                       (i < print_count - 1) ? ", " : "");
-            }
-            if (num_elements > 3) {
-                printf("...");
-            }
-            printf("\n");
-        }
+        free(coords);
+        H5Sclose(attr_space);
+        H5Aclose(coords_attr_id);
+        coords_attr_id = H5I_INVALID_HID;
     }
-
-    free(coords);
-    H5Sclose(attr_space);
-    H5Aclose(attr_id);
-    attr_id = H5I_INVALID_HID;
 
     /* Clean up */
     free(data);
@@ -3750,7 +3718,7 @@ error:
     {
         if (data)
             free(data);
-        H5Aclose(attr_id);
+        H5Aclose(coords_attr_id);
         H5Tclose(type_id);
         H5Sclose(space_id);
         H5Dclose(dset_id);
