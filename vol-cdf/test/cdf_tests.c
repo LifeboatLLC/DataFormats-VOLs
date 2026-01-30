@@ -371,23 +371,9 @@ int DatatypeConversionTest(const char *filename)
         goto error;
     }
 
-    /* Verify it's INT (what we expect from Latitude variable) */
-    if (!H5Tequal(file_type_id, H5T_NATIVE_INT)) {
-        H5T_class_t cls = H5Tget_class(file_type_id);
-        size_t sz = H5Tget_size(file_type_id);
-        H5T_sign_t sign = H5Tget_sign(file_type_id);
-        H5T_order_t order = H5Tget_order(file_type_id);
-        hid_t native = H5Tget_native_type(file_type_id, H5T_DIR_DEFAULT);
-        H5T_class_t ncls = (native >= 0) ? H5Tget_class(native) : H5T_NO_CLASS;
-        size_t nsz = (native >= 0) ? H5Tget_size(native) : 0;
-
-        printf("Expected H5T_NATIVE_INT datatype in file\n");
-        printf("  file_type_id: class=%d size=%zu sign=%d order=%d\n",
-               (int)cls, sz, (int)sign, (int)order);
-        if (native >= 0) {
-            printf("  native_type: class=%d size=%zu\n", (int)ncls, nsz);
-            H5Tclose(native);
-        }
+    /* Verify it's a SHORT (what we expect from Latitude variable) */
+    if (!H5Tequal(file_type_id, H5T_NATIVE_SHORT)) {
+        printf("Expected H5T_NATIVE_SHORT datatype in file\n");
         goto error;
     }
 
