@@ -1,4 +1,4 @@
-# Build the GeoTIFF test (now includes test file generation)
+# Build the CDF test (now includes test file generation)
 add_executable (test_runner test_runner.c cdf_tests.c)
 
 # Add HDF5 and CDF include directories
@@ -20,3 +20,18 @@ set(TEST_ENVIRONMENT "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/Release\;${PROJ
 # CDF functionality tests
 add_test(NAME open_close COMMAND test_runner open_close)
 set_tests_properties(open_close PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME read_variable COMMAND test_runner read_variable)
+set_tests_properties(read_variable PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME datatype_conversion COMMAND test_runner datatype_conversion)
+set_tests_properties(datatype_conversion PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME read_variable_attribute COMMAND test_runner read_variable_attribute)
+set_tests_properties(read_variable_attribute PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME read_global_array_attribute COMMAND test_runner read_global_array_attribute)
+set_tests_properties(read_global_array_attribute PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME read_indexed_global_attribute COMMAND test_runner read_indexed_global_attribute)
+set_tests_properties(read_indexed_global_attribute PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")

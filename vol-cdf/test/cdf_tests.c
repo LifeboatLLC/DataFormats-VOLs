@@ -183,7 +183,6 @@ int ReadCDFTest(const char *filename)
 
     /* Calculate buffer size */
     size_t buffer_size = dims[0] * dims[1] * dims[2] * H5Tget_size(type_id);
-    printf("Allocating read buffer of size: %zu bytes\n", buffer_size);
 
     /* Allocate buffer */
     int *data_buffer = (int *)malloc(buffer_size);
@@ -215,8 +214,6 @@ int ReadCDFTest(const char *filename)
             
     }
 
-    printf("PASSED\n");
-
     /* Clean up*/
     free(data_buffer);
     if (H5Tclose(type_id) < 0) {
@@ -247,10 +244,11 @@ int ReadCDFTest(const char *filename)
     fapl_id = H5I_INVALID_HID;
 
     /* Unregister VOL connector */
-    if (H5VLunregister_connector(vol_id) < 0) {
+    if (vol_id != H5I_INVALID_HID && H5VLunregister_connector(vol_id) < 0) {
         printf("Failed to unregister VOL connector\n");
         goto error;
     }
+    vol_id = H5I_INVALID_HID;
 
     printf("PASSED\n");
     return 0;
@@ -272,3 +270,783 @@ error:
     printf("FAILED\n");
     return 1;
 }
+
+/* Test datatype conversion by reading a file with one type into a buffer of another type */
+int DatatypeConversionTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t file_type_id = H5I_INVALID_HID;
+    hsize_t dims[2];
+    int ndims;
+    size_t num_elements;
+
+    /* Datatypes to test conversion to */
+    hid_t conversion_types[] = {
+        H5T_NATIVE_SCHAR,
+        H5T_NATIVE_UCHAR,
+        H5T_NATIVE_SHORT,
+        H5T_NATIVE_USHORT,
+        H5T_NATIVE_UINT,
+        H5T_NATIVE_LONG,
+        H5T_NATIVE_LLONG,
+        H5T_NATIVE_ULLONG,
+        H5T_NATIVE_FLOAT,
+        H5T_NATIVE_DOUBLE
+    };
+    
+    const char *type_names[] = {
+        "SCHAR",
+        "UCHAR",
+        "SHORT",
+        "USHORT",
+        "UINT",
+        "LONG",
+        "LLONG",
+        "ULLONG",
+        "FLOAT",
+        "DOUBLE"
+    };
+    
+    int num_types = sizeof(conversion_types) / sizeof(conversion_types[0]);
+    int num_failed = 0;
+
+    printf("Testing CDF VOL datatype conversion on 'Latitude' variable from file: %s\n", filename);
+
+    /* Setup: Register VOL connector and open file/dataset (same as before) */
+#ifdef CDF_VOL_PLUGIN_PATH
+    if (H5PLappend(CDF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(CDF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open CDF file\n");
+        goto error;
+    }
+
+    if ((dset_id = H5Dopen2(file_id, "Latitude", H5P_DEFAULT)) < 0) {
+        printf("Failed to open dataset\n");
+        goto error;
+    }
+    
+    if ((space_id = H5Dget_space(dset_id)) < 0) {
+        printf("Failed to get dataspace\n");
+        goto error;
+    }
+
+    if ((ndims = H5Sget_simple_extent_dims(space_id, dims, NULL)) < 0) {
+        printf("Failed to get dataspace dimensions\n");
+        goto error;
+    }
+
+    /* Verify dimensions */
+    if (ndims != 2 || dims[0] != 1 || dims[1] != 181) {
+        printf("Expected 2 dimensions, got %d\n", ndims);
+        goto error;
+    }
+
+    /* Get file's native datatype */
+    if ((file_type_id = H5Dget_type(dset_id)) < 0) {
+        printf("Failed to get dataset datatype\n");
+        goto error;
+    }
+
+    /* Verify it's INT (what we expect from Latitude variable) */
+    if (!H5Tequal(file_type_id, H5T_NATIVE_INT)) {
+        H5T_class_t cls = H5Tget_class(file_type_id);
+        size_t sz = H5Tget_size(file_type_id);
+        H5T_sign_t sign = H5Tget_sign(file_type_id);
+        H5T_order_t order = H5Tget_order(file_type_id);
+        hid_t native = H5Tget_native_type(file_type_id, H5T_DIR_DEFAULT);
+        H5T_class_t ncls = (native >= 0) ? H5Tget_class(native) : H5T_NO_CLASS;
+        size_t nsz = (native >= 0) ? H5Tget_size(native) : 0;
+
+        printf("Expected H5T_NATIVE_INT datatype in file\n");
+        printf("  file_type_id: class=%d size=%zu sign=%d order=%d\n",
+               (int)cls, sz, (int)sign, (int)order);
+        if (native >= 0) {
+            printf("  native_type: class=%d size=%zu\n", (int)ncls, nsz);
+            H5Tclose(native);
+        }
+        goto error;
+    }
+
+    num_elements = dims[0] * dims[1]; /* Should be 1 * 181 = 181 */
+
+    /* Loop through each conversion type and test */
+    for (int i = 0; i < num_types; ++i) {
+        hid_t mem_type_id = conversion_types[i];
+        void *data = NULL;
+        size_t mem_type_size;
+        
+        printf("Testing INT to %s conversion... ", type_names[i]);
+        
+        /* Allocate buffer for this type */
+        if ((mem_type_size = H5Tget_size(mem_type_id)) == 0) {
+            printf("FAILED (couldn't get type size)\n");
+            num_failed++;
+            continue;
+        }
+        
+        if ((data = malloc(num_elements * mem_type_size)) == NULL) {
+            printf("FAILED (couldn't allocate buffer)\n");
+            num_failed++;
+            continue;
+        }
+        
+        /* Attempt to read with datatype conversion */
+        if (H5Dread(dset_id, mem_type_id, H5S_ALL, H5S_ALL, H5P_DEFAULT, data) < 0) {
+            printf("FAILED (read error)\n");
+            free(data);
+            num_failed++;
+            continue;
+        }
+        
+        /* Verify converted values */
+        int verification_failed = 0;
+        for (size_t idx = 0; idx < num_elements; ++idx) {
+            int expected_source = -90 + (int)idx; /* Latitude values from -90 to 90 */
+        
+            /* Get actual converted value based on memory type */
+            double actual_converted = 0.0;
+            double expected_converted = (double)expected_source;
+            
+            if (H5Tequal(mem_type_id, H5T_NATIVE_SCHAR)) {
+                actual_converted = (double)((signed char *)data)[idx];
+                /* Clamp to signed char range [-128, 127] */
+                if (expected_source > 127){
+                    expected_converted = 127.0;
+                } else if (expected_source < -128) {
+                    expected_converted = -128.0;
+                }
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_UCHAR)) {
+                actual_converted = (double)((unsigned char *)data)[idx];
+                /* Clamp to unsigned char range [0, 255] */
+                if (expected_source > 255) {
+                    expected_converted = 255.0;
+                } else if (expected_source < 0) {
+                    expected_converted = 0.0;
+                }
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_SHORT)) {
+                actual_converted = (double)((short *)data)[idx];
+                /* Clamp to short range */
+                if (expected_source > 32767) {
+                    expected_converted = 32767.0;
+                } else if (expected_source < -32768) {
+                    expected_converted = -32768.0;
+                }
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_USHORT)) {
+                actual_converted = (double)((unsigned short *)data)[idx];
+                if (expected_source > 65535) {
+                    expected_converted = 65535.0;
+                } else if (expected_source < 0) {
+                    expected_converted = 0.0;
+                }
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_UINT)) {
+                actual_converted = (double)((unsigned int *)data)[idx];
+                if (expected_source < 0) {
+                    expected_converted = 0.0;
+                }
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_INT64)) {
+                actual_converted = (double)((int64_t *)data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_UINT64)) {
+                actual_converted = (double)((uint64_t *)data)[idx];
+                if (expected_source < 0) {
+                    expected_converted = 0.0;
+                }
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_LONG)) {
+                actual_converted = (double)((long *)data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_LLONG)) {
+                actual_converted = (double)((long long *)data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_ULLONG)) {
+                actual_converted = (double)((unsigned long long *)data)[idx];
+                if (expected_source < 0) {
+                    expected_converted = 0.0;
+                }
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_FLOAT)) {
+                actual_converted = (double)((float *)data)[idx];
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_DOUBLE)) {
+                actual_converted = ((double *)data)[idx];
+            }
+            
+            /* Check if values match within tolerance */
+            // double tolerance = 0.01;
+            if (actual_converted != expected_converted) {
+                printf("\n    VERIFICATION FAILED at idx %zu: expected %.0f, got %.0f (source was %d)",
+                        idx, expected_converted, actual_converted, expected_source);
+                verification_failed = 1;
+                break;
+            }
+        }
+        
+        free(data);
+        
+        if (verification_failed) {
+            printf("FAILED\n");
+            num_failed++;
+        } else {
+            printf("PASSED\n");
+        }
+    }
+
+    /* Clean up */
+    if (H5Tclose(file_type_id) < 0) {
+        printf("Failed to close datatype\n");
+        goto error;
+    }
+    if (H5Sclose(space_id) < 0) {
+        printf("Failed to close dataspace\n");
+        goto error;
+    }
+    if (H5Dclose(dset_id) < 0) {
+        printf("Failed to close dataset\n");
+        goto error;
+    }
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    if( H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    file_type_id = H5I_INVALID_HID;
+    space_id = H5I_INVALID_HID;
+    dset_id = H5I_INVALID_HID;
+    file_id = H5I_INVALID_HID;
+    fapl_id = H5I_INVALID_HID;
+
+    /* Unregister VOL connector */
+    if (vol_id != H5I_INVALID_HID && H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+    vol_id = H5I_INVALID_HID;
+
+    if (num_failed > 0) {
+        printf("Datatype conversion test completed with %d failures\n", num_failed);
+        return 1;
+    }
+
+    printf("PASSED: All datatype conversions successful\n");
+    return 0;
+
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Tclose(file_type_id);
+        H5Sclose(space_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID) {
+            H5VLunregister_connector(vol_id);
+        }
+    }
+    H5E_END_TRY;
+
+    printf("FAILED DATATYPE CONVERSION TEST\n");
+    return 1;
+}
+
+/* Test reading a global array attribute from the CDF file by not passing an index in the attribute name */
+int ReadVariableAttributeTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    char *attr_data = NULL;
+    hssize_t npoints;
+    size_t num_entries;
+    size_t type_size;
+
+    const char *attr_name = "FIELDNAM";
+    const char *dataset_name = "Time";
+    printf("Testing CDF VOL connector by reading '%s' vAttribute from dataset '%s' in file: %s\n", attr_name, dataset_name, filename);
+
+    /* Setup: Register VOL connector and open file/dataset (same as before) */
+#ifdef CDF_VOL_PLUGIN_PATH
+    if (H5PLappend(CDF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(CDF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open CDF file\n");
+        goto error;
+    }
+
+    if ((dset_id = H5Dopen2(file_id, dataset_name, H5P_DEFAULT)) < 0) {
+        printf("Failed to open dataset\n");
+        goto error;
+    }
+
+    if ((attr_id = H5Aopen(dset_id, attr_name, H5P_DEFAULT)) < 0) {
+        printf("Failed to open attribute\n");
+        goto error;
+    }
+    
+    if ((type_id = H5Aget_type(attr_id)) < 0) {
+        printf("Failed to get attribute datatype\n");
+        goto error;
+    }
+
+    if ((space_id = H5Aget_space(attr_id)) < 0) {
+        printf("Failed to get attribute dataspace\n");
+        goto error;
+    }
+
+    if ((npoints = H5Sget_simple_extent_npoints(space_id)) < 0) {
+        printf("Failed to get attribute dataspace rank\n");
+        goto error;
+    }
+
+    if (npoints != 1) {
+        printf("Attribute does not have expected number of entries (1).\n");
+        goto error;
+    }
+
+    num_entries = (size_t)npoints;
+
+    if ((type_size = H5Tget_size(type_id)) == 0) {
+        printf("Failed to get attribute datatype size\n");
+        goto error;
+    }
+
+    if (type_size == 0) {
+        printf("Attribute has zero size\n");
+        goto error;
+    }
+
+    /* Allocate buffer for attribute data */
+    attr_data = (char *)calloc(type_size * num_entries, sizeof(char));
+    if (!attr_data) {
+        printf("Failed to allocate attribute data buffer\n");
+        goto error;
+    }
+
+    /* Read attribute data */
+    if (H5Aread(attr_id, type_id, attr_data) < 0) {
+        printf("Failed to read attribute data\n");
+        goto error;
+    }
+
+    const char *expected_attr = "Time of observation";
+    const char *s = attr_data;
+    size_t expected_len = strlen(expected_attr);
+
+    if (expected_len > type_size || strncmp(s, expected_attr, expected_len) != 0) {
+        printf("VERIFICATION FAILED: Attribute data mismatch\n");
+        printf("  Expected: '%s'\n", expected_attr);
+        printf("  Got:      '%.*s'\n", (int)type_size, s);
+        goto error;
+    }
+
+    /* Clean up */
+    if (H5Tclose(type_id) < 0) {
+        printf("Failed to close attribute datatype\n");
+        goto error;
+    }
+    if (H5Sclose(space_id) < 0) {
+        printf("Failed to close attribute dataspace\n");
+        goto error;
+    }
+    if (H5Aclose(attr_id) < 0) {
+        printf("Failed to close attribute\n");
+        goto error;
+    }
+    if (H5Dclose(dset_id) < 0) {
+        printf("Failed to close dataset\n");
+        goto error;
+    }
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    if( H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    if (vol_id != H5I_INVALID_HID) {
+        H5VLunregister_connector(vol_id);
+    }
+    printf("PASSED\n");
+    return 0;
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Tclose(type_id);
+        H5Sclose(space_id);
+        H5Aclose(attr_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID) {
+            H5VLunregister_connector(vol_id);
+        }
+    }
+    H5E_END_TRY;
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test reading a global array attribute from the CDF file by not passing an index in the attribute name */
+int ReadGlobalArrayAttributeTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    char *attr_data = NULL;
+    hssize_t npoints;
+    size_t num_entries;
+    size_t type_size;
+
+    const char *attr_name = "TITLE";
+    printf("Testing CDF VOL connector by reading '%s' gAttribute from file: %s\n", attr_name, filename);
+
+    /* Setup: Register VOL connector and open file/dataset (same as before) */
+#ifdef CDF_VOL_PLUGIN_PATH
+    if (H5PLappend(CDF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(CDF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open CDF file\n");
+        goto error;
+    }
+
+    if ((attr_id = H5Aopen(file_id, attr_name, H5P_DEFAULT)) < 0) {
+        printf("Failed to open attribute\n");
+        goto error;
+    }
+    
+    if ((type_id = H5Aget_type(attr_id)) < 0) {
+        printf("Failed to get attribute datatype\n");
+        goto error;
+    }
+
+    if ((space_id = H5Aget_space(attr_id)) < 0) {
+        printf("Failed to get attribute dataspace\n");
+        goto error;
+    }
+
+    if ((npoints = H5Sget_simple_extent_npoints(space_id)) < 0) {
+        printf("Failed to get attribute dataspace rank\n");
+        goto error;
+    }
+
+    if (npoints != 2) {
+        printf("Attribute does not have enough entries (2).\n");
+        goto error;
+    }
+
+    num_entries = (size_t)npoints;
+
+    if ((type_size = H5Tget_size(type_id)) == 0) {
+        printf("Failed to get attribute datatype size\n");
+        goto error;
+    }
+
+    if (type_size == 0) {
+        printf("Attribute has zero size\n");
+        goto error;
+    }
+
+    /* Allocate buffer for attribute data */
+    attr_data = (char *)calloc(type_size * num_entries, sizeof(char));
+    if (!attr_data) {
+        printf("Failed to allocate attribute data buffer\n");
+        goto error;
+    }
+
+    /* Read attribute data */
+    if (H5Aread(attr_id, type_id, attr_data) < 0) {
+        printf("Failed to read attribute data\n");
+        goto error;
+    }
+
+    const char *expected_titles[] = {"CDF title", "Author: CDF"};
+    for (size_t i = 0; i < 2; i++) {
+        const char *s = attr_data + (i * type_size);
+        size_t expected_len = strlen(expected_titles[i]);
+
+        if (expected_len > type_size || strncmp(s, expected_titles[i], expected_len) != 0) {
+            printf("VERIFICATION FAILED: Attribute data mismatch at gEntry[%zu]\n", i);
+            printf("  Expected: '%s'\n", expected_titles[i]);
+            printf("  Got:      '%.*s'\n", (int)type_size, s);
+            goto error;
+        }
+    }
+
+    /* Clean up */
+    if (H5Tclose(type_id) < 0) {
+        printf("Failed to close attribute datatype\n");
+        goto error;
+    }
+    if (H5Sclose(space_id) < 0) {
+        printf("Failed to close attribute dataspace\n");
+        goto error;
+    }
+    if (H5Aclose(attr_id) < 0) {
+        printf("Failed to close attribute\n");
+        goto error;
+    }
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    if( H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    if (vol_id != H5I_INVALID_HID) {
+        H5VLunregister_connector(vol_id);
+    }
+    printf("PASSED\n");
+    return 0;
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Tclose(type_id);
+        H5Sclose(space_id);
+        H5Aclose(attr_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID) {
+            H5VLunregister_connector(vol_id);
+        }
+    }
+    H5E_END_TRY;
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Test reading a global attribute entry from the CDF file by passing the gEntry index in the attribute name */
+int ReadIndexedGlobalAttributeTest(const char *filename)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    char *attr_data = NULL;
+    hssize_t npoints;
+    size_t num_entries;
+    size_t type_size;
+
+    const char *attr_names[] = {"TITLE[0]", "TITLE[1]"};
+    const char *expected_titles[] = {"CDF title", "Author: CDF"};
+    printf("Testing CDF VOL connector by reading indexed gAttributes '%s' and '%s' from file: %s\n",
+        attr_names[0], attr_names[1], filename);
+
+    /* Setup: Register VOL connector and open file/dataset (same as before) */
+#ifdef CDF_VOL_PLUGIN_PATH
+    if (H5PLappend(CDF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(CDF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open CDF file\n");
+        goto error;
+    }
+
+    for (size_t i = 0; i < 2; i++) {
+        if ((attr_id = H5Aopen(file_id, attr_names[i], H5P_DEFAULT)) < 0) {
+            printf("Failed to open attribute\n");
+            goto error;
+        }
+
+        if ((type_id = H5Aget_type(attr_id)) < 0) {
+            printf("Failed to get attribute datatype\n");
+            goto error;
+        }
+
+        if ((space_id = H5Aget_space(attr_id)) < 0) {
+            printf("Failed to get attribute dataspace\n");
+            goto error;
+        }
+
+        if ((npoints = H5Sget_simple_extent_npoints(space_id)) < 0) {
+            printf("Failed to get attribute dataspace rank\n");
+            goto error;
+        }
+
+        if (npoints != 1) {
+            printf("Attribute does not have exactly 1 entry.\n");
+            goto error;
+        }
+
+        num_entries = (size_t)npoints;
+
+        if ((type_size = H5Tget_size(type_id)) == 0) {
+            printf("Failed to get attribute datatype size\n");
+            goto error;
+        }
+
+        if (type_size == 0) {
+            printf("Attribute has zero size\n");
+            goto error;
+        }
+
+        /* Allocate buffer for attribute data */
+        attr_data = (char *)calloc(type_size * num_entries, sizeof(char));
+        if (!attr_data) {
+            printf("Failed to allocate attribute data buffer\n");
+            goto error;
+        }
+
+        /* Read attribute data */
+        if (H5Aread(attr_id, type_id, attr_data) < 0) {
+            printf("Failed to read attribute data\n");
+            goto error;
+        }
+
+        const char *s = attr_data;
+        size_t expected_len = strlen(expected_titles[i]);
+        if (expected_len > type_size || strncmp(s, expected_titles[i], expected_len) != 0) {
+            printf("VERIFICATION FAILED: Attribute data mismatch at gEntry[%zu]\n", i);
+            printf("  Expected: '%s'\n", expected_titles[i]);
+            printf("  Got:      '%.*s'\n", (int)type_size, s);
+            goto error;
+        }
+
+        /* Clean up for this attribute */
+        free(attr_data);
+        attr_data = NULL;
+
+        if (H5Sclose(space_id) < 0) {
+            printf("Failed to close attribute dataspace\n");
+            goto error;
+        }
+        space_id = H5I_INVALID_HID;
+        if (H5Tclose(type_id) < 0) {
+            printf("Failed to close attribute datatype\n");
+            goto error;
+        }
+        type_id = H5I_INVALID_HID;
+        if (H5Aclose(attr_id) < 0) {
+            printf("Failed to close attribute\n");
+            goto error;
+        }
+        attr_id = H5I_INVALID_HID;
+    }
+
+    /* Clean up */
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    if( H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    if (vol_id != H5I_INVALID_HID) {
+        H5VLunregister_connector(vol_id);
+    }
+    printf("PASSED\n");
+    return 0;
+error:
+    H5E_BEGIN_TRY
+    {
+        if (attr_data) {
+            free(attr_data);
+        }
+        H5Tclose(type_id);
+        H5Sclose(space_id);
+        H5Aclose(attr_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID) {
+            H5VLunregister_connector(vol_id);
+        }
+    }
+    H5E_END_TRY;
+    printf("FAILED\n");
+    return 1;
+}
+    

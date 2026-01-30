@@ -46,6 +46,19 @@ typedef struct cdf_dataset_t {
     hid_t space_id;      /* HDF5 dataspace */
 } cdf_dataset_t;
 
+typedef struct cdf_attr_t {
+    void *parent;            /* Parent object (dataset, group, or file) */
+    char *name;              /* Attribute name */
+    long attr_num;           /* CDF attribute number */
+    long scope;              /* Attribute scope (global or variable) */
+    long datatype;           /* CDF data type */
+    long num_elements;       /* Number of elements in the attribute */
+    long index;              /* Index for gAttributes with multiple elements */
+    bool indexed;            /* Is the attribute indexed */
+    hid_t type_id;           /* HDF5 datatype */
+    hid_t space_id;          /* HDF5 dataspace */
+} cdf_attr_t;
+
 /* Forward declaration for unified object type */
 typedef struct cdf_object_t cdf_object_t;
 
@@ -57,6 +70,7 @@ struct cdf_object_t {
     union {
         cdf_file_t file;
         cdf_dataset_t dataset;
+        cdf_attr_t attr;
     } u;
 };
 
@@ -76,7 +90,12 @@ herr_t cdf_dataset_read(size_t count, void *dset[], hid_t mem_type_id[], hid_t m
 herr_t cdf_dataset_get(void *dset, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t cdf_dataset_close(void *dset, hid_t dxpl_id, void **req);
 
-
+/* Attribute operations */
+void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
+                        hid_t aapl_id, hid_t dxpl_id, void **req);
+herr_t cdf_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req);
+herr_t cdf_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
+herr_t cdf_attr_close(void *attr, hid_t dxpl_id, void **req);
 
 herr_t cdf_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type,
                                     uint64_t *flags);

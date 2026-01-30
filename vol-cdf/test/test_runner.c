@@ -20,8 +20,22 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "open_close") == 0)
         num_failures += (OpenCDFTest("example1") != 0 ? 1 : 0);
 
-    if (run_all || strcmp(test_name, "read") == 0)
+    if (run_all || strcmp(test_name, "read_variable") == 0)
         num_failures += (ReadCDFTest("example1") != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "datatype_conversion") == 0)
+        num_failures += (DatatypeConversionTest("example1") != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "read_variable_attribute") == 0)
+        num_failures += (ReadVariableAttributeTest("example1") != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "read_all_global_attributes") == 0)
+        num_failures += (ReadGlobalArrayAttributeTest("example1") != 0 ? 1 : 0);
+
+    if (run_all || strcmp(test_name, "read_indexed_global_attribute") == 0)
+        num_failures += (ReadIndexedGlobalAttributeTest("example1") != 0 ? 1 : 0);
+
+
 
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
