@@ -42,6 +42,7 @@ jobs:
           --suppress=unmatchedSuppression \
           --suppress=preprocessorErrorDirective \
           --suppress=unusedLabel \
+          --suppress=unusedStructMember \
           --inline-suppr \
           -Isrc \
           src/ test/
