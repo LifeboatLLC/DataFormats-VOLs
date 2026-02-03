@@ -114,11 +114,11 @@ static const H5VL_class_t cdf_class_g = {
     {
         /* group_cls */
         NULL,               /* create       */
-        NULL,               /* open         */
-        NULL,               /* get          */
+        cdf_group_open,     /* open         */
+        cdf_group_get,      /* get          */
         NULL,               /* specific     */
         NULL,               /* optional     */
-        NULL                /* close        */
+        cdf_group_close     /* close        */
     },
     {
         /* link_cls */
@@ -589,19 +589,27 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
 {
     CDFstatus status;
 
-    cdf_object_t *file_obj = (cdf_object_t *) obj;
+    cdf_object_t *base_obj = (cdf_object_t *) obj;
+    cdf_object_t *file_obj = NULL;
     cdf_object_t *dset_obj = NULL;
     cdf_object_t *ret_value = NULL;
 
     cdf_dataset_t *dset = NULL;           /* Convenience pointer */
-    cdf_file_t *file = &file_obj->u.file; /* Convenience pointer */
+    cdf_file_t *file = NULL; /* Convenience pointer */
 
     H5T_class_t dtype_class = H5T_NO_CLASS; 
     hsize_t dspace_dims[CDF_MAX_DIMS];    /* Dataspace dimensions */
 
-    if (!file_obj || !name) {
+    if (!base_obj || !name) {
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or dataset name");
     }
+
+    /* Resolve file object from base object (file or group) */
+    file_obj = base_obj->parent_file;
+    if (!file_obj || file_obj->obj_type != H5I_FILE) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid parent file object");
+    }
+    file = &file_obj->u.file;
 
     if ((dset_obj = (cdf_object_t *) malloc(sizeof(cdf_object_t))) == NULL) {
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, NULL,
@@ -973,6 +981,134 @@ herr_t cdf_dataset_close(void *dset, hid_t dxpl_id, void **req)
     return ret_value;
 } /* end cdf_dataset_close() */
 
+/* Group operations */
+void *cdf_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
+                         const char *name, hid_t __attribute__((unused)) gapl_id,
+                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
+{
+    cdf_object_t *file = (cdf_object_t *) obj;
+    cdf_object_t *grp_obj = NULL;
+    cdf_object_t *ret_value = NULL;
+
+    cdf_group_t *grp = NULL; /* Convenience pointer */
+
+    if (!file || !name) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or group name");
+    }
+
+    if (strcmp(name, "/") != 0) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_UNSUPPORTED, NULL,
+                        "CDF VOL connector currently only supports root group '/'");
+    }
+
+    if ((grp_obj = (cdf_object_t *) calloc(1, sizeof(cdf_object_t))) == NULL) {
+        FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL,
+                        "Failed to allocate memory for CDF group struct");
+    }
+
+    grp_obj->obj_type = H5I_GROUP;
+    grp_obj->parent_file = file->parent_file;
+    grp_obj->ref_count = 1; /* Initialize group's own ref count */
+    /* Increment file reference count since this group holds a reference */
+    grp_obj->parent_file->ref_count++;
+
+    grp = &grp_obj->u.group;
+    if ((grp->name = strdup(name)) == NULL) {
+        FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL, "Failed to duplicate group name string");
+    }
+
+    ret_value = grp_obj;
+done:
+    if (!ret_value && grp) {
+        H5E_BEGIN_TRY
+        {
+            cdf_group_close(grp_obj, dxpl_id, req);
+        }
+        H5E_END_TRY;
+    }
+
+    return ret_value;
+}
+
+herr_t cdf_group_get(void *obj, H5VL_group_get_args_t *args,
+                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
+{
+    cdf_object_t *o = (cdf_object_t *) obj;
+    const cdf_group_t *grp = (const cdf_group_t *) &o->u.group; /* Convenience pointer */
+    herr_t ret_value = SUCCEED;
+
+    if (!args) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
+    }
+    
+    switch (args->op_type) {
+        case H5VL_GROUP_GET_INFO: {
+            H5G_info_t *ginfo = args->args.get_info.ginfo;
+            long num_zvars = 0;
+
+            if (!grp || !ginfo)
+                FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid group or info pointer");
+
+            if (!o->parent_file)
+                FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid file object");
+
+            /* Get number of zVariables in the CDF file (datasets) */
+            if (CDFgetNumzVars(o->parent_file->u.file.id, &num_zvars) != CDF_OK)
+                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "failed to get number of zVariables");
+
+            /* Fill in group info structure */
+            ginfo->storage_type = H5G_STORAGE_TYPE_COMPACT;
+            ginfo->nlinks = (hsize_t) num_zvars; /* Number of dataset links */
+            ginfo->max_corder = -1;   /* No creation order tracking */
+            ginfo->mounted = false;   /* No files mounted on this group */
+
+            break;
+        }
+
+        case H5VL_GROUP_GET_GCPL: {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "GCPL get operation not supported");
+        }
+
+        default: {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "unknown group get operation");
+        }
+    }
+
+done:
+    return ret_value;
+}
+
+herr_t cdf_group_close(void *grp, hid_t dxpl_id, void **req)
+{
+    cdf_object_t *o = (cdf_object_t *) grp;
+    cdf_group_t *g = &o->u.group; /* Convenience pointer */
+    herr_t ret_value = SUCCEED;
+
+    assert(g);
+
+    /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
+
+    /* Decrement group's ref count */
+    if (o->ref_count == 0)
+        FUNC_DONE_ERROR(H5E_SYM, H5E_CANTCLOSEOBJ, FAIL, "Group already closed (ref_count is 0)");
+
+    o->ref_count--;
+
+    /* Only do the real close when ref_count reaches 0 */
+    if (o->ref_count == 0) {
+        if (g->name)
+            free(g->name);
+
+        /* Decrement parent file's reference count */
+        if (cdf_file_close(o->parent_file, dxpl_id, req) < 0)
+            FUNC_DONE_ERROR(H5E_SYM, H5E_CLOSEERROR, FAIL, "Failed to close group file object");
+
+        free(o);
+    }
+
+    return ret_value;
+}
+
 /* Helper function: Calculate the size of the string needed to represent
  * a gEntry value given the datatype and number of elements */
 static size_t calculate_gEntry_str_len(long cdf_datatype, long num_elements)
@@ -1076,6 +1212,7 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
     cdf_object_t *parent_obj = NULL;
     cdf_object_t *attr_obj = NULL;
     cdf_object_t *ret_value = NULL;
+    hsize_t dims[1];
 
     cdf_attr_t *attr = NULL; /* Convenience pointer */
 
@@ -1121,7 +1258,6 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
 
     /* Check if attribute exists in CDF file at all (Either as gAttribute or vAttribute) */
     CDFid id = parent_obj->parent_file->u.file.id;
-    
     attr->attr_num = CDFgetAttrNum(id, attr->name);
 
     if (attr->attr_num < CDF_OK) {
@@ -1147,10 +1283,12 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
                         "failed to read data from CDF attribute '%s'", 
                         attr->name);
     }
+    
+    /* Determine if parent object is a file or group */
+    bool is_file_or_group = (parent_obj->obj_type == H5I_FILE || parent_obj->obj_type == H5I_GROUP);
 
-    hsize_t dims[1];
-    /* Only allow gAttributes to be opened when using file obj_type */
-    if (parent_obj->obj_type == H5I_FILE && attr->scope == GLOBAL_SCOPE) {
+    /* Only allow gAttributes to be opened when using file or group obj_type */
+    if (is_file_or_group && attr->scope == GLOBAL_SCOPE) {
         
         if (max_gEntry < 0) {
             FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL,

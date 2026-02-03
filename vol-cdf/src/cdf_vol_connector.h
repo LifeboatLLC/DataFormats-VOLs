@@ -46,6 +46,11 @@ typedef struct cdf_dataset_t {
     hid_t space_id;      /* HDF5 dataspace */
 } cdf_dataset_t;
 
+/* CDF VOL group object structure */
+typedef struct cdf_group_t {
+    char *name; /* Group name */
+} cdf_group_t;
+
 typedef struct cdf_attr_t {
     void *parent;            /* Parent object (dataset, group, or file) */
     char *name;              /* Attribute name */
@@ -70,6 +75,7 @@ struct cdf_object_t {
     union {
         cdf_file_t file;
         cdf_dataset_t dataset;
+        cdf_group_t group;
         cdf_attr_t attr;
     } u;
 };
@@ -89,6 +95,12 @@ herr_t cdf_dataset_read(size_t count, void *dset[], hid_t mem_type_id[], hid_t m
                             hid_t file_space_id[], hid_t dxpl_id, void *buf[], void **req);
 herr_t cdf_dataset_get(void *dset, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t cdf_dataset_close(void *dset, hid_t dxpl_id, void **req);
+
+/* Group operations */
+void *cdf_group_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
+                         hid_t gapl_id, hid_t dxpl_id, void **req);
+herr_t cdf_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl_id, void **req);
+herr_t cdf_group_close(void *grp, hid_t dxpl_id, void **req);
 
 /* Attribute operations */
 void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
