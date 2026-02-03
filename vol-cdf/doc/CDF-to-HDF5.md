@@ -1,4 +1,4 @@
-# CDF  to HDF5 Mapping 
+# CDF to HDF5 Mapping 
 
 This document specifies a practical, loss-minimizing mapping from **NASA CDF (Common Data Format)** objects to **HDF5** objects. It targets implementers of converters and readers who want predictable, interoperable HDF5 outputs that preserve CDF semantics.
 
@@ -81,17 +81,18 @@ Map CDF numeric/logical types to HDF5 native types of equal or greater precision
 
 | CDF Type      | HDF5 Datatype                             | Notes                      |
 | ------------- | ----------------------------------------- | -------------------------- |
-| INT1/UINT1    | H5T_STD_I8LE / H5T_STD_U8LE               | or BE to match policy      |
+| CDF_BYTE      | H5T_STD_I8LE                              | or BE to match policy      |
+| INT1/UINT1    | H5T_STD_I8LE / H5T_STD_U8LE               |                            |
 | INT2/UINT2    | H5T_STD_I16LE / H5T_STD_U16LE             |                            |
 | INT4/UINT4    | H5T_STD_I32LE / H5T_STD_U32LE             |                            |
 | INT8/UINT8    | H5T_STD_I64LE / H5T_STD_U64LE             |                            |
-| REAL4         | H5T_IEEE_F32LE                            |                            |
-| REAL8         | H5T_IEEE_F64LE                            |                            |
+| FLOAT/REAL4   | H5T_IEEE_F32LE                            |                            |
+| DOUBLE/REAL8  | H5T_IEEE_F64LE                            |                            |
 | CDF_EPOCH     | **compound** of 1× float64 or int64 epoch | See §10                    |
 | CDF_EPOCH16   | **compound** of 2× float64                | t0 + dt, or reals          |
 | TT2000        | H5T_STD_I64LE                             | ns since 2000-01-01        |
-| CDF_CHAR/TEXT | H5T_STRING (variable-length)              | set charset to ASCII/UTF-8 |
-| CDF_BOOL      | H5T_STD_U8LE or enum                      | 0/1 or enum {FALSE, TRUE}  |
+| CDF_CHAR/UCHAR| H5T_STRING (variable-length)              | set charset to ASCII/UTF-8 |
+
 
 > Choose endianness consistently; LE is common. If preserving original endianness is a requirement, set per-dataset types accordingly.
 
