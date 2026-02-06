@@ -104,10 +104,9 @@ jobs:
             # CDF 3.9.1 bundles zlib 1.3, which has a bug causing build failures with Xcode 16.3+.
             # Patch zutil.h to remove TARGET_OS_MAC check that causes fdopen macro conflict.
             sed -i '' 's/defined(MACOS) || defined(TARGET_OS_MAC)/defined(MACOS)/' src/lib/zlib/zutil.h
-            # Use ENV=arm64 because macos-latest runners are Apple Silicon, and
-            # ENV=gnu uses libtool which passes -force_cpusubtype_ALL to ld,
-            # a flag removed in Xcode 16.4.
-            make OS=macosx ENV=arm64 all
+            # Build static only: the CDF Makefile's dylib build and install steps
+            # have multiple issues with modern Xcode (see vol-cdf/doc/mac_cdf_notes.md).
+            make OS=macosx ENV=arm64 SHARED=no all
           else
             make OS=linux ENV=gnu all
           fi
