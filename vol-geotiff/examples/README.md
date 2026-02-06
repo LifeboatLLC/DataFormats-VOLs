@@ -1,19 +1,25 @@
 # GeoTIFF VOL Connector Examples
 
-This directory contains C examples demonstrating how to use the GeoTIFF VOL connector to read GeoTIFF files through the HDF5 API and visualize them using gnuplot. These examples are built as part of the normal build process - see `doc/usage.md`.
+This directory contains C examples demonstrating how to use the GeoTIFF VOL connector to read GeoTIFF files through the HDF5 API. These examples are built as part of the normal build process - see `doc/usage.md`.
 
-## Simple Demo
+## Basic Examples
 
-This demo shows basic VOL connector operations:
-- Creates a test GeoTIFF
-- Opens it via the VOL connector
-- Displays dimensions and metadata
-- Reads and prints pixel data
+### Iterate and Read Demo
+Iterating through all images in a multi-image TIFF file and reading the full raster data from each, with summary statistics.
 
-To execute it, run the `simple_demo` executable from the build directory.
+## Metadata Examples
 
-## gnuplot Visualization Demo
+### Metadata Demo
+Reading standard TIFF tags as HDF5 attributes (dimensions, resolution, descriptive strings).
 
+
+### Coordinates Demo
+Reading geographic coordinates (lon/lat) from the compound "coordinates" attribute on georeferenced images.
+
+
+## Visualization
+
+### gnuplot Visualization Demo
 The demo will:
 - Create `demo_rings_gnuplot.tif` with colorful concentric rings
 - Read it back through the HDF5 VOL connector
@@ -24,6 +30,14 @@ The demo will:
 From the build directory:
 
 To execute it, run the `gnuplot_demo` executable from the build directory.
+
+## Running Examples
+
+All examples should be run from the build directory:
+```bash
+cd build
+./examples/<example_name>
+```
 
 ## Troubleshooting
 
