@@ -1,0 +1,168 @@
+---
+name: BUFR VOL CI
+
+'on':
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test:
+    name: Build and Test BUFR VOL
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        hdf5-version: ['develop']
+        build-type: [Release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            gfortran \
+            libopenjp2-7-dev \
+            libpng-dev \
+            libnetcdf-dev \
+            libaec-dev
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install \
+            cmake \
+            gcc \
+            openjpeg \
+            libpng \
+            netcdf \
+            libaec
+
+      - name: Cache ecCodes
+        id: cache-eccodes
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/eccodes-install
+          key: >-
+            eccodes-2.38.3-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-bufr-ci.yml') }}
+          restore-keys: |
+            eccodes-2.38.3-${{ matrix.os }}-${{ matrix.build-type }}-
+
+      - name: Download and build ecCodes
+        if: steps.cache-eccodes.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ github.workspace }}
+          wget -q https://confluence.ecmwf.int/download/attachments/45757960/eccodes-2.38.3-Source.tar.gz
+          tar -xzf eccodes-2.38.3-Source.tar.gz
+          cd eccodes-2.38.3-Source
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/eccodes-install \
+            -DENABLE_FORTRAN=OFF \
+            -DENABLE_PYTHON=OFF \
+            -DENABLE_BUILD_TOOLS=ON \
+            -DENABLE_ECCODES_THREADS=ON
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
+          make install
+
+      - name: Cache HDF5
+        id: cache-hdf5
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}
+          key: >-
+            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-bufr-ci.yml') }}
+          restore-keys: |
+            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
+
+      - name: Validate cached HDF5 (macOS)
+        if: runner.os == 'macOS' && steps.cache-hdf5.outputs.cache-hit == 'true'
+        run: |
+          if [ ! -f "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib/libhdf5.dylib" ]; then
+            echo "Cached HDF5 is incomplete, will rebuild"
+            rm -rf "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+            echo "REBUILD_HDF5=true" >> $GITHUB_ENV
+          else
+            echo "Cached HDF5 appears valid"
+            echo "REBUILD_HDF5=false" >> $GITHUB_ENV
+          fi
+
+      - name: Build HDF5
+        if: steps.cache-hdf5.outputs.cache-hit != 'true' || (runner.os == 'macOS' && env.REBUILD_HDF5 == 'true')
+        run: |
+          cd ${{ github.workspace }}
+          git clone --depth 1 --branch ${{ matrix.hdf5-version }} \
+            https://github.com/HDFGroup/hdf5.git \
+            hdf5-${{ matrix.hdf5-version }}
+          cd hdf5-${{ matrix.hdf5-version }}
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }} \
+            -DHDF5_ENABLE_PARALLEL=OFF \
+            -DHDF5_BUILD_TOOLS=ON \
+            -DHDF5_BUILD_EXAMPLES=OFF \
+            -DHDF5_BUILD_TESTS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
+            -DHDF5_ENABLE_Z_LIB_SUPPORT=ON \
+            -DHDF5_ENABLE_SZIP_SUPPORT=OFF
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
+          make install
+
+      - name: Configure CMake
+        run: |
+          cd vol-bufr
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${{ github.workspace }}/eccodes-install"
+
+      - name: Build
+        run: |
+          cd vol-bufr/build
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
+
+      - name: Run tests
+        run: |
+          cd vol-bufr/build
+          export HDF5_PLUGIN_PATH=$PWD/src
+          export HDF5_VOL_CONNECTOR=""
+          if [ "$(uname)" = "Darwin" ]; then
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/eccodes-install/lib:$DYLD_LIBRARY_PATH
+          else
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/eccodes-install/lib:$LD_LIBRARY_PATH
+          fi
+          export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
+          ctest --output-on-failure --verbose
+
+      - name: Upload build artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-bufr-${{ matrix.os }}-${{ matrix.hdf5-version }}-${{ matrix.build-type }}
+          path: |
+            vol-bufr/build/CMakeFiles/CMakeOutput.log
+            vol-bufr/build/CMakeFiles/CMakeError.log
+            vol-bufr/build/Testing/Temporary/

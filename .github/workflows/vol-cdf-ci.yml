@@ -1,0 +1,155 @@
+---
+name: CDF VOL CI
+
+'on':
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test:
+    name: Build and Test CDF VOL
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        hdf5-version: ['develop']
+        build-type: [Release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libncurses5-dev
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake
+
+      - name: Cache HDF5
+        id: cache-hdf5
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}
+          key: >-
+            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-cdf-ci.yml') }}
+          restore-keys: |
+            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
+
+      - name: Validate cached HDF5 (macOS)
+        if: runner.os == 'macOS' && steps.cache-hdf5.outputs.cache-hit == 'true'
+        run: |
+          if [ ! -f "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib/libhdf5.dylib" ]; then
+            echo "Cached HDF5 is incomplete, will rebuild"
+            rm -rf "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+            echo "REBUILD_HDF5=true" >> $GITHUB_ENV
+          else
+            echo "Cached HDF5 appears valid"
+            echo "REBUILD_HDF5=false" >> $GITHUB_ENV
+          fi
+
+      - name: Build HDF5
+        if: steps.cache-hdf5.outputs.cache-hit != 'true' || (runner.os == 'macOS' && env.REBUILD_HDF5 == 'true')
+        run: |
+          cd ${{ github.workspace }}
+          git clone --depth 1 --branch ${{ matrix.hdf5-version }} \
+            https://github.com/HDFGroup/hdf5.git \
+            hdf5-${{ matrix.hdf5-version }}
+          cd hdf5-${{ matrix.hdf5-version }}
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }} \
+            -DHDF5_ENABLE_PARALLEL=OFF \
+            -DHDF5_BUILD_TOOLS=ON \
+            -DHDF5_BUILD_EXAMPLES=OFF \
+            -DHDF5_BUILD_TESTS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
+            -DHDF5_ENABLE_Z_LIB_SUPPORT=ON \
+            -DHDF5_ENABLE_SZIP_SUPPORT=OFF
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
+          make install
+
+      - name: Cache CDF library
+        id: cache-cdf
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/cdf-install
+          key: >-
+            cdf-3.9.1-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-cdf-ci.yml') }}
+          restore-keys: |
+            cdf-3.9.1-${{ matrix.os }}-${{ matrix.build-type }}-
+
+      - name: Download and build CDF library
+        if: steps.cache-cdf.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ github.workspace }}
+          wget -q https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/linux/cdf39_1-dist-all.tar.gz
+          tar -xzf cdf39_1-dist-all.tar.gz
+          cd cdf39_1-dist
+          if [ "$(uname)" = "Darwin" ]; then
+            # CDF 3.9.1 bundles zlib 1.3, which has a bug causing build failures with Xcode 16.3+.
+            # Patch zutil.h to remove TARGET_OS_MAC check that causes fdopen macro conflict.
+            sed -i '' 's/defined(MACOS) || defined(TARGET_OS_MAC)/defined(MACOS)/' src/lib/zlib/zutil.h
+            make OS=macosx ENV=gnu all
+          else
+            make OS=linux ENV=gnu all
+          fi
+          make INSTALLDIR=${{ github.workspace }}/cdf-install install
+
+      - name: Set up CDF environment
+        run: |
+          echo "CDF_BASE=${{ github.workspace }}/cdf-install" >> $GITHUB_ENV
+          echo "${{ github.workspace }}/cdf-install/bin" >> $GITHUB_PATH
+
+      - name: Configure CMake
+        run: |
+          cd vol-cdf
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};$CDF_BASE"
+
+      - name: Build
+        run: |
+          cd vol-cdf/build
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
+
+      - name: Run tests
+        run: |
+          cd vol-cdf/build
+          export HDF5_PLUGIN_PATH=$PWD/src
+          export HDF5_VOL_CONNECTOR=""
+          if [ "$(uname)" = "Darwin" ]; then
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$CDF_BASE/lib:$DYLD_LIBRARY_PATH
+          else
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$CDF_BASE/lib:$LD_LIBRARY_PATH
+          fi
+          export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
+          ctest --output-on-failure --verbose
+
+      - name: Upload build artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-cdf-${{ matrix.os }}-${{ matrix.hdf5-version }}-${{ matrix.build-type }}
+          path: |
+            vol-cdf/build/CMakeFiles/CMakeOutput.log
+            vol-cdf/build/CMakeFiles/CMakeError.log
+            vol-cdf/build/Testing/Temporary/

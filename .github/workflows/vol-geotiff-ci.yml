@@ -1,5 +1,5 @@
 ---
-name: CI
+name: GeoTIFF VOL CI
 
 'on':
   push:
@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        hdf5-version: ['develop', 'hdf5_1_14_6']
+        hdf5-version: ['develop']
         build-type: [Release]
         libgeotiff-source: [system, external]
 
@@ -68,8 +68,10 @@ jobs:
         with:
           path: ${{ github.workspace }}/libtiff-install
           key: >-
-            libtiff-external-${{ matrix.os }}-
-            ${{ github.run_number }}-${{ hashFiles('.github/workflows/ci.yml') }}
+            libtiff-v4.6.0-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-geotiff-ci.yml') }}
+          restore-keys: |
+            libtiff-v4.6.0-${{ matrix.os }}-${{ matrix.build-type }}-
 
       - name: Build libtiff from source
         if: matrix.libgeotiff-source == 'external' && steps.cache-libtiff.outputs.cache-hit != 'true'
@@ -97,8 +99,10 @@ jobs:
         with:
           path: ${{ github.workspace }}/libgeotiff-install
           key: >-
-            libgeotiff-external-${{ matrix.os }}-
-            ${{ github.run_number }}-${{ hashFiles('.github/workflows/ci.yml') }}
+            libgeotiff-main-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-geotiff-ci.yml') }}
+          restore-keys: |
+            libgeotiff-main-${{ matrix.os }}-${{ matrix.build-type }}-
 
       - name: Install PROJ for external libgeotiff build (Linux)
         if: matrix.libgeotiff-source == 'external' && runner.os == 'Linux'
@@ -135,11 +139,25 @@ jobs:
         with:
           path: ${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}
           key: >-
-            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-
-            ${{ github.run_number }}-${{ hashFiles('.github/workflows/ci.yml') }}
+            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-geotiff-ci.yml') }}
+          restore-keys: |
+            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
+
+      - name: Validate cached HDF5 (macOS)
+        if: runner.os == 'macOS' && steps.cache-hdf5.outputs.cache-hit == 'true'
+        run: |
+          if [ ! -f "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib/libhdf5.dylib" ]; then
+            echo "Cached HDF5 is incomplete, will rebuild"
+            rm -rf "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+            echo "REBUILD_HDF5=true" >> $GITHUB_ENV
+          else
+            echo "Cached HDF5 appears valid"
+            echo "REBUILD_HDF5=false" >> $GITHUB_ENV
+          fi
 
       - name: Build HDF5
-        if: steps.cache-hdf5.outputs.cache-hit != 'true'
+        if: steps.cache-hdf5.outputs.cache-hit != 'true' || (runner.os == 'macOS' && env.REBUILD_HDF5 == 'true')
         run: |
           cd ${{ github.workspace }}
           git clone --depth 1 --branch ${{ matrix.hdf5-version }} \
