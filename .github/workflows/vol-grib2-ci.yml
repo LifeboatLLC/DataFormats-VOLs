@@ -105,6 +105,7 @@ jobs:
         if: steps.cache-hdf5.outputs.cache-hit != 'true' || (runner.os == 'macOS' && env.REBUILD_HDF5 == 'true')
         run: |
           cd ${{ github.workspace }}
+          rm -rf hdf5-${{ matrix.hdf5-version }}
           git clone --depth 1 --branch ${{ matrix.hdf5-version }} \
             https://github.com/HDFGroup/hdf5.git \
             hdf5-${{ matrix.hdf5-version }}
