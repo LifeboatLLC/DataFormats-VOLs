@@ -735,8 +735,9 @@ void *bufr_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused
     dset->space_id = H5I_INVALID_HID;
     dset->type_id = H5I_INVALID_HID;
     dset->data = NULL;
-    dset->data_size =
-        0; /* The value is set to the size of the data buffer; see bufr_read_data function below */
+    dset->is_vlen_string = 0;
+    /* The value is set to the size of the data buffer; see bufr_read_data function below */
+    dset->data_size = 0;
 
     /* Fast open using message offsets */
     h = bufr_open_message_by_index(file, (size_t) msg_index);

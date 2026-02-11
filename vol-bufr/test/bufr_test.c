@@ -182,7 +182,7 @@ int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
         goto error;
     }
 
-    data = (long *) malloc(dims[0]);
+    data = (long *) malloc(dims[0] * sizeof(long));
     if (!data) {
         printf("Failed to allocate read buffer\n");
         goto error;
