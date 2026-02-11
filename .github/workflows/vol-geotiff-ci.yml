@@ -14,7 +14,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        hdf5-version: ['develop']
         build-type: [Release]
         libgeotiff-source: [system, external]
 
@@ -133,55 +132,20 @@ jobs:
           fi
           make install
 
-      - name: Cache HDF5
-        id: cache-hdf5
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}
-          key: >-
-            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
-            ${{ hashFiles('.github/workflows/vol-geotiff-ci.yml') }}
-          restore-keys: |
-            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
-
-      - name: Validate cached HDF5 (macOS)
-        if: runner.os == 'macOS' && steps.cache-hdf5.outputs.cache-hit == 'true'
-        run: |
-          if [ ! -f "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib/libhdf5.dylib" ]; then
-            echo "Cached HDF5 is incomplete, will rebuild"
-            rm -rf "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
-            echo "REBUILD_HDF5=true" >> $GITHUB_ENV
-          else
-            echo "Cached HDF5 appears valid"
-            echo "REBUILD_HDF5=false" >> $GITHUB_ENV
-          fi
-
-      - name: Build HDF5
-        if: steps.cache-hdf5.outputs.cache-hit != 'true' || (runner.os == 'macOS' && env.REBUILD_HDF5 == 'true')
+      - name: Install HDF5
         run: |
           cd ${{ github.workspace }}
-          rm -rf hdf5-${{ matrix.hdf5-version }}
-          git clone --depth 1 --branch ${{ matrix.hdf5-version }} \
-            https://github.com/HDFGroup/hdf5.git \
-            hdf5-${{ matrix.hdf5-version }}
-          cd hdf5-${{ matrix.hdf5-version }}
-          mkdir build && cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }} \
-            -DHDF5_ENABLE_PARALLEL=OFF \
-            -DHDF5_BUILD_TOOLS=ON \
-            -DHDF5_BUILD_EXAMPLES=OFF \
-            -DHDF5_BUILD_TESTS=OFF \
-            -DBUILD_SHARED_LIBS=ON \
-            -DHDF5_ENABLE_Z_LIB_SUPPORT=ON \
-            -DHDF5_ENABLE_SZIP_SUPPORT=OFF
           if [ "$(uname)" = "Darwin" ]; then
-            make -j$(sysctl -n hw.ncpu)
+            wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-macos14_clang.tar.gz -O hdf5-release.tar.gz
+            tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Darwin.tar.gz
+            tar xzf hdf5/HDF5-2.0.0-Darwin.tar.gz
+            mv HDF5-2.0.0-Darwin/HDF_Group/HDF5/2.0.0 hdf5-install
           else
-            make -j$(nproc)
+            wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-ubuntu-2404_gcc.tar.gz -O hdf5-release.tar.gz
+            tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Linux.tar.gz
+            tar xzf hdf5/HDF5-2.0.0-Linux.tar.gz
+            mv HDF5-2.0.0-Linux/HDF_Group/HDF5/2.0.0 hdf5-install
           fi
-          make install
 
       - name: Configure CMake (system libgeotiff)
         if: matrix.libgeotiff-source == 'system'
@@ -192,9 +156,9 @@ jobs:
           if [ "$(uname)" = "Darwin" ]; then
             BREW_PREFIX=$(brew --prefix)
             export PKG_CONFIG_PATH="${BREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
-            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${BREW_PREFIX}"
+            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${BREW_PREFIX}"
           else
-            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
+            CMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install"
           fi
           cmake .. \
             -DSITE="ubu" -DBUILDNAME="vol-geotiff/${{ matrix.build-type }}"  \
@@ -209,7 +173,7 @@ jobs:
           cmake .. \
             -DSITE="ubu" -DBUILDNAME="vol-geotiff/${{ matrix.build-type }}"  \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${{ github.workspace }}/libtiff-install;${{ github.workspace }}/libgeotiff-install"
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${{ github.workspace }}/libtiff-install;${{ github.workspace }}/libgeotiff-install"
 
       - name: Build
         run: |
@@ -228,11 +192,11 @@ jobs:
           cd build
           export HDF5_PLUGIN_PATH=$PWD/src
           if [ "$(uname)" = "Darwin" ]; then
-            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$DYLD_LIBRARY_PATH
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:$DYLD_LIBRARY_PATH
           else
-            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:$LD_LIBRARY_PATH
           fi
-          export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
+          export PATH=${{ github.workspace }}/hdf5-install/bin:$PATH
           ctest -D Experimental
           make test
 
@@ -243,57 +207,20 @@ jobs:
           cd build
           export HDF5_PLUGIN_PATH=$PWD/src
           if [ "$(uname)" = "Darwin" ]; then
-            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/libtiff-install/lib:${{ github.workspace }}/libgeotiff-install/lib:$DYLD_LIBRARY_PATH
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:${{ github.workspace }}/libtiff-install/lib:${{ github.workspace }}/libgeotiff-install/lib:$DYLD_LIBRARY_PATH
           else
-            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/libtiff-install/lib:${{ github.workspace }}/libgeotiff-install/lib:$LD_LIBRARY_PATH
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:${{ github.workspace }}/libtiff-install/lib:${{ github.workspace }}/libgeotiff-install/lib:$LD_LIBRARY_PATH
           fi
-          export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
+          export PATH=${{ github.workspace }}/hdf5-install/bin:$PATH
           ctest -D Experimental
           make test
-
-      #- name: Test HDF5 tools integration
-      #  run: |
-      #    cd vol-geotiff
-      #    cd build
-      #    export HDF5_PLUGIN_PATH=$PWD/src
-      #    export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
-      #    export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
-      #
-          # Test h5ls
-      #    if [ -f ../test/sample.tif ] && command -v h5ls >/dev/null 2>&1; then
-      #      echo "Testing h5ls with GeoTIFF VOL connector..."
-      #      h5ls --vol-name=geotiff_vol_connector ../test/sample.tif || \
-      #        echo "h5ls test failed"
-      #    fi
-
-          # Test h5dump
-      #    if [ -f ../test/sample.tif ] && command -v h5dump >/dev/null 2>&1; then
-      #      echo "Testing h5dump with GeoTIFF VOL connector..."
-      #      h5dump --vol-name=geotiff_vol_connector ../test/sample.tif || \
-      #        echo "h5dump test failed"
-      #    fi
-
-      # - name: Install netCDF-C and test
-      #  run: |
-      #    # Install netCDF-C
-      #    sudo apt-get install -y libnetcdf-dev netcdf-bin || \
-      #      echo "netCDF not available"
-      #    cd vol-geotiff
-      #    cd build
-      #    export HDF5_PLUGIN_PATH=$PWD/src
-      #    export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:$LD_LIBRARY_PATH
-          # Test ncdump if available
-      #    if [ -f ../test/sample.tif ] && command -v ncdump >/dev/null 2>&1; then
-      #      echo "Testing ncdump with GeoTIFF VOL connector..."
-      #      ncdump -h ../test/sample.tif || echo "ncdump test failed"
-      #    fi
 
       - name: Upload build artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: >-
-            build-logs-${{ matrix.os }}-${{ matrix.hdf5-version }}-${{ matrix.build-type }}
+            build-logs-${{ matrix.os }}-${{ matrix.build-type }}
           path: |
             vol-geotiff/build/CMakeFiles/CMakeOutput.log
             vol-geotiff/build/CMakeFiles/CMakeError.log

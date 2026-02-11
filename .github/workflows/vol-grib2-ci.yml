@@ -15,7 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        hdf5-version: ['develop']
         build-type: [Release]
 
     steps:
@@ -78,55 +77,20 @@ jobs:
           fi
           make install
 
-      - name: Cache HDF5
-        id: cache-hdf5
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}
-          key: >-
-            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
-            ${{ hashFiles('.github/workflows/vol-grib2-ci.yml') }}
-          restore-keys: |
-            hdf5-${{ matrix.hdf5-version }}-${{ matrix.os }}-${{ matrix.build-type }}-
-
-      - name: Validate cached HDF5 (macOS)
-        if: runner.os == 'macOS' && steps.cache-hdf5.outputs.cache-hit == 'true'
-        run: |
-          if [ ! -f "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib/libhdf5.dylib" ]; then
-            echo "Cached HDF5 is incomplete, will rebuild"
-            rm -rf "${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}"
-            echo "REBUILD_HDF5=true" >> $GITHUB_ENV
-          else
-            echo "Cached HDF5 appears valid"
-            echo "REBUILD_HDF5=false" >> $GITHUB_ENV
-          fi
-
-      - name: Build HDF5
-        if: steps.cache-hdf5.outputs.cache-hit != 'true' || (runner.os == 'macOS' && env.REBUILD_HDF5 == 'true')
+      - name: Install HDF5
         run: |
           cd ${{ github.workspace }}
-          rm -rf hdf5-${{ matrix.hdf5-version }}
-          git clone --depth 1 --branch ${{ matrix.hdf5-version }} \
-            https://github.com/HDFGroup/hdf5.git \
-            hdf5-${{ matrix.hdf5-version }}
-          cd hdf5-${{ matrix.hdf5-version }}
-          mkdir build && cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }} \
-            -DHDF5_ENABLE_PARALLEL=OFF \
-            -DHDF5_BUILD_TOOLS=ON \
-            -DHDF5_BUILD_EXAMPLES=OFF \
-            -DHDF5_BUILD_TESTS=OFF \
-            -DBUILD_SHARED_LIBS=ON \
-            -DHDF5_ENABLE_Z_LIB_SUPPORT=ON \
-            -DHDF5_ENABLE_SZIP_SUPPORT=OFF
           if [ "$(uname)" = "Darwin" ]; then
-            make -j$(sysctl -n hw.ncpu)
+            wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-macos14_clang.tar.gz -O hdf5-release.tar.gz
+            tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Darwin.tar.gz
+            tar xzf hdf5/HDF5-2.0.0-Darwin.tar.gz
+            mv HDF5-2.0.0-Darwin/HDF_Group/HDF5/2.0.0 hdf5-install
           else
-            make -j$(nproc)
+            wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-ubuntu-2404_gcc.tar.gz -O hdf5-release.tar.gz
+            tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Linux.tar.gz
+            tar xzf hdf5/HDF5-2.0.0-Linux.tar.gz
+            mv HDF5-2.0.0-Linux/HDF_Group/HDF5/2.0.0 hdf5-install
           fi
-          make install
 
       - name: Configure CMake
         run: |
@@ -134,7 +98,7 @@ jobs:
           mkdir build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
-            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }};${{ github.workspace }}/eccodes-install"
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${{ github.workspace }}/eccodes-install"
 
       - name: Build
         run: |
@@ -151,18 +115,18 @@ jobs:
           export HDF5_PLUGIN_PATH=$PWD/src
           export HDF5_VOL_CONNECTOR=""
           if [ "$(uname)" = "Darwin" ]; then
-            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/eccodes-install/lib:$DYLD_LIBRARY_PATH
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:${{ github.workspace }}/eccodes-install/lib:$DYLD_LIBRARY_PATH
           else
-            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/lib:${{ github.workspace }}/eccodes-install/lib:$LD_LIBRARY_PATH
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:${{ github.workspace }}/eccodes-install/lib:$LD_LIBRARY_PATH
           fi
-          export PATH=${{ github.workspace }}/hdf5-${{ matrix.hdf5-version }}/bin:$PATH
+          export PATH=${{ github.workspace }}/hdf5-install/bin:$PATH
           ctest --output-on-failure --verbose
 
       - name: Upload build artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-grib2-${{ matrix.os }}-${{ matrix.hdf5-version }}-${{ matrix.build-type }}
+          name: build-logs-grib2-${{ matrix.os }}-${{ matrix.build-type }}
           path: |
             vol-grib2/build/CMakeFiles/CMakeOutput.log
             vol-grib2/build/CMakeFiles/CMakeError.log
