@@ -46,7 +46,7 @@ endif()
 
 # Link to CDF library specified through CMAKE_PREFIX_PATH in the command line
 find_library(CDF_LIBRARY NAMES cdf HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib)
-find_path(CDF_INCLUDE_DIR NAMES cdf.h PATHS ${CMAKE_PREFIX_PATH} PATH__SUFFIXES include)
+find_path(CDF_INCLUDE_DIR NAMES cdf.h PATHS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES include)
 
 if(CDF_LIBRARY)
     message(STATUS "Found CDF library at: ${CDF_LIBRARY}")

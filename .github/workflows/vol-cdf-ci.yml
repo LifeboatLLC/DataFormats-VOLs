@@ -88,11 +88,9 @@ jobs:
           # Use prebuilt .pkg instead of building from source on macOS due to Xcode compatibility issues
           curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/macosx/CDF3_9_1-binary_signed.pkg
           sudo installer -pkg CDF3_9_1-binary_signed.pkg -target /
-
-      # TODO: Remove this step once CDF_BASE path is confirmed
-      - name: Inspect CDF install layout (macOS)
-        if: runner.os == 'macOS'
-        run: sudo ls -R /Applications/cdf/cdf39_1-dist
+          # The .pkg installs as root with restrictive permissions; make readable
+          # so CMake and the linker can find headers/libraries.
+          sudo chmod -R a+rX /Applications/cdf
 
       - name: Cache CDF library (Linux)
         if: runner.os == 'Linux'
