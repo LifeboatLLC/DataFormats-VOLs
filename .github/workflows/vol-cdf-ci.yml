@@ -89,6 +89,11 @@ jobs:
           curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/macosx/CDF3_9_1-binary_signed.pkg
           sudo installer -pkg CDF3_9_1-binary_signed.pkg -target /
 
+      # TODO: Remove this step once CDF_BASE path is confirmed
+      - name: Inspect CDF install layout (macOS)
+        if: runner.os == 'macOS'
+        run: sudo ls -R /Applications/cdf/cdf39_1-dist
+
       - name: Cache CDF library (Linux)
         if: runner.os == 'Linux'
         id: cache-cdf
