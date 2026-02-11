@@ -82,7 +82,15 @@ jobs:
           fi
           make install
 
-      - name: Cache CDF library
+      - name: Install CDF library (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Use prebuilt .pkg instead of building from source on macOS due to Xcode compatibility issues
+          curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/macosx/CDF3_9_1-binary_signed.pkg
+          sudo installer -pkg CDF3_9_1-binary_signed.pkg -target /
+
+      - name: Cache CDF library (Linux)
+        if: runner.os == 'Linux'
         id: cache-cdf
         uses: actions/cache@v4
         with:
@@ -93,29 +101,25 @@ jobs:
           restore-keys: |
             cdf-3.9.1-${{ matrix.os }}-${{ matrix.build-type }}-
 
-      - name: Download and build CDF library
-        if: steps.cache-cdf.outputs.cache-hit != 'true'
+      - name: Download and build CDF library (Linux)
+        if: runner.os == 'Linux' && steps.cache-cdf.outputs.cache-hit != 'true'
         run: |
           cd ${{ github.workspace }}
           wget -q https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/linux/cdf39_1-dist-all.tar.gz
           tar -xzf cdf39_1-dist-all.tar.gz
           cd cdf39_1-dist
-          if [ "$(uname)" = "Darwin" ]; then
-            # CDF 3.9.1 bundles zlib 1.3, which has a bug causing build failures with Xcode 16.3+.
-            # Patch zutil.h to remove TARGET_OS_MAC check that causes fdopen macro conflict.
-            sed -i '' 's/defined(MACOS) || defined(TARGET_OS_MAC)/defined(MACOS)/' src/lib/zlib/zutil.h
-            # Build static only: the CDF Makefile's dylib build and install steps
-            # have multiple issues with modern Xcode (see vol-cdf/doc/mac_cdf_notes.md).
-            make OS=macosx ENV=arm64 SHARED=no all
-          else
-            make OS=linux ENV=gnu all
-          fi
+          make OS=linux ENV=gnu all
           make INSTALLDIR=${{ github.workspace }}/cdf-install install
 
       - name: Set up CDF environment
         run: |
-          echo "CDF_BASE=${{ github.workspace }}/cdf-install" >> $GITHUB_ENV
-          echo "${{ github.workspace }}/cdf-install/bin" >> $GITHUB_PATH
+          if [ "$(uname)" = "Darwin" ]; then
+            echo "CDF_BASE=/Applications/cdf/cdf39_1-dist" >> $GITHUB_ENV
+            echo "/Applications/cdf/cdf39_1-dist/bin" >> $GITHUB_PATH
+          else
+            echo "CDF_BASE=${{ github.workspace }}/cdf-install" >> $GITHUB_ENV
+            echo "${{ github.workspace }}/cdf-install/bin" >> $GITHUB_PATH
+          fi
 
       - name: Configure CMake
         run: |
