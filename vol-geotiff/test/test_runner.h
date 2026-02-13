@@ -29,6 +29,7 @@ int DatasetErrorHandlingTest(const char *filename);
 int DatatypeConversionTest(hid_t mem_type_id, hid_t file_type_id, const char *mem_type_name,
                            const char *file_type_name);
 int LinkExistsTest(const char *filename);
+int MultiImageLinkExistsTest(void);
 int LinkIterateTest(const char *filename);
 int UnsupportedFeaturesTest(void);
 int GroupGetInfoTest(void);

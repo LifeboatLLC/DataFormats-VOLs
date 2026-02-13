@@ -78,6 +78,9 @@ set_tests_properties(link_exists_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIRO
 add_test(NAME link_exists_rgb COMMAND test_runner link_exists_rgb)
 set_tests_properties(link_exists_rgb PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
+add_test(NAME multi_image_link_exists COMMAND test_runner multi_image_link_exists)
+set_tests_properties(multi_image_link_exists PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
 add_test(NAME link_iterate_grayscale COMMAND test_runner link_iterate_grayscale)
 set_tests_properties(link_iterate_grayscale PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 

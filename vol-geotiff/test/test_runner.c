@@ -116,6 +116,9 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "link_exists_rgb") == 0)
         num_failures += (LinkExistsTest(RGB_FILENAME) != 0 ? 1 : 0);
 
+    if (run_all || strcmp(test_name, "multi_image_link_exists") == 0)
+        num_failures += (MultiImageLinkExistsTest() != 0 ? 1 : 0);
+
     if (run_all || strcmp(test_name, "link_iterate_rgb") == 0)
         num_failures += (LinkIterateTest(RGB_FILENAME) != 0 ? 1 : 0);
 
