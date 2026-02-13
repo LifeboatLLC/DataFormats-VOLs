@@ -1,0 +1,31 @@
+name: clang-format Commit Changes
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  formatting-fix:
+    name: Commit Format Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # In order to allow EndBug/add-and-commit to commit changes
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Fix C formatting issues detected by clang-format
+      uses: DoozyX/clang-format-lint-action@v0.20
+      with:
+        source: '.'
+        extensions: 'c,h'
+        clangFormatVersion: 17
+        inplace: True
+        style: file
+
+    - uses: EndBug/add-and-commit@v9
+      with:
+        author_name: github-actions
+        author_email: 41898282+github-actions[bot]@users.noreply.github.com
+        message: 'Committing clang-format changes'
