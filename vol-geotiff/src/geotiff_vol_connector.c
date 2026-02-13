@@ -1994,56 +1994,39 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
         }
 
         case H5VL_LINK_ITER: {
+            geotiff_object_t *file_obj = (geotiff_object_t *) obj;
+            geotiff_file_t *file = &file_obj->u.file;
             H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
-
-            /* TODO: For now, we only have one link: "image0"
-             * Future: iterate over multiple images for multi-page TIFFs
-             */
+            uint16_t num_dirs = (uint16_t) TIFFNumberOfDirectories(file->tiff);
 
             assert(iter_args);
             assert(iter_args->idx_p);
 
-            /* Only iterate if we haven't reached the end */
-            if (*iter_args->idx_p > 0) {
-                /* Already past the only link we have */
-                break;
-            }
-
-            /* Call the user's callback for "image0" */
+            /* Iterate over all image links starting from the current index */
             if (iter_args->op) {
-                H5L_info2_t link_info;
-                herr_t cb_ret;
+                for (hsize_t i = *iter_args->idx_p; i < num_dirs; i++) {
+                    H5L_info2_t link_info;
+                    herr_t cb_ret;
+                    char link_name[32];
 
-                /* Fill in minimal link info */
-                memset(&link_info, 0, sizeof(H5L_info2_t));
-                /* Consider all GeoTIFF "links" to be hard links */
-                link_info.type = H5L_TYPE_HARD;
-                link_info.corder_valid = true;
-                link_info.corder = 0;
-                link_info.cset = H5T_CSET_ASCII;
+                    snprintf(link_name, sizeof(link_name), "image%u", (unsigned) i);
 
-                /* TODO: Fill in link_info.u.token if needed */
-                /* For now, leave token as zeros */
+                    memset(&link_info, 0, sizeof(H5L_info2_t));
+                    link_info.type = H5L_TYPE_HARD;
+                    link_info.corder_valid = true;
+                    link_info.corder = (int64_t) i;
+                    link_info.cset = H5T_CSET_ASCII;
 
-                /* Call user's callback
-                 * Signature: herr_t (*op)(hid_t group, const char *name, const H5L_info2_t *info,
-                 * void *op_data)
-                 * Note: We pass 0 as group hid since we don't have a proper group ID
-                 */
-                cb_ret = iter_args->op(0, "image0", &link_info, iter_args->op_data);
+                    cb_ret = iter_args->op(0, link_name, &link_info, iter_args->op_data);
+                    *iter_args->idx_p = i + 1;
 
-                /* Update index */
-                if (iter_args->idx_p)
-                    *iter_args->idx_p = *iter_args->idx_p + 1;
-
-                /* Check callback return value */
-                if (cb_ret < 0) {
-                    FUNC_GOTO_ERROR(H5E_LINK, H5E_BADITER, FAIL,
-                                    "Iterator callback returned error");
-                } else if (cb_ret > 0) {
-                    /* Callback requested early termination */
-                    ret_value = cb_ret;
-                    goto done;
+                    if (cb_ret < 0) {
+                        FUNC_GOTO_ERROR(H5E_LINK, H5E_BADITER, FAIL,
+                                        "Iterator callback returned error");
+                    } else if (cb_ret > 0) {
+                        ret_value = cb_ret;
+                        goto done;
+                    }
                 }
             }
 
