@@ -1490,6 +1490,125 @@ error:
     return 1;
 }
 
+/* Verify that H5Lexists works for all images in a multi-image GeoTIFF */
+int MultiImageLinkExistsTest(void)
+{
+    const char *filename = "_tmp_multi_image_lexists.tif";
+    const uint32_t NUM_IMAGES = 3;
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    htri_t exists;
+
+    printf("Testing H5Lexists on multi-image GeoTIFF (image0..image2)  ");
+
+    /* Create a multi-image test file */
+    if (CreateMultiImageGeoTIFF(filename, NUM_IMAGES) != 0) {
+        printf("Failed to create multi-image test file\n");
+        goto error;
+    }
+
+    /* Register the GeoTIFF VOL connector */
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open multi-image GeoTIFF file\n");
+        goto error;
+    }
+
+    /* Check that image0, image1, image2 all exist */
+    for (uint32_t i = 0; i < NUM_IMAGES; i++) {
+        char link_name[32];
+        snprintf(link_name, sizeof(link_name), "image%u", i);
+
+        if ((exists = H5Lexists(file_id, link_name, H5P_DEFAULT)) < 0) {
+            printf("Failed to check link existence for '%s'\n", link_name);
+            goto error;
+        }
+
+        if (!exists) {
+            printf("VERIFICATION FAILED: Link '%s' should exist but doesn't\n", link_name);
+            goto error;
+        }
+    }
+
+    /* Verify image3 (one past the last) does not exist */
+    if ((exists = H5Lexists(file_id, "image3", H5P_DEFAULT)) < 0) {
+        printf("Failed to check link existence for 'image3'\n");
+        goto error;
+    }
+
+    if (exists) {
+        printf("VERIFICATION FAILED: Link 'image3' should not exist but does\n");
+        goto error;
+    }
+
+    /* Verify a non-imageN link name does not exist */
+    if ((exists = H5Lexists(file_id, "foobar", H5P_DEFAULT)) < 0) {
+        printf("Failed to check link existence for 'foobar'\n");
+        goto error;
+    }
+
+    if (exists) {
+        printf("VERIFICATION FAILED: Link 'foobar' should not exist but does\n");
+        goto error;
+    }
+
+    /* Clean up */
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+
+    remove(filename);
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    remove(filename);
+    printf("FAILED\n");
+    return 1;
+}
+
 /* Callback for link iteration */
 static herr_t link_iterate_callback(hid_t group, const char *name, const H5L_info2_t *info,
                                     void *op_data)

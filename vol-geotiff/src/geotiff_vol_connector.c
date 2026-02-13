@@ -1962,6 +1962,9 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
     switch (args->op_type) {
         case H5VL_LINK_EXISTS: {
+            geotiff_object_t *file_obj = (geotiff_object_t *) obj;
+            geotiff_file_t *file = &file_obj->u.file;
+
             /* Get the link name from loc_params */
             if (loc_params->type == H5VL_OBJECT_BY_NAME) {
                 link_name = loc_params->loc_data.loc_by_name.name;
@@ -1973,10 +1976,19 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
             if (!link_name)
                 FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "No link name provided");
 
-            /* Currently only "image0" exists as a link/dataset
-             * Future: check for "image1", "image2", etc. for multi-page TIFFs
-             */
-            *args->args.exists.exists = (strcmp(link_name, "image0") == 0);
+            /* Check if this image directory exists in the TIFF file */
+            /* Manual cast because some versions of TIFF return tdir_t */
+            uint16_t num_dirs = (uint16_t) TIFFNumberOfDirectories(file->tiff);
+
+            /* Extract image index from provided link name */
+            int image_index = -1;
+
+            if (sscanf(link_name, "image%d", &image_index) != 1 || image_index < 0) {
+                /* Not a valid imageN link name - link doesn't exist */
+                *args->args.exists.exists = false;
+            } else {
+                *args->args.exists.exists = image_index < num_dirs;
+            }
 
             break;
         }
