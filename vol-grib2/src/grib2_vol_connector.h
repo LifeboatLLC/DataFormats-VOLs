@@ -122,6 +122,10 @@ herr_t grib2_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, 
 herr_t grib2_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t grib2_attr_close(void *attr, hid_t dxpl_id, void **req);
 
+/* Link operations */
+herr_t grib2_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                             H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req);
+
 herr_t grib2_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type,
                                     uint64_t *flags);
 

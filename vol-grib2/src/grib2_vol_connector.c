@@ -73,13 +73,13 @@ static const H5VL_class_t grib2_class_g = {
     {
         /* attribute_cls */
         NULL,              /* create       */
-        NULL,              /* open         */
-        NULL,              /* read         */
+        grib2_attr_open,   /* open         */
+        grib2_attr_read,   /* read         */
         NULL,              /* write        */
-        NULL,              /* get          */
+        grib2_attr_get,    /* get          */
         NULL,              /* specific     */
         NULL,              /* optional     */
-        NULL               /* close        */
+        grib2_attr_close   /* close        */
     },
     {
         /* dataset_cls */
@@ -125,7 +125,7 @@ static const H5VL_class_t grib2_class_g = {
         NULL,                  /* copy         */
         NULL,                  /* move         */
         NULL,                  /* get          */
-        NULL,                  /* specific     */
+        grib2_link_specific,   /* specific     */
         NULL                   /* optional     */
     },
     {
@@ -727,10 +727,10 @@ void *grib2_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
      */ 
 
     n = is_group_name(name, file->u.file.nmsgs);
-    if ((strcmp(name, "/") != 0) || (n == 0))
+/*    if ((strcmp(name, "/") != 0) || (n == 0))
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_UNSUPPORTED, NULL,
                         "GRIB2 VOL connector only supports root group '/' or group with the name '/message_<N>'");
-
+*/
     if ((grp_obj = (grib2_object_t *) calloc(1, sizeof(grib2_object_t))) == NULL)
         FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL,
                         "Failed to allocate memory for GRIB2 group struct");
@@ -749,7 +749,6 @@ void *grib2_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
                           "Failed to get GRIB2 message handle ");
     }
-
     msg = (grib2_message_t *)calloc(1, sizeof(*msg));
     if (!msg)  {
        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, NULL,
@@ -1565,6 +1564,7 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
 
     if (!obj || !name || !loc_params)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Invalid object or attribute name");
+    key_view = name;
 
     /* 
      * Only group ID can be an object ID in the call to H5Aopen.
@@ -1572,6 +1572,10 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
      */
    
     parent_obj = (grib2_object_t *) obj;
+
+    if (parent_obj->obj_type != H5I_GROUP)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, NULL,
+                        "Unsupported location parameter type for attribute open");
 
     /* Determine the type of the parent object */
     if (loc_params->type != H5VL_OBJECT_BY_SELF)
@@ -1590,10 +1594,17 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
     /* Increment parent object's reference count since this attribute holds a reference */
     parent_obj->ref_count++;
     attr = &attr_obj->u.attr;
+    msg = (grib2_message_t *)calloc(1, sizeof(*msg));
+    if (!msg)  {
+       FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL,
+                          "Failed to initialize message handle for dataset object");
+    }
+    msg->h = parent_obj->u.group.msg->h;
+    attr->msg = msg;
 
-    if ((attr->name = grib2_strdup(key_view)) == NULL)
+    if ((attr->name = strdup(key_view)) == NULL)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL, "Failed to duplicate attribute name string");
-
+    printf("Name %s\n", attr->name);
     attr->parent = obj;
     attr->space_id = H5I_INVALID_HID;
     attr->type_id = H5I_INVALID_HID;
@@ -1607,12 +1618,13 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
        and length of the string including NUL character for the key of the string type.
      */
     if (grib2_key_type_and_size(parent_obj->u.group.msg->h, key_view, &message_type, &len) != 0) {
-                FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
                             "Failed to discover datatype and size for the key");
     }
     
-    if ((message_type != CODES_TYPE_STRING) || (message_type == CODES_TYPE_LONG) || (message_type == CODES_TYPE_DOUBLE))
-                FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+    printf("message_type %d \n", message_type);
+    if ((message_type != CODES_TYPE_STRING) && (message_type != CODES_TYPE_LONG) && (message_type != CODES_TYPE_DOUBLE))
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
                             "Found unsupported datatype for the attribute");   
     if (message_type == CODES_TYPE_STRING) {
         attr->nvals = 1;
@@ -1626,21 +1638,21 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
     /* Find corresponding HDF5 native type; set a special flag if GRIB2 type is string */
     attr->codes_type = message_type;
     if (grib2_get_hdf5_type(attr->codes_type, &attr->type_id, len) < 0) {
-                FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
                             "Failed to covert GRIB2 datatype to native HDF5 type");
     }
-    /* For simplicity We assume simple dataset; 
+    /* For simplicity we assume simple dataset; 
        TODO: we could use H5S_SCALAR for the attributes with only one value 
      */
     dims[0] = (hsize_t)attr->nvals;
     attr->space_id = H5Screate_simple(1, dims, NULL);
     if (attr->space_id == H5I_INVALID_HID) {
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCREATE, NULL,
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
                             "Failed to create SCALAR dataspace for attribute");
     }
     /* Cache the key data */
     if (grib2_read_attr_data(attr) !=0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL, "Failed to read data for the key");    
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, NULL, "Failed to read data for the key");    
 
    ret_value = attr_obj;
 
@@ -1778,6 +1790,131 @@ done:
     return ret_value;
 }
 
+/*---------------------------------------------------------------------------
+ * Function:    grib2_link_specific
+ *
+ * Purpose:     Handles link-specific operations for the GRIB2 VOL connector
+ *
+ * Return:      SUCCEED/FAIL
+ *
+ * Note:        The GRIB2 file has VOL has a flat structure with N groups 
+ *              (GRIB2 messages) with the names <message_K>, where 1=< K =< N 
+ *              at the root level, and possible three datasets "lon", "lat"
+ *              and "values" under each group. 
+ *---------------------------------------------------------------------------
+ */
+/* cppcheck-suppress constParameterCallback */
+herr_t grib2_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                             H5VL_link_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                             void __attribute__((unused)) * *req)
+{
+    herr_t ret_value = SUCCEED;
+    const char *link_name = NULL;
+    grib2_object_t *parent_obj = NULL;
+
+    if (!obj || !loc_params || !args)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to link_specific");
+
+    /* obj could be file, or group */
+
+    parent_obj = (grib2_object_t *) obj;
+
+    if ((parent_obj->obj_type != H5I_FILE) && (parent_obj->obj_type != H5I_GROUP)) 
+        FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL,
+                        "Unsupported location parameter type for link operation");
+
+    switch (args->op_type) {
+        case H5VL_LINK_EXISTS: {
+            *args->args.exists.exists = true;
+             
+            /* Get the link name from loc_params */
+            if (loc_params->type == H5VL_OBJECT_BY_NAME) {
+                link_name = loc_params->loc_data.loc_by_name.name;
+            } else {
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
+                                "Link exists check requires name-based location");
+            }
+
+            if (!link_name)
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "No link name provided");
+
+            if (parent_obj->obj_type == H5I_FILE) {
+                grib2_object_t *file = (grib2_object_t *) obj;
+                size_t n = 0;
+                n = is_group_name(link_name, file->u.file.nmsgs);
+                if (n == 0) {
+                      *args->args.exists.exists = false;
+                }
+             } else {  /* Parent object is a group */
+                 if (check_grib2_dataset_name(link_name) == 0) {
+                       *args->args.exists.exists = false;
+                    }
+             }
+
+            break;
+        }
+
+
+        case H5VL_LINK_ITER: {
+            if (parent_obj->obj_type == H5I_GROUP)
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL,
+                        "Iteration over datasets is not supported by GRIB2 VOL");
+
+            grib2_object_t *file = (grib2_object_t *) obj;
+            H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
+            size_t num_groups = file->u.file.nmsgs;
+            printf("Here, number of groups is %d \n", (int)num_groups);
+
+            assert(iter_args);
+            assert(iter_args->idx_p);
+
+            /* Only iterate over all groups links starting from the current index*/
+
+            if (iter_args->op) {
+                for (hsize_t i = *iter_args->idx_p; i < num_groups; i++) {
+                    H5L_info2_t link_info;
+                    herr_t cb_ret;
+                    char link_name[32];
+
+                    snprintf(link_name, sizeof(link_name), "message_%u", (unsigned) (i+1));
+
+                    /* Fill in minimal link info */
+                    memset(&link_info, 0, sizeof(H5L_info2_t));
+                    link_info.type = H5L_TYPE_HARD;
+                    link_info.corder_valid = true;
+                    link_info.corder = (int64_t) i;
+                    link_info.cset = H5T_CSET_ASCII;
+
+                    cb_ret = iter_args->op(0, link_name, &link_info, iter_args->op_data);
+                    *iter_args->idx_p = i + 1;
+
+                    /* Check callback return value */
+                    if (cb_ret < 0) {
+                        FUNC_GOTO_ERROR(H5E_LINK, H5E_BADITER, FAIL,
+                                        "Iterator callback returned error");
+                    } else if (cb_ret > 0) {
+                        /* Callback requested early termination */
+                        ret_value = cb_ret;
+                        goto done;
+                    }
+                }
+            }
+
+            break;
+        }
+
+        case H5VL_LINK_DELETE:
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL,
+                            "Link deletion is not supported in read-only GRIB2 VOL connector");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL, "Unsupported link specific operation");
+    }
+
+done:
+    return ret_value;
+}
 /* These two functions are necessary to load this plugin using  the HDF5 library */
 H5PL_type_t H5PLget_plugin_type(void)
 {

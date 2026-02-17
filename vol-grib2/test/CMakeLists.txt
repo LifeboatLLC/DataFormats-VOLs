@@ -53,16 +53,34 @@ set(TEST_ENVIRONMENT
 )
 
 # GRIB2 functionality tests
+add_test(NAME basic_open_close COMMAND test_runner basic_open_close)
+set_tests_properties(basic_open_close PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
+    ENVIRONMENT "${TEST_ENVIRONMENT}"
+)
 add_test(NAME open_close COMMAND test_runner open_close)
 set_tests_properties(open_close PROPERTIES
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
     ENVIRONMENT "${TEST_ENVIRONMENT}"
 )
-add_test(NAME dataset_open_close COMMAND test_runner dataset_open_close)
-set_tests_properties(dataset_open_close PROPERTIES
+
+add_test(NAME link_exists COMMAND test_runner link_exists)
+set_tests_properties(link_exists PROPERTIES
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
     ENVIRONMENT "${TEST_ENVIRONMENT}"
 )
+
+add_test(NAME multi_link_exists COMMAND test_runner multi_link_exists)
+set_tests_properties(multi_link_exists PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
+    ENVIRONMENT "${TEST_ENVIRONMENT}"
+)
+add_test(NAME link_iterate COMMAND test_runner link_iterate)
+set_tests_properties(link_iterate PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
+    ENVIRONMENT "${TEST_ENVIRONMENT}"
+)
+
 
 # If you have more test_runner subcommands, add them similarly:
 # add_test(NAME something COMMAND test_runner something)
