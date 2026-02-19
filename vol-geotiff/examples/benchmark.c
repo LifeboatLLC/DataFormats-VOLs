@@ -113,19 +113,17 @@ bench_vol(const char *filename, hid_t fapl_id, double *open_us, double *read_us,
     *out_data = NULL;
     *out_size = 0;
 
-    /* Time open */
+    /* Time open: H5Fopen + H5Dopen2 (the VOL connector loads image data during Dopen) */
     clock_gettime(CLOCK_MONOTONIC, &t0);
     hid_t file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    *open_us = elapsed_us(&t0, &t1);
-
     if (file_id < 0) {
         fprintf(stderr, "  VOL: failed to open %s\n", filename);
         return 1;
     }
-
-    /* Open dataset and get dimensions */
     hid_t dset_id = H5Dopen2(file_id, "/image0", H5P_DEFAULT);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    *open_us = elapsed_us(&t0, &t1);
+
     if (dset_id < 0) {
         fprintf(stderr, "  VOL: failed to open /image0 in %s\n", filename);
         H5Fclose(file_id);
@@ -149,7 +147,7 @@ bench_vol(const char *filename, hid_t fapl_id, double *open_us, double *read_us,
         return 1;
     }
 
-    /* Time read */
+    /* Time read (data is already cached from Dopen, so this is a memcpy) */
     clock_gettime(CLOCK_MONOTONIC, &t1);
     H5Dread(dset_id, H5T_NATIVE_UCHAR, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
     clock_gettime(CLOCK_MONOTONIC, &t2);
