@@ -19,23 +19,32 @@ int main(int argc, char **argv)
     /* Run CDF functionality tests (each test manages its own connector registration) */
     if (run_all || strcmp(test_name, "open_close") == 0)
         num_failures += (OpenCDFTest("example1") != 0 ? 1 : 0);
+    
+    if (run_all || strcmp(test_name, "links_and_groups") == 0)
+        num_failures += (OpenLinksandGroupsTest() != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "read_variable") == 0)
-        num_failures += (ReadCDFTest("example1") != 0 ? 1 : 0);
+        num_failures += (ReadCDFVariableTest() != 0 ? 1 : 0);
 
-    if (run_all || strcmp(test_name, "datatype_conversion") == 0)
-        num_failures += (DatatypeConversionTest("example1") != 0 ? 1 : 0);
+    if (run_all || strcmp(test_name, "dataset_datatype_conversion") == 0)
+        num_failures += (DatasetDatatypeConversionTest() != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "read_variable_attribute") == 0)
-        num_failures += (ReadVariableAttributeTest("example1") != 0 ? 1 : 0);
+        num_failures += (ReadVariableAttributeTest() != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "read_all_global_attributes") == 0)
-        num_failures += (ReadGlobalArrayAttributeTest("example1") != 0 ? 1 : 0);
+        num_failures += (ReadUnindexedGlobalArrayAttributeTest() != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "read_indexed_global_attribute") == 0)
-        num_failures += (ReadIndexedGlobalAttributeTest("example1") != 0 ? 1 : 0);
+        num_failures += (ReadIndexedGlobalAttributeTest() != 0 ? 1 : 0);
 
-
+    if (run_all || strcmp(test_name, "read_basic_rVariable_and_rEntry") == 0)
+        num_failures += (ReadBasicRVariableAndREntryTest() != 0 ? 1 : 0); 
+    
+#ifdef TODO
+    if (run_all || strcmp(test_name, "indexed_gattribute_dtype_conversion_test") == 0)
+        num_failures += (IndexedGAttributeDtypeConversionTest() != 0 ? 1 : 0);
+#endif
 
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);

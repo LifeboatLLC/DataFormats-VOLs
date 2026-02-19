@@ -5,10 +5,13 @@
 
 /* CDF functionality tests */
 int OpenCDFTest(const char *filename);
-int ReadCDFTest(const char *filename);
-int DatatypeConversionTest(const char *filename);
-int ReadVariableAttributeTest(const char *filename);
-int ReadGlobalArrayAttributeTest(const char *filename);
-int ReadIndexedGlobalAttributeTest(const char *filename);
+int OpenLinksandGroupsTest(void);
+int ReadCDFVariableTest(void);
+int DatasetDatatypeConversionTest(void);
+int ReadVariableAttributeTest(void);
+int ReadUnindexedGlobalArrayAttributeTest(void);
+int ReadIndexedGlobalAttributeTest(void);
+int ReadBasicRVariableAndREntryTest(void);
+// int IndexedGAttributeDtypeConversionTest(void);
 
 #endif /* TEST_CDF_H */

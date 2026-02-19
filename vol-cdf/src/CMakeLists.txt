@@ -9,11 +9,6 @@ set_target_properties(${CDF_VOL_NAME} PROPERTIES
     PUBLIC_HEADER "cdf_vol_connector.h;cdf_vol_err.h"
 )
 
-# set_target_properties (${CDF_VOL_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
-# set_target_properties (${CDF_VOL_NAME} PROPERTIES SOVERSION 1)
-# set_target_properties (${CDF_VOL_NAME} PROPERTIES PUBLIC_HEADER "cdf_vol_connector.h;cdf_vol_err.h")
-
-
 # Add HDF5 and CDF include directories explicitly
 target_include_directories(${CDF_VOL_NAME} PRIVATE ${HDF5_INCLUDE_DIRS} ${CDF_INCLUDE_DIR})
 

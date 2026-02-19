@@ -58,10 +58,12 @@ typedef struct cdf_attr_t {
     long scope;              /* Attribute scope (global or variable) */
     long datatype;           /* CDF data type */
     long num_elements;       /* Number of elements in the attribute */
-    long index;              /* Index for gAttributes with multiple elements */
-    bool indexed;            /* Is the attribute indexed */
     hid_t type_id;           /* HDF5 datatype */
     hid_t space_id;          /* HDF5 dataspace */
+    /* Members specific to gAttributes */
+    long index;              /* Index for gAttributes with multiple gEntries */
+    bool indexed;            /* Whether the user asked for a specific indexed attribute */
+    long *gEntry_indices;    /* For non-indexed gAttributes, list of usable gEntry indices */
 } cdf_attr_t;
 
 /* Forward declaration for unified object type */
@@ -101,6 +103,10 @@ void *cdf_group_open(void *obj, const H5VL_loc_params_t *loc_params, const char 
                          hid_t gapl_id, hid_t dxpl_id, void **req);
 herr_t cdf_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t cdf_group_close(void *grp, hid_t dxpl_id, void **req);
+
+/* Link operations */
+herr_t cdf_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                         H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req);
 
 /* Attribute operations */
 void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
