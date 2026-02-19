@@ -197,7 +197,7 @@ main(void)
         }
 
         printf("  Pixels read: %zu\n", npixels);
-        printf("  Min: %u  Max: %u  Mean: %.1f\n", min_val, max_val, sum / npixels);
+        printf("  Min: %u  Max: %u  Mean: %.1f\n", min_val, max_val, sum / (double)npixels);
 
         /* Print first few pixel values as a preview */
         printf("  First 10 values:");

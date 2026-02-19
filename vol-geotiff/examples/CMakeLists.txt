@@ -22,7 +22,12 @@ target_link_libraries(coordinates_demo PRIVATE HDF5::HDF5 Tiff::Tiff GeoTiff::Ge
 
 
 
+# Build the benchmark
+add_executable(benchmark benchmark.c)
+target_include_directories(benchmark PRIVATE "${PROJECT_SOURCE_DIR}/src" ${HDF5_INCLUDE_DIRS})
+target_link_libraries(benchmark PRIVATE HDF5::HDF5 Tiff::Tiff GeoTiff::GeoTiff m)
+
 # Install the example programs
 install(TARGETS gnuplot_demo iterate_and_read_demo metadata_demo
-                coordinates_demo
+                coordinates_demo benchmark
         RUNTIME DESTINATION bin)
