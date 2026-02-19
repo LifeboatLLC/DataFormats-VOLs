@@ -50,6 +50,8 @@ typedef struct grib2_group_t {
     char *name;              /* Group name */
     grib2_message_t *msg;    /* GRIB2 message handle */
     size_t msg_num;          /* GRIB2 message  number*/  
+    size_t num_attrs;        /* The number of non-grid keys in the GRIB2 message */
+    size_t num_grids;        /* The number of grid keys in the GRIB2 message */
 } grib2_group_t;
 
 /* GRIB2 VOL dataset object structure */
@@ -120,6 +122,8 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
                         hid_t aapl_id, hid_t dxpl_id, void **req);
 herr_t grib2_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req);
 herr_t grib2_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
+herr_t grib2_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                             H5VL_attr_specific_args_t *args, hid_t dxpl_id, void **req);
 herr_t grib2_attr_close(void *attr, hid_t dxpl_id, void **req);
 
 /* Link operations */

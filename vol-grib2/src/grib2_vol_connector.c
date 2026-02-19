@@ -72,14 +72,14 @@ static const H5VL_class_t grib2_class_g = {
     },
     {
         /* attribute_cls */
-        NULL,              /* create       */
-        grib2_attr_open,   /* open         */
-        grib2_attr_read,   /* read         */
-        NULL,              /* write        */
-        grib2_attr_get,    /* get          */
-        NULL,              /* specific     */
-        NULL,              /* optional     */
-        grib2_attr_close   /* close        */
+        NULL,                /* create       */
+        grib2_attr_open,     /* open         */
+        grib2_attr_read,     /* read         */
+        NULL,                /* write        */
+        grib2_attr_get,      /* get          */
+        grib2_attr_specific, /* specific     */
+        NULL,                /* optional     */
+        grib2_attr_close     /* close        */
     },
     {
         /* dataset_cls */
@@ -167,7 +167,60 @@ static const H5VL_class_t grib2_class_g = {
     NULL /* optional     */
 };
 
-/* Helper function to get HDF5 memory type from ecCodes type */
+/*
+ * Helper function to check if key exists in a message
+ * The safest and cheapets way is to check type of the key
+ */
+
+int key_exists(codes_handle *h, const char *key)
+{
+    int type = 0;
+    int err = codes_get_native_type(h, key, &type);
+
+    if (err == CODES_SUCCESS)
+        return 1;   /* key exists */
+
+    if (err == CODES_NOT_FOUND)
+        return 0;   /* key does not exist */
+
+    /* Some other error occurred */
+    return -1;
+}
+/*
+ * Helper function to check if the key should be skipped.
+ */
+static int should_skip_key(const char *key)
+{
+    if (!key) return 1;
+
+    /* Field values / masks */
+    if (strcmp(key, "values") == 0) return 1;
+    if (strcmp(key, "codedValues") == 0) return 1;
+    if (strcmp(key, "bitmap") == 0) return 1;
+
+    /* Coordinate “views” (you expose as datasets) */
+    if (strcmp(key, "lon") == 0) return 1;
+    if (strcmp(key, "lat") == 0) return 1;
+    if (strcmp(key, "longitude") == 0) return 1;
+    if (strcmp(key, "latitude") == 0) return 1;
+
+    /* Coordinate arrays (often computed) */
+    if (strcmp(key, "longitudes") == 0) return 1;
+    if (strcmp(key, "latitudes") == 0) return 1;
+    if (strcmp(key, "distinctLongitudes") == 0) return 1;
+    if (strcmp(key, "distinctLatitudes") == 0) return 1;
+
+    /* Per-point iterator keys sometimes appear in some contexts */
+    if (strcmp(key, "i") == 0) return 1;
+    if (strcmp(key, "j") == 0) return 1;
+
+    return 0;
+}
+
+
+/* 
+ * Helper function to get HDF5 memory type from ecCodes type 
+ */
 herr_t grib2_get_hdf5_type(int codes_type, hid_t *type_id, size_t len)
 {
     herr_t ret_value = SUCCEED;
@@ -219,7 +272,10 @@ static char *grib2_strdup(const char *s)
     return p;
 }
 
-/* Helper function to parse the name of the form /message_<N>/key_path" to extract message number and key path */
+/*
+ * Helper function to parse the name of the form /message_<N>/key_path" to extract i
+ * message number and key path 
+ */
 static int parse_message_key_path(const char *name, long *msg_index, const char **key_view)
 {
 //    if (!name || !msg_index || !key_view) return -1;
@@ -717,6 +773,7 @@ void *grib2_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
 
     size_t n = 0;
     codes_handle *h = NULL;
+    codes_keys_iterator *it = NULL;
     grib2_message_t *msg = NULL;
 
     if (!file || !name)
@@ -760,9 +817,34 @@ void *grib2_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     grp = &grp_obj->u.group;
     if ((grp->name = strdup(name)) == NULL)
         FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL, "Failed to duplicate group name string");
+    
+    
+    hsize_t num_attrs = 0;
+    hsize_t num_grids = 0;
+
+    unsigned long flags = 0;
+    flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
+    flags |= CODES_KEYS_ITERATOR_SKIP_DUPLICATES;
+
+    it = codes_keys_iterator_new(h, flags, NULL);
+    if (!it)
+         FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "Cannot get CODES iterator");
+
+    while (codes_keys_iterator_next(it)) {
+        const char *key = codes_keys_iterator_get_name(it);
+        if (!key) continue;
+        if (should_skip_key(key)) { 
+            num_grids++; 
+        } else  {
+           num_attrs++;
+        }
+    }
+    grp_obj->u.group.num_attrs = num_attrs;
+    grp_obj->u.group.num_grids = num_grids;
 
     ret_value = grp_obj;
 done:
+    if (!it) codes_keys_iterator_delete(it);
     if (!ret_value && grp) {
         H5E_BEGIN_TRY
         {
@@ -1619,7 +1701,7 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
      */
     if (grib2_key_type_and_size(parent_obj->u.group.msg->h, key_view, &message_type, &len) != 0) {
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
-                            "Failed to discover datatype and size for the key");
+                            "Failed to discover type or size for the key");
     }
     
     printf("message_type %d \n", message_type);
@@ -1790,6 +1872,177 @@ done:
     return ret_value;
 }
 
+
+/*---------------------------------------------------------------------------
+ * Function:    grib2_attr_specific
+ *
+ * Purpose:     Handles attr-specific operations for the GRIB2 VOL connector
+ *
+ * Return:      SUCCEED/FAIL
+ *
+ * Note:        In GRIB2 file only groups have attributes (these are all keys    
+ *              except lon, lat, values (i.e., non-grid keys) stored in the 
+ *              messages). The number of grid and non-grid keys is determined 
+ *              at group open time.  
+ *---------------------------------------------------------------------------
+ */
+/* cppcheck-suppress constParameterCallback */
+herr_t grib2_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                             H5VL_attr_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                             void __attribute__((unused)) * *req)
+{
+    herr_t ret_value = SUCCEED;
+    const char *attr_name = NULL;
+    grib2_object_t *parent_obj = (grib2_object_t *) obj;
+    codes_handle *h = NULL;
+    codes_keys_iterator *it = NULL;               
+    int codes_err = 0;
+
+
+    if (!obj || !loc_params || !args)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to link_specific");
+
+    /* obj can be only group object*/
+
+    if (parent_obj->obj_type != H5I_GROUP) 
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL,
+                        "Unsupported location parameter type for attribute operation");
+
+    grib2_group_t *group = &parent_obj->u.group;
+    h = group->msg->h; 
+    if (!h) 
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
+                        "Do not have valid CODES handle to proceed with attribute operation");
+
+    switch (args->op_type) {
+        case H5VL_ATTR_EXISTS: {
+            *args->args.exists.exists = false;
+             
+            /* Get the attribute name from loc_params */
+            if (loc_params->type == H5VL_OBJECT_BY_NAME) {
+                attr_name = loc_params->loc_data.loc_by_name.name;
+            } else {
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
+                                "Attribute exists check requires name-based location");
+            }
+
+            if (!attr_name)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "No attribute name provided");
+            codes_err = key_exists(h, attr_name);
+            if (codes_err) { 
+                *args->args.exists.exists = true;
+            } else if (codes_err == -1) {
+              FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
+                                "CODES Function to check key existance failed ");
+            }
+            break;
+        }
+
+
+        case H5VL_ATTR_ITER: {
+
+            H5VL_attr_iterate_args_t *iter_args = &args->args.iterate;
+            size_t num_attrs = group->num_attrs;
+            printf("Here, number of non-grid attributes is %d \n", (int)num_attrs);
+
+            assert(iter_args);
+            assert(iter_args->idx);
+
+            /* Only iterate over all attributes starting from the current index*/
+
+            if (iter_args->op) {
+                unsigned long flags = 0;
+                flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
+                flags |= CODES_KEYS_ITERATOR_SKIP_DUPLICATES;
+
+                codes_keys_iterator *it = codes_keys_iterator_new(h, flags, NULL);
+                if (!it)
+                    FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Cannot get CODES iterator"); 
+
+                hsize_t iter_index = 0;
+                while (codes_keys_iterator_next(it)) {
+
+                    /* Skip the first keys to start from the required location */
+                    if (iter_index < *iter_args->idx) {
+                        iter_index++;
+                        continue;
+                    }
+                    /* Sanity check that we are not going over the number of attributes */
+                    if (iter_index == num_attrs) 
+                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Iteration index is out of bounds");
+
+                    const char *key = codes_keys_iterator_get_name(it);
+
+                    if (!key) continue;
+                    if (should_skip_key(key)) continue;
+
+                    int t = 0;
+                    size_t n = 0;
+                    size_t key_size = 0;
+
+                    /*TODO: have to decide if it is better to use grib2_key_type_and_size helper function
+                     *  or call CODES functions that are easier to understand and report errors.
+                     * if (grib2_key_type_and_size(h, key, &t, &n) !=0) 
+                     *     FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Cannot get key typei or size");
+                     */
+
+                    if (codes_get_native_type(h, key, &t))
+                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Cannot get key type");
+
+                    if (codes_get_size(h, key, &n))
+                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Cannot get key size");
+         
+                    /* Figure out the size of the atribute's raw data */
+                
+                    if (t == CODES_TYPE_LONG)   key_size = n*sizeof(long);
+                    if (t == CODES_TYPE_DOUBLE) key_size = n*sizeof(double); 
+                    if (t == CODES_TYPE_STRING) key_size = n; /* Size includes teminated NULL character */
+                    if (t == CODES_TYPE_BYTES)  key_size = n;
+
+
+                    H5A_info_t attr_info;
+                    herr_t cb_ret;
+
+                    /* Fill in attr info */
+                    memset(&attr_info, 0, sizeof(H5A_info_t));
+                    attr_name = strdup(key);
+                    attr_info.corder_valid = true;
+                    attr_info.corder = (int64_t) iter_index;
+                    attr_info.cset = H5T_CSET_ASCII;
+                    attr_info.data_size = key_size;
+
+                    cb_ret = iter_args->op(0, attr_name, &attr_info, iter_args->op_data);
+
+                    iter_index++;
+                    /* Check callback return value */
+                    if (cb_ret < 0) {
+                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADITER, FAIL,
+                                        "Iterator callback returned error");
+                    } else if (cb_ret > 0) {
+                        /* Callback requested early termination */
+                        ret_value = cb_ret;
+                        goto done;
+                    }
+                }
+            }
+
+            break;
+        }
+
+        case H5VL_ATTR_DELETE:
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL,
+                            "Attribute deletion is not supported in read-only GRIB2 VOL connector");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL, "Unsupported attribute specific operation");
+    }
+
+done:
+    if (!it) codes_keys_iterator_delete(it); 
+    return ret_value;
+}
+
 /*---------------------------------------------------------------------------
  * Function:    grib2_link_specific
  *
@@ -1863,7 +2116,6 @@ herr_t grib2_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
             grib2_object_t *file = (grib2_object_t *) obj;
             H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
             size_t num_groups = file->u.file.nmsgs;
-            printf("Here, number of groups is %d \n", (int)num_groups);
 
             assert(iter_args);
             assert(iter_args->idx_p);
