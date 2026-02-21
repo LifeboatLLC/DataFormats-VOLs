@@ -19,10 +19,16 @@ int main(int argc, char **argv)
     /* Run CDF functionality tests (each test manages its own connector registration) */
     if (run_all || strcmp(test_name, "open_close") == 0)
         num_failures += (OpenCDFTest("example1") != 0 ? 1 : 0);
-    
+
     if (run_all || strcmp(test_name, "links_and_groups") == 0)
         num_failures += (OpenLinksandGroupsTest() != 0 ? 1 : 0);
+        
+    if (run_all || strcmp(test_name, "multi_links_exist") == 0)
+        num_failures += (MultiLinksExistTest() != 0 ? 1 : 0);
 
+    if (run_all || strcmp(test_name, "link_iterate_test") == 0)
+        num_failures += (LinkIterateTest() != 0 ? 1 : 0);
+        
     if (run_all || strcmp(test_name, "read_variable") == 0)
         num_failures += (ReadCDFVariableTest() != 0 ? 1 : 0);
 

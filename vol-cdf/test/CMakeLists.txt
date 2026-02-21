@@ -57,6 +57,12 @@ set_tests_properties(open_close PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 add_test(NAME links_and_groups COMMAND test_runner links_and_groups)
 set_tests_properties(links_and_groups PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
+add_test(NAME multi_links_exist COMMAND test_runner multi_links_exist)
+set_tests_properties(multi_links_exist PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
+add_test(NAME link_iterate_test COMMAND test_runner link_iterate_test)
+set_tests_properties(link_iterate_test PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+
 add_test(NAME read_variable COMMAND test_runner read_variable)
 set_tests_properties(read_variable PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 

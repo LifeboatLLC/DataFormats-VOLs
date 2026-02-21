@@ -95,10 +95,10 @@ error:
     }
     H5E_END_TRY;
     return -1;
-} /* end OpenBasicCDFTest() */
+} /* end OpenCDFTest() */
 
 
-/* Verify that CDF file open/close operations work properly */
+/* Verify that CDF open/close operations work properly with HDF5 links and groups */
 int OpenLinksandGroupsTest(void)
 {
     hid_t vol_id   = H5I_INVALID_HID;
@@ -238,6 +238,256 @@ error:
     printf("FAILED\n");
     return -1;
 } /* end OpenLinksandGroupsTest() */
+
+/* Verify that H5Lexists works for all variables in CDF file */
+int MultiLinksExistTest(void)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    htri_t exists;
+
+    const char *filename = "example2.cdf";
+    const char *var_names[] = {
+        "rVar_char",
+        "rVar_float2x2",
+        "zVar_char",
+        "zVar_epoch16",
+        "zVar_tt2000"
+    };
+
+    size_t num_vars = 5;
+
+    printf("Testing H5Lexists for %zu variables in example2.cdf... \n", num_vars);
+
+/* Add the plugin path so HDF5 can find the connector */
+#ifdef CDF_VOL_PLUGIN_PATH
+    if (H5PLappend(CDF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the CDF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(CDF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open CDF file\n");
+        goto error;
+    }
+
+    /* Check that all 5 variables exist */
+    for (size_t i = 0; i < num_vars; i++) {
+
+        if ((exists = H5Lexists(file_id, var_names[i], H5P_DEFAULT)) < 0) {
+            printf("Failed to check link existence for '%s'\n", var_names[i]);
+            goto error;
+        }
+
+        if (!exists) {
+            printf("VERIFICATION FAILED: Link '%s' should exist but doesn't\n", var_names[i]);
+            goto error;
+        }
+    }
+
+    /* Verify that nonexistant variables don't exist */
+    if ((exists = H5Lexists(file_id, "nonexistant", H5P_DEFAULT)) < 0) {
+        printf("Failed to check link existence for '/message_7'\n");
+        goto error;
+    }
+
+    if (exists) {
+        printf("VERIFICATION FAILED: Link 'nonexistant' should not exist but does\n");
+        goto error;
+    }
+
+    /* Clean up */
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+} /* end MultiLinksExistTest() */
+
+/* Helper function to use as as the callback function for link iteration */
+static herr_t link_iterate_callback(hid_t group, const char *name, const H5L_info2_t *info,
+                                    void *op_data)
+{
+    int *count = (int *) op_data;
+
+    (void) group; /* Unused */
+    (void) info;  /* Unused */
+
+    const char *expected_names[] = {
+        "rVar_char",
+        "rVar_float2x2",
+        "zVar_char",
+        "zVar_epoch16",
+        "zVar_tt2000"
+    };
+    const int expected_count = 5;
+
+    int found = 0;
+    for (int i = 0; i < expected_count; i++) {
+        if (strcmp(name, expected_names[i]) == 0) {
+            printf("Found expected link: %s\n", name);
+            found = 1;
+            break;
+        }
+    }
+
+    if (!found) {
+        printf("VERIFICATION FAILED: link name '%s' shouldn't exist\n", name);
+        return -1;
+    }
+
+    /* Verify link info */
+    if (info->type != H5L_TYPE_HARD) {
+        printf("VERIFICATION FAILED: Expected hard link, got type %d\n", info->type);
+        return -1;
+    }
+
+    (*count)++;
+    return 0;
+}
+
+/* Verify that link iteration works properly */
+int LinkIterateTest(void)
+{
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    int link_count = 0;
+    hsize_t idx = 0;
+
+    const char *filename = "example2.cdf";
+    printf("Testing CDF VOL connector link iteration with file: %s  ", filename);
+
+    /* Add the plugin path so HDF5 can find the connector */
+#ifdef CDF_VOL_PLUGIN_PATH
+    if (H5PLappend(CDF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    /* Register the CDF VOL connector */
+    if ((vol_id = H5VLregister_connector_by_name(CDF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+    
+    /* Create file access property list */
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    /* Set the VOL connector */
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    /* Open the CDF file */
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open CDF file\n");
+        goto error;
+    }
+
+    /* Iterate over links in root group */
+    if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, link_iterate_callback, &link_count) <
+        0) {
+        printf("Failed to iterate over links\n");
+        goto error;
+    }
+
+    /* Verify we found exactly 5 links */
+    if (link_count != 5) {
+        printf("VERIFICATION FAILED: Expected 6 links, found %d\n", link_count);
+        goto error;
+    }
+
+    /* Verify index was updated */
+    if (idx != 5) {
+        printf("VERIFICATION FAILED: Expected index 6 after iteration, got %llu\n",
+               (unsigned long long) idx);
+        goto error;
+    }
+
+    /* Clean up */
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+
+    /* Unregister VOL connector */
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    printf("FAILED\n");
+    return 1;
+}
+
+
 
 /* Test ability to read a simple CDF variable by specifically opening the 
  * 'Image' zVariable from file "example1.cdf" and verify its contents are

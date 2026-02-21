@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
     // Create a different rVariable (float)
     // -----------------------------
     long float_rVar_dimVarys[2] = {VARY, VARY};
-    status = CDFvarCreate(id, "rVar_Float2x2", CDF_FLOAT, 1, VARY, float_rVar_dimVarys, &float_rVar_num);
+    status = CDFvarCreate(id, "rVar_float2x2", CDF_FLOAT, 1, VARY, float_rVar_dimVarys, &float_rVar_num);
     CHECK(status, "CDFcreaterVar failed - rVar_Float");
     
     // -----------------------------

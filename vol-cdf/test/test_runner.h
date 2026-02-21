@@ -6,6 +6,8 @@
 /* CDF functionality tests */
 int OpenCDFTest(const char *filename);
 int OpenLinksandGroupsTest(void);
+int MultiLinksExistTest(void);
+int LinkIterateTest(void);
 int ReadCDFVariableTest(void);
 int DatasetDatatypeConversionTest(void);
 int ReadVariableAttributeTest(void);

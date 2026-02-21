@@ -2367,7 +2367,7 @@ herr_t cdf_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
     cdf_object_t *file_obj = NULL;
     CDFstatus status;
     long num_zVars = 0;
-    char var_name[CDF_VAR_NAME_LEN256];
+    char var_name[CDF_VAR_NAME_LEN256 + 1];
 
     /* object could be file, group, or dataset - we need the file */
     /* For simplicity, try to extract file pointer based on common structure pattern */
