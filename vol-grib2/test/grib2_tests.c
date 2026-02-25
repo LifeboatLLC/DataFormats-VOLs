@@ -23,6 +23,11 @@
 #include <string.h>
 #include <unistd.h>
 
+typedef struct {
+    hid_t id;
+    int   count;
+} iter_info_t;
+
 /* Verify that GRIB2 file open/close operations work properly */
 int OpenGRIB2BasicTest(const char *filename)
 {
@@ -526,19 +531,75 @@ error:
     return 1;
 }
 
+static const char* type_class_name(H5T_class_t c)
+{
+    switch (c) {
+        case H5T_INTEGER:   return "INTEGER";
+        case H5T_FLOAT:     return "FLOAT";
+        case H5T_STRING:    return "STRING";
+        default:            return "OTHER";
+    }
+}
+
+static herr_t attr_iter_cb(hid_t loc_id, const char *attr_name,
+                           const H5A_info_t *ainfo, void *op_data)
+{
+    (void)ainfo;
+    iter_info_t *data = (iter_info_t *)op_data;
+
+    hid_t attr_id = H5Aopen(data->id, attr_name, H5P_DEFAULT);
+    if (attr_id < 0) {
+        fprintf(stderr, "  [attr] Failed to open attribute '%s'\n", attr_name);
+        return 0; /* continue */
+    }
+    
+    data->count++;
+    hid_t type_id = H5Aget_type(attr_id);
+    if (type_id < 0) {
+       fprintf(stderr, "  [attr] Failed to get type for '%s'\n", attr_name);
+        H5Aclose(attr_id);
+        return 0;
+    }
+
+    H5T_class_t tclass = H5Tget_class(type_id);
+    printf("    @%s  (class=%s)\n",
+           attr_name,
+           type_class_name(tclass));
+
+    H5Tclose(type_id);
+    H5Aclose(attr_id);
+    return 0; /* continue iteration */
+}
+
+/* Helper: print all attributes for a group id */
+static void print_group_attrs(hid_t gid)
+{
+    hsize_t idx = 0;
+    
+    iter_info_t data;
+    data.id = gid;
+    data.count = 0;
+    herr_t st = H5Aiterate2(gid, H5_INDEX_NAME, H5_ITER_INC, &idx, attr_iter_cb, &data);
+    if (st < 0) {
+        fprintf(stderr, "    [attr] H5Aiterate2 failed\n");
+    }
+    printf("Number of attributes is %d \n", data.count);
+}
+
 /* Callback for link iteration */
-static herr_t link_iterate_callback(hid_t group, const char *name, const H5L_info2_t *info,
+static herr_t link_iterate_callback(hid_t loc_id, const char *name, const H5L_info2_t *info,
                                     void *op_data)
 {
-    int *count = (int *) op_data;
+    iter_info_t *data = (iter_info_t *)op_data;
 
-    (void) group; /* Unused */
+    hid_t grp_id = H5I_INVALID_HID;
     (void) info;  /* Unused */
 
     int n = 0;
     if (sscanf(name, "message_%d", &n) == 1 &&
         n >= 1 && n <= 6)
     {
+        data->count++;
         printf("Found group (message_%d)\n", n);
     } else {
         printf("VERIFICATION FAILED: link name '%s' shouldn't exit \n", name); 
@@ -551,17 +612,43 @@ static herr_t link_iterate_callback(hid_t group, const char *name, const H5L_inf
         return -1;
     }
 
-    (*count)++;
+    /* TODO: name is expected to start with / ; fix*/
+     /* Build "/name" */
+    size_t len = strlen(name);
+    char *tmp_name = (char *)malloc(len + 2);  /* "/" + name + '\0' */
+    if (!tmp_name) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 0;
+    }
+
+    tmp_name[0] = '/';
+    memcpy(tmp_name + 1, name, len + 1);  /* include '\0' */
+    
+    if ((grp_id = H5Gopen2(data->id, tmp_name, H5P_DEFAULT)) < 0) {
+            fprintf(stderr, "[root] Failed to open group '%s'\n", tmp_name);
+            free(tmp_name);
+            return 0; /* continue */
+    }
+    printf("[group] %s\n", tmp_name);
+    /* Iterate over group's attributes */
+    print_group_attrs(grp_id);
+
+    H5Gclose(grp_id);
+    
+    free(tmp_name);
     return 0;
 }
 
+
 /* Verify that link iteration works properly */
-int LinkIterateTest(const char *filename)
+int LinkAttrIterateTest(const char *filename)
 {
     hid_t vol_id = H5I_INVALID_HID;
     hid_t fapl_id = H5I_INVALID_HID;
     hid_t file_id = H5I_INVALID_HID;
-    int link_count = 0;
+    iter_info_t info;
+    info.id = H5I_INVALID_HID;
+    info.count = 0;
     hsize_t idx = 0;
 
     printf("Testing GRIB2 VOL connector link iteration with file: %s  ", filename);
@@ -599,15 +686,16 @@ int LinkIterateTest(const char *filename)
     }
 
     /* Iterate over links in root group */
-    if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, link_iterate_callback, &link_count) <
+    info.id = file_id;
+    if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, link_iterate_callback, &info) <
         0) {
         printf("Failed to iterate over links\n");
         goto error;
     }
 
     /* Verify we found exactly 6 links */
-    if (link_count != 6) {
-        printf("VERIFICATION FAILED: Expected 6 links, found %d\n", link_count);
+    if (info.count != 6) {
+        printf("VERIFICATION FAILED: Expected 6 links, found %d\n", info.count);
         goto error;
     }
 

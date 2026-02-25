@@ -75,8 +75,8 @@ set_tests_properties(multi_link_exists PROPERTIES
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
     ENVIRONMENT "${TEST_ENVIRONMENT}"
 )
-add_test(NAME link_iterate COMMAND test_runner link_iterate)
-set_tests_properties(link_iterate PROPERTIES
+add_test(NAME link_attr_iterate COMMAND test_runner link_attr_iterate)
+set_tests_properties(link_attr_iterate PROPERTIES
     WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
     ENVIRONMENT "${TEST_ENVIRONMENT}"
 )

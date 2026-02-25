@@ -28,8 +28,8 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "multi_link_exists") == 0)
         num_failures += (MultiLinkExistsTest("example-1.grib2") != 0 ? 1 : 0);
 
-    if (run_all || strcmp(test_name, "link_iterate") == 0)
-        num_failures += (LinkIterateTest("example-1.grib2") != 0 ? 1 : 0);
+    if (run_all || strcmp(test_name, "link_attr_iterate") == 0)
+        num_failures += (LinkAttrIterateTest("example-1.grib2") != 0 ? 1 : 0);
 
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);
