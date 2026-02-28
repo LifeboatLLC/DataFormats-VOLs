@@ -3,7 +3,7 @@
 # ------------------------------------------------------------
 
 # Build the GRIB2 test runner
-add_executable(test_runner test_runner.c grib2_test.c)
+add_executable(test_runner test_runner.c grib2_tests.c)
 
 # Include connector headers from src/ plus HDF5 (via imported target)
 target_include_directories(test_runner
@@ -81,6 +81,11 @@ set_tests_properties(link_attr_iterate PROPERTIES
     ENVIRONMENT "${TEST_ENVIRONMENT}"
 )
 
+add_test(NAME attr_read_test COMMAND test_runner attr_read_test)
+set_tests_properties(attr_read_test PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_runner>"
+    ENVIRONMENT "${TEST_ENVIRONMENT}"
+)
 
 # If you have more test_runner subcommands, add them similarly:
 # add_test(NAME something COMMAND test_runner something)

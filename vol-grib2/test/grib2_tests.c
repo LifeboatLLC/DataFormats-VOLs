@@ -104,15 +104,17 @@ error:
 /* Verify that GRIB2 file, group, dataset, attribute open/read/close operations work properly */
 int OpenGRIB2Test(const char *filename, const char *dsetname)
 {
-    hid_t vol_id   = H5I_INVALID_HID;
-    hid_t fapl_id  = H5I_INVALID_HID;
-    hid_t file_id  = H5I_INVALID_HID;
-    hid_t group_id = H5I_INVALID_HID;
-    hid_t dset_id  = H5I_INVALID_HID;
-    hid_t dapl_id  = H5I_INVALID_HID;
-    hid_t space_id = H5I_INVALID_HID;
-    hid_t type_id  = H5I_INVALID_HID;
-    hid_t attr_id  = H5I_INVALID_HID;
+    hid_t vol_id    = H5I_INVALID_HID;
+    hid_t fapl_id   = H5I_INVALID_HID;
+    hid_t file_id   = H5I_INVALID_HID;
+    hid_t group_id  = H5I_INVALID_HID;
+    hid_t dset_id   = H5I_INVALID_HID;
+    hid_t dapl_id   = H5I_INVALID_HID;
+    hid_t space_id  = H5I_INVALID_HID;
+    hid_t aspace_id = H5I_INVALID_HID;
+    hid_t type_id   = H5I_INVALID_HID;
+    hid_t atype_id  = H5I_INVALID_HID;
+    hid_t attr_id   = H5I_INVALID_HID;
     hsize_t dims[1];
     int ndims;
     double *data = NULL;
@@ -189,6 +191,11 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
         goto error;
     }
 
+    if (H5Tequal(type_id, H5T_NATIVE_DOUBLE) <= 0) {
+        printf("Failed to check datatype of the shapeOfTheEarth attribute\n");
+        goto error;
+    }
+
     data = (double *) malloc(dims[0]);
     if (!data) {
         printf("Failed to allocate read buffer\n");
@@ -209,13 +216,6 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
              printf("%f \n", data[i]);
         }
     }
-#ifdef TODO /* we should test attribute open with file_id and root_group_id when implemented */   
-    /* Get attribute */
-    if ((attr_id = H5Aopen(file_id, "/message_1/masterTablesVersionNumber", H5P_DEFAULT)) < 0) {
-        printf("Failed to open  masterTablesVersionNumber attribute\n");
-        goto error; 
-    }
-#endif
 
     /* Check is the first group exists */
     if ((exists = H5Lexists(file_id, "/message_1", H5P_DEFAULT)) < 0) {
@@ -239,6 +239,28 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
         printf("Failed to open  shapeOfTheEarth attribute\n");
         goto error; 
     }
+    /* Get attribute dataspace */
+    
+    if ((aspace_id = H5Aget_space(attr_id)) < 0) {
+        printf("Failed to get dataspce of the shapeOfTheEarth attribute\n");
+        goto error;
+    }
+    H5S_class_t aspace_class = H5Sget_simple_extent_type(aspace_id);
+    if (aspace_class != H5S_SCALAR) {
+        printf("Wrong class of dataspace of the shapeOfTheEarth attribute detected\n");
+        goto error;
+    }
+
+    /* Get datatype */
+    if ((atype_id = H5Aget_type(attr_id)) < 0) { 
+        printf("Failed to get attribute datatype\n");
+        goto error;
+    }
+
+    if (H5Tequal(atype_id, H5T_NATIVE_LONG) <= 0) {
+        printf("Failed to check datatype of the shapeOfTheEarth attribute\n");
+        goto error;
+    }
 
     if (H5Aread(attr_id, H5T_NATIVE_LONG, &shape) < 0) {
         printf("Failed to read attribute\n");
@@ -250,20 +272,29 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
         }
     }
     
-    /* Close the GRIB2 attribute and dataset */
+    /* Close the GRIB2 attribute, dataset and group*/
     free(data);
+    if (H5Sclose(aspace_id) < 0) {
+        printf("Failed to close attr dataspace\n");
+        goto error;
+    }
+    aspace_id = H5I_INVALID_HID;
+    if (H5Tclose(atype_id) < 0) {
+        printf("Failed to close attribute datatype\n");
+        goto error;
+    }
+    atype_id = H5I_INVALID_HID;
     if (H5Aclose(attr_id) < 0) {
         printf("Failed to close attr\n");
         goto error;
     }
     attr_id = H5I_INVALID_HID;
+
     if (H5Tclose(type_id) < 0) {
         printf("Failed to close datatype\n");
         goto error;
     }
     type_id = H5I_INVALID_HID;
-
-
     if (H5Sclose(space_id) < 0) {
         printf("Failed to close dataspace\n");
         goto error;
@@ -308,6 +339,7 @@ error:
     {
         H5Pclose(fapl_id);
         H5Pclose(dapl_id);
+        H5Pclose(aspace_id);
         H5Aclose(attr_id);
         H5Dclose(dset_id);
         H5Gclose(group_id);
@@ -740,3 +772,287 @@ error:
     return 1;
 }
 
+typedef enum {
+    ATTRK_DOUBLE_SCALAR,
+    ATTRK_LONG_SCALAR,
+    ATTRK_FIXED_STRING
+} attr_kind_t;
+
+typedef struct attr_spec_t {
+    const char  *name;
+    attr_kind_t  kind;
+
+    /* for numeric */
+    double expected_double;
+    long   expected_long;
+    double epsilon; /* used for double */
+
+    /* for fixed string */
+    const char *expected_str;
+    size_t      expected_len; /* fixed string length in file */
+} attr_spec_t;
+
+static int
+read_verify_attr(hid_t obj_id, const attr_spec_t *spec)
+{
+    hid_t  attr_id = H5I_INVALID_HID;
+    hid_t  file_type = H5I_INVALID_HID;
+    hid_t  mem_type  = H5I_INVALID_HID;
+    hid_t  exp_type  = H5I_INVALID_HID;
+    hsize_t storage  = 0;
+
+    void  *buf = NULL;
+    int    ret = -1;
+
+    if (!spec || !spec->name)
+        goto done;
+
+    if ((attr_id = H5Aopen(obj_id, spec->name, H5P_DEFAULT)) < 0) {
+        printf("Failed to open attribute '%s'\n", spec->name);
+        goto done;
+    }
+
+    if ((file_type = H5Aget_type(attr_id)) < 0) {
+        printf("Failed to get datatype for attribute '%s'\n", spec->name);
+        goto done;
+    }
+
+    storage = (hsize_t)H5Aget_storage_size(attr_id);
+    if (storage == 0) {
+        printf("Attribute '%s' has zero storage size\n", spec->name);
+        goto done;
+    }
+
+    switch (spec->kind) {
+        case ATTRK_DOUBLE_SCALAR: {
+            if (H5Tequal(file_type, H5T_NATIVE_DOUBLE) <= 0) {
+                printf("Attribute '%s': expected H5T_NATIVE_DOUBLE\n", spec->name);
+                goto done;
+            }
+            if (storage != sizeof(double)) {
+                printf("Attribute '%s': expected storage %zu, got %llu\n",
+                       spec->name, sizeof(double), (unsigned long long)storage);
+                goto done;
+            }
+
+            mem_type = H5T_NATIVE_DOUBLE;
+
+            buf = malloc((size_t)storage);
+            if (!buf) {
+                printf("Out of memory reading attribute '%s'\n", spec->name);
+                goto done;
+            }
+
+            if (H5Aread(attr_id, mem_type, buf) < 0) {
+                printf("Failed to read attribute '%s'\n", spec->name);
+                goto done;
+            }
+
+            {
+                double got = ((double *)buf)[0];
+                double eps = (spec->epsilon > 0.0) ? spec->epsilon : 1e-12;
+                if (fabs(got - spec->expected_double) > eps) {
+                    printf("VERIFICATION FAILED '%s': expected %.17g, got %.17g\n",
+                           spec->name, spec->expected_double, got);
+                    goto done;
+                }
+            }
+        } break;
+
+        case ATTRK_LONG_SCALAR: {
+            if (H5Tequal(file_type, H5T_NATIVE_LONG) <= 0) {
+                printf("Attribute '%s': expected H5T_NATIVE_LONG\n", spec->name);
+                goto done;
+            }
+            if (storage != sizeof(long)) {
+                printf("Attribute '%s': expected storage %zu, got %llu\n",
+                       spec->name, sizeof(long), (unsigned long long)storage);
+                goto done;
+            }
+
+            mem_type = H5T_NATIVE_LONG;
+
+            buf = malloc((size_t)storage);
+            if (!buf) {
+                printf("Out of memory reading attribute '%s'\n", spec->name);
+                goto done;
+            }
+
+            if (H5Aread(attr_id, mem_type, buf) < 0) {
+                printf("Failed to read attribute '%s'\n", spec->name);
+                goto done;
+            }
+
+            {
+                long got = ((long *)buf)[0];
+                if (got != spec->expected_long) {
+                    printf("VERIFICATION FAILED '%s': expected %ld, got %ld\n",
+                           spec->name, spec->expected_long, got);
+                    goto done;
+                }
+            }
+        } break;
+
+        case ATTRK_FIXED_STRING: {
+            /* Build the expected fixed-length string type */
+            exp_type = H5Tcopy(H5T_C_S1);
+            if (exp_type < 0)
+                goto done;
+
+            if (H5Tset_size(exp_type, spec->expected_len) < 0)
+                goto done;
+
+            if (H5Tset_strpad(exp_type, H5T_STR_NULLTERM) < 0)
+                goto done;
+
+            if (H5Tequal(file_type, exp_type) <= 0) {
+                printf("Attribute '%s': expected fixed string len=%zu (nullterm)\n",
+                       spec->name, spec->expected_len);
+                goto done;
+            }
+
+            if (storage != spec->expected_len) {
+                printf("Attribute '%s': expected storage %zu, got %llu\n",
+                       spec->name, spec->expected_len, (unsigned long long)storage);
+                goto done;
+            }
+
+            /* Read into a buffer with room for a forced terminator */
+            buf = calloc((size_t)storage, 1);
+            if (!buf) {
+                printf("Out of memory reading attribute '%s'\n", spec->name);
+                goto done;
+            }
+
+            /* For fixed strings, reading with file_type is fine */
+            if (H5Aread(attr_id, file_type, buf) < 0) {
+                printf("Failed to read attribute '%s'\n", spec->name);
+                goto done;
+            }
+            ((char *)buf)[storage] = '\0';
+
+            if (strcmp((const char *)buf, spec->expected_str) != 0) {
+                printf("VERIFICATION FAILED '%s': expected '%s', got '%s'\n",
+                       spec->name, spec->expected_str, (const char *)buf);
+                goto done;
+            }
+        } break;
+
+        default:
+            printf("Attribute '%s': unknown spec kind\n", spec->name);
+            goto done;
+    }
+
+    ret = 0;
+
+done:
+    if (buf)
+        free(buf);
+
+    if (exp_type != H5I_INVALID_HID)
+        H5Tclose(exp_type);
+
+    if (file_type != H5I_INVALID_HID)
+        H5Tclose(file_type);
+
+    if (attr_id != H5I_INVALID_HID)
+        H5Aclose(attr_id);
+
+    return ret;
+}
+
+/* Verify that GRIB2 attribute operations work properly */
+int
+AttrGRIB2Test(const char *filename)
+{
+    hid_t vol_id   = H5I_INVALID_HID;
+    hid_t fapl_id  = H5I_INVALID_HID;
+    hid_t file_id  = H5I_INVALID_HID;
+    hid_t group_id = H5I_INVALID_HID;
+
+    int rc = -1;
+
+    printf("Testing GRIB2 VOL attributes of different datatypes...\n");
+
+#ifdef GRIB2_VOL_PLUGIN_PATH
+    if (H5PLappend(GRIB2_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(GRIB2_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open GRIB2 file\n");
+        goto error;
+    }
+
+    if ((group_id = H5Gopen2(file_id, "/message_6", H5P_DEFAULT)) < 0) {
+        printf("Failed to open group '/message_6'\n");
+        goto error;
+    }
+
+    /* Attribute checks live in a single table */
+    {
+        const attr_spec_t specs[] = {
+            {
+                .name = "maximum",
+                .kind = ATTRK_DOUBLE_SCALAR,
+                .expected_double = 19.7,
+                .epsilon = 1e-5
+            },
+            {
+                .name = "forecastTime",
+                .kind = ATTRK_LONG_SCALAR,
+                .expected_long = 3
+            },
+            {
+                .name = "parameterName",
+                .kind = ATTRK_FIXED_STRING,
+                .expected_str = "v-component of wind",
+                .expected_len = 20 
+            }
+        };
+
+        size_t i;
+        int err;
+        for (i = 0; i < (sizeof(specs) / sizeof(specs[0])); i++) {
+            err = read_verify_attr(group_id, &specs[i]); 
+            if (err < 0)
+                goto error;
+        }
+    }
+
+    printf("PASSED\n");
+    rc = 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        if (group_id != H5I_INVALID_HID)
+            H5Gclose(group_id);
+        if (file_id != H5I_INVALID_HID)
+            H5Fclose(file_id);
+        if (fapl_id != H5I_INVALID_HID)
+            H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+
+    return rc;
+}

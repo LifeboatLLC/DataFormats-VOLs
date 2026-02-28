@@ -213,6 +213,7 @@ static int should_skip_key(const char *key)
     /* Per-point iterator keys sometimes appear in some contexts */
     if (strcmp(key, "i") == 0) return 1;
     if (strcmp(key, "j") == 0) return 1;
+    
 
     return 0;
 }
@@ -252,11 +253,6 @@ grib2_get_hdf5_type(int codes_type, hid_t *type_id, size_t len)
             if (new_type == H5I_INVALID_HID)
                 FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTCOPY, FAIL,
                                 "Failed to copy H5T_C_S1");
-
-            if (H5Tset_size(new_type, sz) < 0)
-                FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTSET, FAIL,
-                                "Failed to set string size");
-
             H5Tset_strpad(new_type, H5T_STR_NULLTERM);
             break;
         }
@@ -377,6 +373,11 @@ grib2_get_key_info(codes_handle *h, const char *key, grib2_key_info_t *info)
     if (!h || !key || !info)
         return CODES_INVALID_ARGUMENT;
 
+    info->native_type = CODES_TYPE_UNDEFINED;
+    info->nelems      = 0;
+    info->str_len     = 0;
+
+
     /* Optional: verify key exists (avoids confusing downstream errors) */
     if (!codes_is_defined(h, key))
         return CODES_NOT_FOUND;
@@ -385,6 +386,10 @@ grib2_get_key_info(codes_handle *h, const char *key, grib2_key_info_t *info)
     err = codes_get_native_type(h, key, &type);
     if (err != CODES_SUCCESS)
         return err;
+
+    if (type < CODES_TYPE_UNDEFINED || type > CODES_TYPE_BYTES) {
+        return CODES_INTERNAL_ERROR; /* or your own error */
+    }
 
     /* Size (#elements). For BYTES, treat as byte count. */
     err = codes_get_size(h, key, &n);
@@ -415,7 +420,7 @@ grib2_get_key_info(codes_handle *h, const char *key, grib2_key_info_t *info)
 
         info->str_len = needed;
     }
-
+//EP    printf("grib2_get_key_info type = %d \n", type);
     return CODES_SUCCESS;
 }
 
@@ -901,7 +906,8 @@ void *grib2_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     hsize_t num_grids = 0;
 
     unsigned long flags = 0;
-    flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
+    /* EP: we need to pass the flags through environement variable?*/
+//    flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
     flags |= CODES_KEYS_ITERATOR_SKIP_DUPLICATES;
 //    flags |= CODES_KEYS_ITERATOR_SKIP_READ_ONLY;
 
@@ -911,10 +917,14 @@ void *grib2_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
 
     while (codes_keys_iterator_next(it)) {
         const char *key = codes_keys_iterator_get_name(it);
+        int local_type = -1;
+        codes_get_native_type(h, key, &local_type);
         if (!key) continue;
         if (should_skip_key(key)) { 
             num_grids++; 
-        } else  {
+        } else if ((local_type == CODES_TYPE_LABEL) || (local_type == CODES_TYPE_MISSING)) {
+                   continue; 
+        } else { 
            num_attrs++;
         }
     }
@@ -1598,100 +1608,6 @@ static bool reject_key(const char *key) {
 
 
 /* Helper functionto read GRIB2 data into attr->data and set attr->data_size */ 
-#ifdef EIP 
-static herr_t grib2_read_attr_data(grib2_attr_t *attr)
-{
-    herr_t ret_value = SUCCEED;
-    int err;
-    char *buf_c = NULL;
-    char *buf_l = NULL;
-    char *buf_d = NULL;
-
-    assert(attr);
-    assert(attr->msg);
-    assert(attr->msg->h);
-    assert(attr->nvals);
-    assert(attr->data_size);
-
-    codes_handle *h = attr->msg->h;
-    const char *key = attr->name;
-
-    printf (" Attribute name, nvals and storage size are %s  %d %d \n", attr->name, (int)attr->nvals, (int)attr->data_size);
-
-    /* -----------------------------
-     * STRING (VL)
-     * ----------------------------- */
-    if (attr->codes_type == CODES_TYPE_STRING) {
-
-        size_t len = attr->data_size;
-
-        char *buf_c = (char *)malloc(len*sizeof(char));
-        if (!buf_c)
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, FAIL, "Failed to allocate buffer for a key string");
-        if ((err = codes_get_string(h, key, buf_c, &len)) != 0)
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to read key string");
-        
-        attr->data = (char *)malloc(len*sizeof(char));
-        memcpy(attr->data, buf_c, attr->data_size);
-        FUNC_GOTO_DONE(SUCCEED);
-   }
-
-    /* -----------------------------
-     * NUMERIC (LONG / DOUBLE)
-     * ----------------------------- */
-
-    if (attr->codes_type == CODES_TYPE_LONG) {
-        long *buf_l = (long *)malloc((attr->nvals)*sizeof(long));
-        if (!buf_l)
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, FAIL, 
-                                     "Failed to allocate buffer for long attribute value");
-        if (attr->nvals == 1) {
-            if((err = codes_get_long(h, key, buf_l)) !=0)
-                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, 
-                                         "Failed to get long attribute value");
-        }
-        else {
-            if ((err = codes_get_long_array(h, key, buf_l, &attr->nvals)) !=0 ) 
-                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to get long attribute value");
-            
-        }
-        attr->data = (long*)malloc((attr->nvals)*sizeof(long)); 
-        memcpy(attr->data, buf_l, attr->data_size);
-        FUNC_GOTO_DONE(SUCCEED);
-    }
-
-    if (attr->codes_type == CODES_TYPE_DOUBLE) {
-        double *buf_d = (double *)malloc((attr->nvals)*sizeof(double));
-        if (!buf_d)
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, FAIL, "Failed to allocate buffer for double attribute value");
-
-        if (attr->nvals == 1) {
-            if ((err = codes_get_double(h, key, buf_d) !=0))
-                 FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to get double values");
-        }
-        else {
-            if ((err = codes_get_double_array(h, key, buf_d, &attr->nvals)) !=0 ) 
-                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to get long attribute value");
-
-        }
-        attr->data = (double*)malloc((attr->nvals)*sizeof(double)); 
-        memcpy(attr->data, buf_d, attr->data_size);
-        FUNC_GOTO_DONE(SUCCEED);
-    }
-
-    /* Unsupported type */
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "Discovered unknown datatype");
-done:
-    if (buf_c)
-        free(buf_c);
-    if (buf_l)
-        free(buf_l);
-    if (buf_d)
-        free(buf_d);
-    return ret_value;
-}
-#endif /*EP*/
-
 static herr_t grib2_read_attr_data(grib2_attr_t *attr)
 {
     herr_t ret_value = SUCCEED;
@@ -1721,7 +1637,7 @@ static herr_t grib2_read_attr_data(grib2_attr_t *attr)
         if (err != CODES_SUCCESS)
             FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "codes_get_length failed for string key");
 
-        tmp = malloc(len);
+        tmp = (char *)malloc(len);
         if (!tmp)
             FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, FAIL, "Failed to allocate buffer for string key");
 
@@ -1939,9 +1855,9 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
      */
     if (grib2_get_key_info(parent_obj->u.group.msg->h, key_view, &ki) != 0) {
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
-                           // "Failed to discover type or size for the key");
                             "Failed to discover key info");
     }
+    //printf("Here in attr_open name = %s nvals = %zu native_type = %d\n", key_view, ki.nelems, ki.native_type);
     message_type = ki.native_type;
     if (message_type == CODES_TYPE_UNDEFINED) 
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
@@ -1978,7 +1894,12 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
     /* Cache the key data */
     if (grib2_read_attr_data(attr) !=0)
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, NULL, "Failed to read data for the key");    
-
+    /* By now we know actual size of the string that ECCODES will read , set appropriate fixed string length */
+    if (message_type == CODES_TYPE_STRING) {
+        if (H5Tset_size(attr->type_id, attr->data_size) < 0)
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
+                            "Failed to set size for string attribute");
+    }
    ret_value = attr_obj;
 
 done:
@@ -2029,15 +1950,15 @@ herr_t grib2_attr_close(void *attr, hid_t dxpl_id, void **req)
                                 "Failed to close attribute datatype");
         /* TODO: We cannot delete it handle like below, since it will cause issues when closeing the group.
            Delete GRIB2 message handle and free message object */
-/*        if (a->msg) {
+        if (a->msg) {
             if (a->msg->h) {
-                codes_handle_delete(a->msg->h);
+//EP                codes_handle_delete(a->msg->h);
                 a->msg->h = NULL;
             }
             free(a->msg);
             a->msg = NULL;
         }
-*/
+
 
         /* Close parent object (dataset, group, or file) */
         parent_obj = (grib2_object_t *) a->parent;
@@ -2116,6 +2037,9 @@ herr_t grib2_attr_get(void *obj, H5VL_attr_get_args_t *args,
         case H5VL_ATTR_GET_TYPE:
             if ((args->args.get_type.type_id = H5Tcopy(a->type_id)) < 0)
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, FAIL, "Failed to copy attribute datatype");
+            break;
+        case H5VL_ATTR_GET_STORAGE_SIZE:
+            *args->args.get_storage_size.data_size = (hsize_t)a->data_size;
             break;
         default:
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL, "Unsupported attribute get operation");
@@ -2207,9 +2131,10 @@ herr_t grib2_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
             if (iter_args->op) {
                 unsigned long flags = 0;
-                /* choose flags as you like */
+                /* EP: we need to pass the flags through environement variable?*/
                 flags |= CODES_KEYS_ITERATOR_SKIP_DUPLICATES;
-                flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
+//              flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
+//              flags |= CODES_KEYS_ITERATOR_SKIP_READ_ONLY;
 
                 /* Pin objects across callback re-entrancy */
                 parent_obj->ref_count++;
@@ -2247,6 +2172,11 @@ herr_t grib2_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
                     if (should_skip_key(key))
                         continue;
 
+                     int local_type = -1; 
+                     codes_get_native_type(h, key, &local_type);
+                     if ((local_type == CODES_TYPE_LABEL) || (local_type == CODES_TYPE_MISSING))
+                        continue; 
+
                     /* grow temp array if needed */
                     if (keys_count == keys_cap) {
                         size_t new_cap = keys_cap * 2;
@@ -2268,14 +2198,15 @@ herr_t grib2_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
                     keys_count++;
                     iter_index++;
                 }
+                //codes_keys_iterator_delete(it); 
 
+//EP                    for (hsize_t i = 0; i < keys_count; i++) {
+//                        printf ("From attr_specific i = %lld, name = %s \n", i , keys_tmp[i]); 
+//                    }
 
                     for (hsize_t i = 0; i < keys_count; i++) {
 
-                        //int t = 0;
-                        //size_t n = 0;
                         size_t key_size = 0;
-
                         if (grib2_get_key_info(h, keys_tmp[i], &ki) != 0)
                             FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Cannot get key info");
 
