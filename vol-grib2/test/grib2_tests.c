@@ -35,7 +35,7 @@ int OpenGRIB2BasicTest(const char *filename)
     hid_t fapl_id = H5I_INVALID_HID;
     hid_t file_id = H5I_INVALID_HID;
 
-    printf("Testing GRIB2 VOL connector open/close with file");
+    printf("Testing GRIB2 VOL connector open/close with file \n");
 
     /* Add the plugin path so HDF5 can find the connector */
 #ifdef GRIB2_VOL_PLUGIN_PATH
@@ -118,10 +118,13 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
     hsize_t dims[1];
     int ndims;
     double *data = NULL;
+    double exp_data[12] = {5.300000, 6.300000, 7.300000, 8.300000, 15.300000, 16.300000, 
+                           17.300000, 18.300000, 25.300000, 26.300000, 27.300000, 28.300000};
+    double epsilon = 1e-6;
     long shape = -1;
     htri_t exists;
 
-    printf("Testing GRIB2 VOL connector open/read/close with grouop, dataset and attribute");
+    printf("Testing GRIB2 VOL connector open/read/close with grouop, dataset and attribute \n");
 
     /* Add the plugin path so HDF5 can find the connector */
 #ifdef GRIB2_VOL_PLUGIN_PATH
@@ -211,14 +214,22 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
             printf("\n");
             goto error;
         }
-        printf("\n");
         for (int i = 0; i < dims[0]; i++) {
-             printf("%f \n", data[i]);
+            if (fabs(data[i] - exp_data[i]) > epsilon) { 
+                printf("VERIFICATION FAILED: Expected value %f, got %f  at position %d\n", exp_data[i], data[i], i);
+                printf("\n");
+                goto error;
+            }
         }
     }
 
     /* Check is the first group exists */
     if ((exists = H5Lexists(file_id, "/message_1", H5P_DEFAULT)) < 0) {
+        printf("Failed to check link existence for '/message_1'\n");
+        goto error;
+    }
+    /* Check is the first group exists */
+    if ((exists = H5Lexists(file_id, "message_1", H5P_DEFAULT)) < 0) {
         printf("Failed to check link existence for '/message_1'\n");
         goto error;
     }
@@ -230,7 +241,7 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
     } 
     /* Check is the dataset 'values' exists */
     if ((exists = H5Lexists(group_id, "values", H5P_DEFAULT)) < 0) {
-        printf("Failed to check link existence for '/message_1'\n");
+        printf("Failed to check link existence for 'values'\n");
         goto error;
     }
   
@@ -261,13 +272,11 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
         printf("Failed to check datatype of the shapeOfTheEarth attribute\n");
         goto error;
     }
-
     if (H5Aread(attr_id, H5T_NATIVE_LONG, &shape) < 0) {
-        printf("Failed to read attribute\n");
         goto error;
     } else {
         if (shape != 6) {
-            printf("VERIFICATION FAILED: Expected  shapeOfTheEarth attribute value is 13 but got %ld \n", shape);
+            printf("VERIFICATION FAILED: Expected  shapeOfTheEarth attribute value is 6 but got %ld \n", shape);
             goto error;
         }
     }
@@ -359,7 +368,7 @@ int LinkExistsTest(const char *filename)
     hid_t file_id = H5I_INVALID_HID;
     htri_t exists;
 
-    printf("Testing GRIB2 VOL connector link exists with file: %s  ", filename);
+    printf("Testing GRIB2 VOL connector link exists with file: %s \n ", filename);
 
     /* Add the plugin path so HDF5 can find the connector */
 #ifdef GRIB2_VOL_PLUGIN_PATH
@@ -459,7 +468,7 @@ int MultiLinkExistsTest(const char *filename)
     hid_t file_id = H5I_INVALID_HID;
     htri_t exists;
 
-    printf("Testing H5Lexists for /message_1 ... /message_6  ");
+    printf("Testing H5Lexists for /message_1 ... /message_6 or message_1 ... message_6 \n  ");
 
 
     /* Register the GRIB2 VOL connector */
@@ -493,8 +502,23 @@ int MultiLinkExistsTest(const char *filename)
     /* Check that all 6 messages exist */
     /* TODO: We should also allow to omit leading / */
     for (uint32_t i = 0; i < NUM_MESSAGES; i++) {
+        char link_name_long[32];
+        snprintf(link_name_long, sizeof(link_name_long), "/message_%u", i+1);
+
+        if ((exists = H5Lexists(file_id, link_name_long, H5P_DEFAULT)) < 0) {
+            printf("Failed to check link existence for '%s'\n", link_name_long);
+            goto error;
+        }
+
+        if (!exists) {
+            printf("VERIFICATION FAILED: Link '%s' should exist but doesn't\n", link_name_long);
+            goto error;
+        }
+    }
+
+    for (uint32_t i = 0; i < NUM_MESSAGES; i++) {
         char link_name[32];
-        snprintf(link_name, sizeof(link_name), "/message_%u", i+1);
+        snprintf(link_name, sizeof(link_name), "message_%u", i+1);
 
         if ((exists = H5Lexists(file_id, link_name, H5P_DEFAULT)) < 0) {
             printf("Failed to check link existence for '%s'\n", link_name);
@@ -683,7 +707,7 @@ int LinkAttrIterateTest(const char *filename)
     info.count = 0;
     hsize_t idx = 0;
 
-    printf("Testing GRIB2 VOL connector link iteration with file: %s  ", filename);
+    printf("Testing GRIB2 VOL connector link iteration with file: %s \n ", filename);
 
     /* Add the plugin path so HDF5 can find the connector */
 #ifdef GRIB2_VOL_PLUGIN_PATH

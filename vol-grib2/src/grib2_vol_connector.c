@@ -24,6 +24,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <errno.h>
 
 #ifdef _MSC_VER
 #ifndef strdup
@@ -279,12 +280,23 @@ done:
 
 
 /*
- * Helper function to parse the name of the form /message_<N>/key_path" to extract i
- * message number and key path 
+ * Helper function to parse paths to groups or datasets 
+ *
+ * Parse names of the forms:
+ *   "/message_<N>"
+ *   "message_<N>"
+ *   "/message_<N>/<key_path>"
+ *   "message_<N>/<key_path>"
+ *
+ * Extracts:
+ *   - msg_index = N
+ *   - key_view  = pointer to key_path within 'name', or NULL if no key_path
+ *
+ * Returns 0 on success, negative on error.
  */
-static int parse_message_key_path(const char *name, long *msg_index, const char **key_view)
+static int
+parse_message_key_path(const char *name, long *msg_index, const char **key_view)
 {
-//    if (!name || !msg_index || !key_view) return -1;
     assert(name);
     assert(msg_index);
     assert(key_view);
@@ -296,30 +308,37 @@ static int parse_message_key_path(const char *name, long *msg_index, const char 
 
     /* Expect "message_" prefix */
     static const char prefix[] = "message_";
-    size_t prefix_len = sizeof(prefix) - 1;
+    const size_t prefix_len = sizeof(prefix) - 1;
 
-    if (strncmp(p, prefix, prefix_len) != 0) {
+    if (strncmp(p, prefix, prefix_len) != 0)
         return -2; /* bad prefix */
-    }
+
     p += prefix_len;
 
     /* Parse <N> */
-    int errno = 0;
+    errno = 0;
     char *end = NULL;
     long n = strtol(p, &end, 10);
-    if (errno != 0 || end == p || n <= 0) {
+
+    if (errno != 0 || end == p || n <= 0)
         return -3; /* invalid number */
-    }
 
-    /* Expect '/' after the number */
-    if (*end != '/') {
-        return -4; /* missing key separator */
-    }
-    end++; /* move past '/' */
-
+    /* Allow end-of-string or '/' after N */
     if (*end == '\0') {
-        return -5; /* empty key */
+        *msg_index = n;
+        *key_view  = NULL; /* no key path */
+        return 0;
     }
+
+    if (*end != '/')
+        return -4; /* unexpected char after number (not '/' or '\0') */
+
+    /* Move past '/', allow additional slashes, but require a non-empty key */
+    end++;
+    while (*end == '/') end++;
+
+    if (*end == '\0')
+        return -5; /* empty key path */
 
     *msg_index = n;
     *key_view  = end;
@@ -420,7 +439,6 @@ grib2_get_key_info(codes_handle *h, const char *key, grib2_key_info_t *info)
 
         info->str_len = needed;
     }
-//EP    printf("grib2_get_key_info type = %d \n", type);
     return CODES_SUCCESS;
 }
 
@@ -804,20 +822,37 @@ done:
     return ret_value;
 }
 
-
-/* Helper function to check valid group names 
- * Returns 1 if name is exactly "/message_<N>" where 1 <= N <= K
- * Returns 0 otherwise
+/*
+ * Helper function to check valid group names
+ *
+ * Accepts:
+ *    "/message_<N>"
+ *    "message_<N>"
+ *    "//message_<N>"   (also allowed)
+ *
+ * Returns:
+ *    N  if valid and 1 <= N <= K
+ *    0  otherwise
  */
-static size_t is_group_name(const char* s, size_t K)
+static size_t
+is_group_name(const char* s, size_t K)
 {
     if (!s) return 0;
 
-    /* Must start with "/message_" */
-    if (strncmp(s, "/message_", 9) != 0)
+    const char *p = s;
+
+    /* Skip optional leading slashes */
+    while (*p == '/')
+        p++;
+
+    /* Must start with "message_" */
+    static const char prefix[] = "message_";
+    const size_t prefix_len = sizeof(prefix) - 1;
+
+    if (strncmp(p, prefix, prefix_len) != 0)
         return 0;
 
-    const char* p = s + 9;
+    p += prefix_len;
 
     /* Must have at least one digit */
     if (!isdigit((unsigned char)*p))
@@ -827,19 +862,21 @@ static size_t is_group_name(const char* s, size_t K)
     size_t n = 0;
     while (isdigit((unsigned char)*p)) {
         n = n * 10 + (*p - '0');
-        if (n > K)      /* early stop if out of range */
+
+        if (n > K)  /* early stop if out of range */
             return 0;
+
         p++;
     }
 
-    /* Must end exactly after the digits */
+    /* Must end exactly after digits */
     if (*p != '\0')
         return 0;
 
-    /* Check bounds */
-    if (n < 1 || n > K) return 0;
- 
-    /* Return message number */
+    /* Final bounds check */
+    if (n < 1 || n > K)
+        return 0;
+
     return n;
 }
 
@@ -862,15 +899,14 @@ void *grib2_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     if (!file || !name)
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or group name");
 
-    /* Check for valid group name; it can be '/' or '/message_<N>', where N is between
+    /* Check for valid group name; it can be 'message_<N>' or '/message_<N>', where N is between
        1 and number of messages in the GRIB2 file stored in file->nmsgs.
      */ 
 
     n = is_group_name(name, file->u.file.nmsgs);
-/*    if ((strcmp(name, "/") != 0) || (n == 0))
+    if (n == 0)
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_UNSUPPORTED, NULL,
-                        "GRIB2 VOL connector only supports root group '/' or group with the name '/message_<N>'");
-*/
+                        "Invalid group name");
     if ((grp_obj = (grib2_object_t *) calloc(1, sizeof(grib2_object_t))) == NULL)
         FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL,
                         "Failed to allocate memory for GRIB2 group struct");
@@ -906,10 +942,12 @@ void *grib2_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     hsize_t num_grids = 0;
 
     unsigned long flags = 0;
-    /* EP: we need to pass the flags through environement variable?*/
-//    flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
+    /* TODO: we should allow to overwrite the flags using environement variable or vol info */
     flags |= CODES_KEYS_ITERATOR_SKIP_DUPLICATES;
-//    flags |= CODES_KEYS_ITERATOR_SKIP_READ_ONLY;
+    /*
+      flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
+      flags |= CODES_KEYS_ITERATOR_SKIP_READ_ONLY;
+    */
 
     it = codes_keys_iterator_new(h, flags, NULL);
     if (!it)
@@ -967,8 +1005,8 @@ herr_t grib2_group_get(void *obj, H5VL_group_get_args_t *args,
 
             /* Fill in group info structure */
             ginfo->storage_type = H5G_STORAGE_TYPE_COMPACT;
-            ginfo->nlinks = 3; /*TODO: if product is present then we have 3 datasets; need add code to deal with multiple products in the message */
-
+            ginfo->nlinks = 3; /*TODO: if product is present then we have 3 datasets; 
+                                 need add code to deal with multiple products in the message */
             break;
         }
 
@@ -1058,11 +1096,12 @@ void *grib2_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unuse
                            void __attribute__((unused)) * *req)
 {
     grib2_object_t *file_obj = (grib2_object_t *) obj;
+    grib2_object_t *o = (grib2_object_t *) obj;
     grib2_object_t *dset_obj = NULL;
     grib2_object_t *ret_value = NULL;
 
     grib2_dataset_t *dset = NULL;           /* Convenience pointer */
-    grib2_file_t *file = &file_obj->u.file; /* Convenience pointer */    
+    grib2_file_t *file = &file_obj->u.file; /* Convenience pointer */
 
     int parse_return = -1;
     hsize_t dims[1] = {0};    /* GRIB2 datasets are always read as 1-dim datasets */
@@ -1075,56 +1114,64 @@ void *grib2_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unuse
     size_t len = 0;
     size_t string_len = 0;
 
+    if (!o) 
+       FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL, "Invalid GRIB2 object identifier");
 
-    /* Parse "/message_<N>/<key>" */
-    parse_return = parse_message_key_path(name, &msg_index, &key_view); 
+    if ((o->obj_type != H5I_FILE) && (o->obj_type != H5I_GROUP)) 
+       FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL, "Invalid GRIB2 object identifieri, should be file or group");
 
-    if (!file_obj || (parse_return != 0)) {
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL, "Invalid GRIB2 file name or key path");
-    }
-
-
-    /* GRIB2 datasets can have only these names "lon", "lat" and "values". 
-       TODO: GRIB2 allows multiple products, i.e., repeated sections 3 and 4,
-       we will need to add code to handle this case. For now, the assumption is 
-       that there is only one product in the message.
-    */ 
-    
-    /* Check validity of the dataset name */
-    if (check_grib2_dataset_name(key_view) == 0) {
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL, "Invalid dataset name, expect lon, lat or values strings");
-    } 
-       if ((dset_obj = (grib2_object_t *) malloc(sizeof(grib2_object_t))) == NULL) {
+    if ((dset_obj = (grib2_object_t *) malloc(sizeof(grib2_object_t))) == NULL) {
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, NULL,
                         "Failed to allocate memory for GRIB2 dataset struct");
     }
     dset_obj->obj_type = H5I_DATASET;
-    dset_obj->parent_file = file_obj->parent_file;
+    dset_obj->parent_file = o->parent_file;
+    dset_obj->parent_file->ref_count++;
     dset_obj->ref_count = 1; /* Initialize dataset's own ref count */
     /* Increment file reference count since this dataset holds a reference */
-    file_obj->ref_count++;
-
+    o->ref_count++;
     dset = &dset_obj->u.dataset;
-
     dset->msg = NULL;
     dset->space_id = H5I_INVALID_HID;
     dset->type_id = H5I_INVALID_HID;
     dset->data = NULL;
     dset->data_size = 0; /* The value is set to the size of the data buffer; see grib2_read_data function below */
 
-    /* Fast open using message offsets */
-    h = grib2_open_message_by_index(file, (size_t)msg_index);
-    if (!h)  { 
-       FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
-                          "Failed to get GRIB2 message handle ");
-    }
-
     msg = (grib2_message_t *)calloc(1, sizeof(*msg));
     if (!msg)  {
        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, NULL,
                           "Failed to initialize message handle for dataset object");
     }
-    msg->h = h;
+
+    if (o->obj_type == H5I_FILE) {
+        /* If we are passed file object, then the name of the dataset should be in the form /message_<N>/<key> */
+        parse_return = parse_message_key_path(name, &msg_index, &key_view); 
+        if (parse_return != 0 || (key_view == NULL)) 
+           FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL, "Invalid message number or key path");
+        /* Fast open using message offsets */
+        if (check_grib2_dataset_name(key_view) == 0) {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL, "Invalid dataset name, expect lon, lat or values strings");
+        } 
+        h = grib2_open_message_by_index(file, (size_t)msg_index);
+        if (!h)  { 
+           FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
+                              "Failed to get GRIB2 message handle ");
+        }
+        msg->h = h;
+    } else if (o->obj_type == H5I_GROUP) {
+        /* GRIB2 datasets can have only these names "lon", "lat" and "values". 
+           TODO: GRIB2 allows multiple products, i.e., repeated sections 3 and 4,
+           we will need to add code to handle this case. For now, the assumption is 
+           that there is only one product in the message.  */ 
+        
+        /* Check validity of the dataset name */
+        key_view = name;
+        if (check_grib2_dataset_name(key_view) == 0) {
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL, "Invalid dataset name, expect lon, lat or values strings");
+        } 
+        msg->h = o->u.group.msg->h;
+    } 
+
     dset->msg = msg;
 
     /* Copy key to set up dataset name */
@@ -1525,88 +1572,6 @@ done:
     return ret_value;
 }
 
-/* Attribute operations */
-/* Helper functions to check valid attribute name */
-
-
-/* ---------- helpers ---------- */
-
-static bool contains_arrow(const char *key) {
-    return strstr(key, "->") != NULL;
-}
-
-static bool starts_with(const char *s, const char *p) {
-    return s && p && strncmp(s, p, strlen(p)) == 0;
-}
-
-static bool equals_any(const char *s, const char *const *list) {
-    for (size_t i = 0; list[i]; i++) {
-        if (strcmp(s, list[i]) == 0)
-            return true;
-    }
-    return false;
-}
-
-/* ---------- Per-subset keys checkers ---------- */
-
-static bool varies_per_subset(const char *key) {
-
-    /* Exact canonical per-observation keys */
-    static const char *const exact_keys[] = {
-        "latitude",
-        "longitude",
-        "height",
-        "pressure",
-        "depth",
-        "elevation",
-        "subsetNumber",
-        NULL
-    };
-
-    if (equals_any(key, exact_keys))
-        return true;
-
-    /* Common per-subset prefixes */
-    static const char *const prefixes[] = {
-        "time",          /* time, timePeriod, timeIncrement */
-        "year", "month", "day", "hour", "minute", "second",
-        "station",
-        "sensor",
-        "quality",
-        "confidence",
-        "wind",
-        "temperature",
-        "humidity",
-        NULL
-    };
-
-    for (size_t i = 0; prefixes[i]; i++) {
-        if (starts_with(key, prefixes[i]))
-            return true;
-    }
-
-    return false;
-}
-
-/* ---------- Decision function ---------- */
-
-static bool reject_key(const char *key) {
-
-    if (!key || !*key)
-        return true;
-
-    /* Rule 1: reject key attributes */
-    if (contains_arrow(key))
-        return true;
-
-    /* Rule 2: reject per-subset varying keys */
-    if (varies_per_subset(key))
-        return true;
-
-    return false;
-}
-
-
 /* Helper functionto read GRIB2 data into attr->data and set attr->data_size */ 
 static herr_t grib2_read_attr_data(grib2_attr_t *attr)
 {
@@ -1857,7 +1822,6 @@ void *grib2_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
                             "Failed to discover key info");
     }
-    //printf("Here in attr_open name = %s nvals = %zu native_type = %d\n", key_view, ki.nelems, ki.native_type);
     message_type = ki.native_type;
     if (message_type == CODES_TYPE_UNDEFINED) 
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL,
@@ -1949,10 +1913,10 @@ herr_t grib2_attr_close(void *attr, hid_t dxpl_id, void **req)
                 FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
                                 "Failed to close attribute datatype");
         /* TODO: We cannot delete it handle like below, since it will cause issues when closeing the group.
-           Delete GRIB2 message handle and free message object */
+            Check that we shouldn't delete handle here  */
         if (a->msg) {
             if (a->msg->h) {
-//EP                codes_handle_delete(a->msg->h);
+            /*  codes_handle_delete(a->msg->h); */
                 a->msg->h = NULL;
             }
             free(a->msg);
@@ -2131,10 +2095,12 @@ herr_t grib2_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
             if (iter_args->op) {
                 unsigned long flags = 0;
-                /* EP: we need to pass the flags through environement variable?*/
+                /* TODO: we should allow to set the flags through environement variable or vol info*/
                 flags |= CODES_KEYS_ITERATOR_SKIP_DUPLICATES;
-//              flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
-//              flags |= CODES_KEYS_ITERATOR_SKIP_READ_ONLY;
+                /* 
+                flags |= CODES_KEYS_ITERATOR_SKIP_COMPUTED;
+                flags |= CODES_KEYS_ITERATOR_SKIP_READ_ONLY;i
+                */
 
                 /* Pin objects across callback re-entrancy */
                 parent_obj->ref_count++;
@@ -2198,11 +2164,6 @@ herr_t grib2_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
                     keys_count++;
                     iter_index++;
                 }
-                //codes_keys_iterator_delete(it); 
-
-//EP                    for (hsize_t i = 0; i < keys_count; i++) {
-//                        printf ("From attr_specific i = %lld, name = %s \n", i , keys_tmp[i]); 
-//                    }
 
                     for (hsize_t i = 0; i < keys_count; i++) {
 
