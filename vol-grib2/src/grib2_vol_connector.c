@@ -2185,7 +2185,8 @@ herr_t grib2_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
                         attr_info.data_size    = key_size;
 
 
-                        herr_t cb_ret = iter_args->op(/* loc_id */ 0, keys_tmp[i], &attr_info, iter_args->op_data);
+                       /* herr_t cb_ret = iter_args->op( 0, keys_tmp[i], &attr_info, iter_args->op_data); */
+                        herr_t cb_ret = iter_args->op(H5I_INVALID_HID, keys_tmp[i], &attr_info, iter_args->op_data);
 
                         if (cb_ret < 0)
                             FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADITER, FAIL, "Iterator callback returned error");
