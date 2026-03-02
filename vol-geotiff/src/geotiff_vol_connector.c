@@ -44,8 +44,7 @@
 
 static hbool_t H5_geotiff_initialized_g = FALSE;
 
-/* Identifiers for HDF5's error API */
-hid_t H5_geotiff_err_stack_g = H5I_INVALID_HID;
+/* Identifier for HDF5's error API */
 hid_t H5_geotiff_err_class_g = H5I_INVALID_HID;
 
 /* Helper functions */
@@ -1880,10 +1879,6 @@ herr_t geotiff_init_connector(hid_t __attribute__((unused)) vipl_id)
                                HDF5_VOL_GEOTIFF_LIB_VER)) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't register with HDF5 error API");
 
-    /* Create a separate error stack for the GEOTIFF VOL to report errors with */
-    if ((H5_geotiff_err_stack_g = H5Ecreate_stack()) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error stack");
-
     /* Initialized */
     H5_geotiff_initialized_g = TRUE;
 
@@ -1900,20 +1895,9 @@ herr_t geotiff_term_connector(void)
 
     /* Unregister from the HDF5 error API */
     if (H5_geotiff_err_class_g >= 0) {
-
         if (H5Eunregister_class(H5_geotiff_err_class_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't unregister from HDF5 error API");
 
-        /* Print the current error stack before destroying it */
-        PRINT_ERROR_STACK;
-
-        /* Destroy the error stack */
-        if (H5Eclose_stack(H5_geotiff_err_stack_g) < 0) {
-            FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't close error stack");
-            PRINT_ERROR_STACK;
-        }
-
-        H5_geotiff_err_stack_g = H5I_INVALID_HID;
         H5_geotiff_err_class_g = H5I_INVALID_HID;
     }
 
