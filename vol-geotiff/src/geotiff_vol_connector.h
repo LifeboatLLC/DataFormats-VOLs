@@ -206,10 +206,18 @@ void *geotiff_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const ch
 herr_t geotiff_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req);
 herr_t geotiff_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req);
+herr_t geotiff_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                              H5VL_attr_specific_args_t *args, hid_t dxpl_id, void **req);
 
 /* Link operations */
 herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                              H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req);
+
+/* Object operations */
+void *geotiff_object_open(void *obj, const H5VL_loc_params_t *loc_params, H5I_type_t *opened_type,
+                          hid_t dxpl_id, void **req);
+herr_t geotiff_object_get(void *obj, const H5VL_loc_params_t *loc_params,
+                          H5VL_object_get_args_t *args, hid_t dxpl_id, void **req);
 
 /* Helper functions */
 herr_t geotiff_read_hyperslab(const geotiff_object_t *dset_obj, const hsize_t *start,

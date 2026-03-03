@@ -85,10 +85,10 @@ static const H5VL_class_t geotiff_class_g = {
         geotiff_attr_open, /* open         */
         geotiff_attr_read, /* read         */
         NULL,              /* write        */
-        geotiff_attr_get,  /* get          */
-        NULL,              /* specific     */
-        NULL,              /* optional     */
-        geotiff_attr_close /* close        */
+        geotiff_attr_get,      /* get          */
+        geotiff_attr_specific, /* specific     */
+        NULL,                  /* optional     */
+        geotiff_attr_close     /* close        */
     },
     {
         /* dataset_cls */
@@ -139,11 +139,11 @@ static const H5VL_class_t geotiff_class_g = {
     },
     {
         /* object_cls */
-        NULL, /* open         */
-        NULL, /* copy         */
-        NULL, /* get          */
-        NULL, /* specific     */
-        NULL  /* optional     */
+        geotiff_object_open, /* open         */
+        NULL,                /* copy         */
+        geotiff_object_get,  /* get          */
+        NULL,                /* specific     */
+        NULL                 /* optional     */
     },
     {
         /* introscpect_cls */
@@ -452,6 +452,18 @@ herr_t geotiff_file_get(void *file, H5VL_file_get_args_t *args,
                 args->args.get_name.buf[ncopy] = '\0';
             }
             /* Some HDF5 versions may not provide buf_len. If available, setting it is optional. */
+            break;
+        case H5VL_FILE_GET_FCPL:
+            /* Return a default file creation property list */
+            if ((args->args.get_fcpl.fcpl_id = H5Pcreate(H5P_FILE_CREATE)) < 0)
+                FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, FAIL,
+                                "Failed to create default file creation property list");
+            break;
+        case H5VL_FILE_GET_FAPL:
+            /* Return a default file access property list */
+            if ((args->args.get_fapl.fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0)
+                FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, FAIL,
+                                "Failed to create default file access property list");
             break;
         default:
             FUNC_GOTO_ERROR(H5E_FILE, H5E_UNSUPPORTED, FAIL, "Unsupported file get operation");
@@ -979,6 +991,20 @@ herr_t geotiff_dataset_get(void *dset, H5VL_dataset_get_args_t *args,
                 FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to copy datatype");
             break;
 
+        case H5VL_DATASET_GET_DAPL:
+            /* Return a default dataset access property list */
+            if ((args->args.get_dapl.dapl_id = H5Pcreate(H5P_DATASET_ACCESS)) < 0)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                                "Failed to create default dataset access property list");
+            break;
+
+        case H5VL_DATASET_GET_DCPL:
+            /* Return a default dataset creation property list */
+            if ((args->args.get_dcpl.dcpl_id = H5Pcreate(H5P_DATASET_CREATE)) < 0)
+                FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                                "Failed to create default dataset creation property list");
+            break;
+
         default:
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL,
                             "Unsupported dataset get operation");
@@ -1113,7 +1139,11 @@ herr_t geotiff_group_get(void *obj, H5VL_group_get_args_t *args,
         }
 
         case H5VL_GROUP_GET_GCPL: {
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "GCPL get operation not supported");
+            /* Return a default group creation property list */
+            if ((args->args.get_gcpl.gcpl_id = H5Pcreate(H5P_GROUP_CREATE)) < 0)
+                FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTGET, FAIL,
+                                "Failed to create default group creation property list");
+            break;
         }
 
         default: {
@@ -1918,6 +1948,57 @@ herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
     return ret_value;
 }
 
+/* cppcheck-suppress constParameterCallback */
+herr_t geotiff_attr_specific(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
+                              H5VL_attr_specific_args_t *args,
+                              hid_t __attribute__((unused)) dxpl_id,
+                              void __attribute__((unused)) * *req)
+{
+    herr_t ret_value = SUCCEED;
+
+    if (!obj || !args)
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid arguments to attr_specific");
+
+    switch (args->op_type) {
+        case H5VL_ATTR_ITER: {
+            /* Attribute iteration is a no-op — attributes are not yet
+             * enumerated for any object type. This allows callers like
+             * netCDF to proceed without error. */
+            break;
+        }
+        case H5VL_ATTR_EXISTS: {
+            const char *attr_name = args->args.exists.name;
+            bool *exists = args->args.exists.exists;
+
+            if (!attr_name || !exists)
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid attr exists arguments");
+
+            /* Try to open the attribute; if it succeeds, it exists */
+            H5VL_loc_params_t self_params;
+            memset(&self_params, 0, sizeof(self_params));
+            self_params.type = H5VL_OBJECT_BY_SELF;
+
+            void *attr_handle =
+                geotiff_attr_open(obj, &self_params, attr_name, H5P_DEFAULT, H5P_DEFAULT, NULL);
+            if (attr_handle) {
+                *exists = true;
+                geotiff_attr_close(attr_handle, H5P_DEFAULT, NULL);
+            } else {
+                *exists = false;
+                /* Clear the error from the failed open attempt */
+                H5Eclear2(H5E_DEFAULT);
+            }
+            break;
+        }
+        default:
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL,
+                            "Unsupported attribute specific operation");
+    }
+
+done:
+    return ret_value;
+}
+
 /*---------------------------------------------------------------------------
  * Function:    geotiff_link_specific
  *
@@ -1946,8 +2027,10 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
     switch (args->op_type) {
         case H5VL_LINK_EXISTS: {
-            geotiff_object_t *file_obj = (geotiff_object_t *) obj;
-            geotiff_file_t *file = &file_obj->u.file;
+            geotiff_object_t *exists_obj = (geotiff_object_t *) obj;
+            geotiff_file_t *file =
+                &(exists_obj->obj_type == H5I_FILE ? exists_obj : exists_obj->parent_file)
+                     ->u.file;
 
             /* Get the link name from loc_params */
             if (loc_params->type == H5VL_OBJECT_BY_NAME) {
@@ -1978,8 +2061,9 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
         }
 
         case H5VL_LINK_ITER: {
-            geotiff_object_t *file_obj = (geotiff_object_t *) obj;
-            geotiff_file_t *file = &file_obj->u.file;
+            geotiff_object_t *iter_obj = (geotiff_object_t *) obj;
+            geotiff_file_t *file =
+                &(iter_obj->obj_type == H5I_FILE ? iter_obj : iter_obj->parent_file)->u.file;
             H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
             uint16_t num_dirs = (uint16_t) TIFFNumberOfDirectories(file->tiff);
 
@@ -1988,6 +2072,15 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
             /* Iterate over all image links starting from the current index */
             if (iter_args->op) {
+                /* Register a temporary hid_t for the group so the iteration
+                 * callback can use standard HDF5 API calls (H5Oopen, etc.).
+                 * Increment ref count first so H5Idec_ref doesn't free our object. */
+                iter_obj->ref_count++;
+                hid_t grp_id = H5VLwrap_register(obj, H5I_GROUP);
+                if (grp_id < 0)
+                    FUNC_GOTO_ERROR(H5E_LINK, H5E_CANTREGISTER, FAIL,
+                                    "Failed to register group ID for link iteration");
+
                 for (hsize_t i = *iter_args->idx_p; i < num_dirs; i++) {
                     H5L_info2_t link_info;
                     herr_t cb_ret;
@@ -2001,17 +2094,21 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                     link_info.corder = (int64_t) i;
                     link_info.cset = H5T_CSET_ASCII;
 
-                    cb_ret = iter_args->op(0, iter_link_name, &link_info, iter_args->op_data);
+                    cb_ret = iter_args->op(grp_id, link_name, &link_info, iter_args->op_data);
                     *iter_args->idx_p = i + 1;
 
                     if (cb_ret < 0) {
+                        H5Idec_ref(grp_id);
                         FUNC_GOTO_ERROR(H5E_LINK, H5E_BADITER, FAIL,
                                         "Iterator callback returned error");
                     } else if (cb_ret > 0) {
+                        H5Idec_ref(grp_id);
                         ret_value = cb_ret;
                         goto done;
                     }
                 }
+
+                H5Idec_ref(grp_id);
             }
 
             break;
@@ -2024,6 +2121,141 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
         default:
             FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL, "Unsupported link specific operation");
+    }
+
+done:
+    return ret_value;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    geotiff_object_open
+ *
+ * Purpose:     Opens an object (dataset or group) by name. This is called
+ *              by H5Oopen() and is needed by netCDF to discover what type
+ *              each link points to.
+ *
+ * Return:      Pointer to opened object on success, NULL on failure
+ *---------------------------------------------------------------------------*/
+void *geotiff_object_open(void *obj, const H5VL_loc_params_t *loc_params,
+                          H5I_type_t *opened_type, hid_t dxpl_id, void **req)
+{
+    geotiff_object_t *o = (geotiff_object_t *) obj;
+    void *ret_value = NULL;
+
+    if (!o || !loc_params)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid arguments to object_open");
+
+    if (loc_params->type != H5VL_OBJECT_BY_NAME)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_UNSUPPORTED, NULL,
+                        "Only H5VL_OBJECT_BY_NAME is supported for object_open");
+
+    const char *name = loc_params->loc_data.loc_by_name.name;
+    if (!name)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "NULL object name");
+
+    /* Resolve to the file object — dataset_open and group_open expect it */
+    void *file_obj = (o->obj_type == H5I_FILE) ? obj : (void *) o->parent_file;
+
+    /* Check if this is the root group */
+    if (strcmp(name, "/") == 0 || strcmp(name, ".") == 0) {
+        ret_value = geotiff_group_open(file_obj, loc_params, "/", H5P_DEFAULT, dxpl_id, req);
+        if (ret_value && opened_type)
+            *opened_type = H5I_GROUP;
+    }
+    /* Check if this is a dataset name (imageN pattern) */
+    else {
+        int image_index = -1;
+        const char *n = name;
+        /* Skip leading slash */
+        if (*n == '/')
+            n++;
+
+        if (sscanf(n, "image%d", &image_index) == 1 && image_index >= 0) {
+            ret_value =
+                geotiff_dataset_open(file_obj, loc_params, name, H5P_DEFAULT, dxpl_id, req);
+            if (ret_value && opened_type)
+                *opened_type = H5I_DATASET;
+        } else {
+            FUNC_GOTO_ERROR(H5E_OHDR, H5E_NOTFOUND, NULL, "Unknown object name '%s'", name);
+        }
+    }
+
+done:
+    return ret_value;
+}
+
+/*---------------------------------------------------------------------------
+ * Function:    geotiff_object_get
+ *
+ * Purpose:     Gets information about an object. Called by H5Oget_info()
+ *              and related functions. netCDF uses this to determine the
+ *              type of each object found during link iteration.
+ *
+ * Return:      SUCCEED/FAIL
+ *---------------------------------------------------------------------------*/
+herr_t geotiff_object_get(void *obj, const H5VL_loc_params_t *loc_params,
+                          H5VL_object_get_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                          void __attribute__((unused)) * *req)
+{
+    herr_t ret_value = SUCCEED;
+
+    if (!obj || !args)
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to object_get");
+
+    switch (args->op_type) {
+        case H5VL_OBJECT_GET_INFO: {
+            H5O_info2_t *oinfo = args->args.get_info.oinfo;
+
+            if (!oinfo)
+                FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "NULL object info pointer");
+
+            memset(oinfo, 0, sizeof(H5O_info2_t));
+
+            /* Determine the object type based on context */
+            if (loc_params && loc_params->type == H5VL_OBJECT_BY_NAME) {
+                const char *name = loc_params->loc_data.loc_by_name.name;
+                const char *n = name;
+
+                if (*n == '/')
+                    n++;
+
+                if (strcmp(name, "/") == 0 || strcmp(name, ".") == 0 || *n == '\0') {
+                    oinfo->type = H5O_TYPE_GROUP;
+                } else {
+                    int idx = -1;
+                    if (sscanf(n, "image%d", &idx) == 1 && idx >= 0) {
+                        oinfo->type = H5O_TYPE_DATASET;
+                    } else {
+                        FUNC_GOTO_ERROR(H5E_OHDR, H5E_NOTFOUND, FAIL,
+                                        "Unknown object name '%s'", name);
+                    }
+                }
+            } else {
+                /* Called on self — use the object's own type */
+                geotiff_object_t *o = (geotiff_object_t *) obj;
+                switch (o->obj_type) {
+                    case H5I_GROUP:
+                        oinfo->type = H5O_TYPE_GROUP;
+                        break;
+                    case H5I_DATASET:
+                        oinfo->type = H5O_TYPE_DATASET;
+                        break;
+                    case H5I_FILE:
+                        oinfo->type = H5O_TYPE_GROUP; /* file acts as root group */
+                        break;
+                    default:
+                        oinfo->type = H5O_TYPE_UNKNOWN;
+                        break;
+                }
+            }
+
+            oinfo->fileno = 0;
+            oinfo->num_attrs = 0;
+            break;
+        }
+
+        default:
+            FUNC_GOTO_ERROR(H5E_VOL, H5E_UNSUPPORTED, FAIL, "Unsupported object get operation");
     }
 
 done:
