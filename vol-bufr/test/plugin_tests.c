@@ -250,8 +250,7 @@ herr_t test_multiple_registration(void)
 
     /* Register the connector multiple times */
     for (i = 0; i < N_REGISTRATIONS; i++) {
-        if ((vol_ids[i] = H5VLregister_connector_by_name(BUFR_VOL_CONNECTOR_NAME, H5P_DEFAULT)) <
-            0)
+        if ((vol_ids[i] = H5VLregister_connector_by_name(BUFR_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0)
             TEST_ERROR;
     }
 

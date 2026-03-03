@@ -22,7 +22,7 @@
 #include <xtiffio.h>
 
 #define GEOTIFF_VOL_CONNECTOR_NAME "geotiff_vol_connector"
-#define TEST_FILENAME              "coordinates_test.tif"
+#define TEST_FILENAME "coordinates_test.tif"
 
 /* Forward declaration - test file creation is at end of file */
 int create_coordinate_test_tiff(const char *filename);
@@ -33,20 +33,19 @@ typedef struct {
     double lat;
 } coord_t;
 
-int
-main(void)
+int main(void)
 {
-    hid_t       vol_id        = H5I_INVALID_HID;
-    hid_t       fapl_id       = H5I_INVALID_HID;
-    hid_t       file_id       = H5I_INVALID_HID;
-    hid_t       dset_id       = H5I_INVALID_HID;
-    hid_t       attr_id       = H5I_INVALID_HID;
-    hid_t       coord_type_id = H5I_INVALID_HID;
-    hid_t       attr_space     = H5I_INVALID_HID;
-    char        plugin_path[PATH_MAX];
-    char        cwd[PATH_MAX];
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t coord_type_id = H5I_INVALID_HID;
+    hid_t attr_space = H5I_INVALID_HID;
+    char plugin_path[PATH_MAX];
+    char cwd[PATH_MAX];
     struct stat st;
-    coord_t    *coords = NULL;
+    coord_t *coords = NULL;
 
     printf("=========================================\n");
     printf("Coordinates Demo\n");
@@ -66,7 +65,7 @@ main(void)
     }
 
     int ret = snprintf(plugin_path, sizeof(plugin_path), "%s/src", cwd);
-    if (ret < 0 || (size_t)ret >= sizeof(plugin_path)) {
+    if (ret < 0 || (size_t) ret >= sizeof(plugin_path)) {
         fprintf(stderr, "ERROR: Path too long\n");
         return 1;
     }
@@ -133,12 +132,12 @@ main(void)
     }
 
     printf("--- Compound Datatype ---\n");
-    printf("  Size: %lu bytes\n", (unsigned long)H5Tget_size(coord_type_id));
+    printf("  Size: %lu bytes\n", (unsigned long) H5Tget_size(coord_type_id));
     printf("  Fields: %d\n", H5Tget_nmembers(coord_type_id));
     for (int i = 0; i < H5Tget_nmembers(coord_type_id); i++) {
-        char *name = H5Tget_member_name(coord_type_id, (unsigned)i);
+        char *name = H5Tget_member_name(coord_type_id, (unsigned) i);
         printf("    [%d] \"%s\" (offset %lu)\n", i, name,
-               (unsigned long)H5Tget_member_offset(coord_type_id, (unsigned)i));
+               (unsigned long) H5Tget_member_offset(coord_type_id, (unsigned) i));
         H5free_memory(name);
     }
     printf("\n");
@@ -148,13 +147,13 @@ main(void)
     hsize_t dims[2];
     H5Sget_simple_extent_dims(attr_space, dims, NULL);
     printf("--- Dataspace ---\n");
-    printf("  Shape: [%lu, %lu] (%lu coordinate pairs)\n", (unsigned long)dims[0],
-           (unsigned long)dims[1], (unsigned long)(dims[0] * dims[1]));
+    printf("  Shape: [%lu, %lu] (%lu coordinate pairs)\n", (unsigned long) dims[0],
+           (unsigned long) dims[1], (unsigned long) (dims[0] * dims[1]));
     printf("\n");
 
     /* Read all coordinates */
-    size_t npixels = (size_t)(dims[0] * dims[1]);
-    coords = (coord_t *)malloc(npixels * sizeof(coord_t));
+    size_t npixels = (size_t) (dims[0] * dims[1]);
+    coords = (coord_t *) malloc(npixels * sizeof(coord_t));
     if (!coords) {
         fprintf(stderr, "ERROR: Failed to allocate coordinate buffer\n");
         goto cleanup;
@@ -166,18 +165,18 @@ main(void)
     }
 
     /* Print coordinates at the four corners and center */
-    int height = (int)dims[0];
-    int width  = (int)dims[1];
+    int height = (int) dims[0];
+    int width = (int) dims[1];
 
     struct {
         const char *label;
-        int         row;
-        int         col;
+        int row;
+        int col;
     } sample_points[] = {
-        {"Top-left",     0,          0},
-        {"Top-right",    0,          width - 1},
-        {"Center",       height / 2, width / 2},
-        {"Bottom-left",  height - 1, 0},
+        {"Top-left", 0, 0},
+        {"Top-right", 0, width - 1},
+        {"Center", height / 2, width / 2},
+        {"Bottom-left", height - 1, 0},
         {"Bottom-right", height - 1, width - 1},
     };
     int num_points = sizeof(sample_points) / sizeof(sample_points[0]);
@@ -218,17 +217,16 @@ cleanup:
  * Test file creation helper (not the focus of this demo)
  * Creates a small 100x100 georeferenced GeoTIFF over SF Bay Area.
  * ================================================================ */
-#define IMAGE_WIDTH  100
+#define IMAGE_WIDTH 100
 #define IMAGE_HEIGHT 100
-#define ORIGIN_LON   -122.5
-#define ORIGIN_LAT   37.8
-#define PIXEL_SIZE   0.0001 /* ~11 meters at this latitude */
+#define ORIGIN_LON -122.5
+#define ORIGIN_LAT 37.8
+#define PIXEL_SIZE 0.0001 /* ~11 meters at this latitude */
 
-int
-create_coordinate_test_tiff(const char *filename)
+int create_coordinate_test_tiff(const char *filename)
 {
-    TIFF         *tif  = NULL;
-    GTIF         *gtif = NULL;
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
     unsigned char *scanline = NULL;
 
     printf("Creating test file: %s (%dx%d, SF Bay Area)\n", filename, IMAGE_WIDTH, IMAGE_HEIGHT);
@@ -258,7 +256,7 @@ create_coordinate_test_tiff(const char *filename)
 
     /* GeoTIFF georeferencing */
     const double tiepoints[6] = {0, 0, 0, ORIGIN_LON, ORIGIN_LAT, 0.0};
-    const double pixscale[3]  = {PIXEL_SIZE, PIXEL_SIZE, 0.0};
+    const double pixscale[3] = {PIXEL_SIZE, PIXEL_SIZE, 0.0};
     TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
     TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
 
@@ -268,7 +266,7 @@ create_coordinate_test_tiff(const char *filename)
     GTIFKeySet(gtif, GeographicTypeGeoKey, TYPE_SHORT, 1, GCS_WGS_84);
 
     /* Write gradient pattern */
-    scanline = (unsigned char *)malloc(IMAGE_WIDTH);
+    scanline = (unsigned char *) malloc(IMAGE_WIDTH);
     if (!scanline) {
         fprintf(stderr, "ERROR: Failed to allocate memory\n");
         GTIFWriteKeys(gtif);
@@ -279,8 +277,8 @@ create_coordinate_test_tiff(const char *filename)
 
     for (int row = 0; row < IMAGE_HEIGHT; row++) {
         for (int col = 0; col < IMAGE_WIDTH; col++)
-            scanline[col] = (unsigned char)((row + col) % 256);
-        TIFFWriteScanline(tif, scanline, (uint32_t)row, 0);
+            scanline[col] = (unsigned char) ((row + col) % 256);
+        TIFFWriteScanline(tif, scanline, (uint32_t) row, 0);
     }
 
     free(scanline);

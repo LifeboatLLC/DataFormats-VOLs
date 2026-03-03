@@ -130,15 +130,15 @@ int create_demo_image(void)
     /* Generate concentric rings pattern */
     for (int row = 0; row < IMAGE_SIZE; row++) {
         for (int col = 0; col < IMAGE_SIZE; col++) {
-            float dx = (float)col - center_x;
-            float dy = (float)row - center_y;
+            float dx = (float) col - center_x;
+            float dy = (float) row - center_y;
             float distance = sqrtf(dx * dx + dy * dy);
             float normalized_dist = distance / max_radius;
 
             /* Create rainbow rings */
             float hue = fmodf(normalized_dist * 720.0f, 360.0f);
             float saturation = 0.9f;
-            float value = 0.8f + 0.2f * sinf(normalized_dist * 12.0f * (float)M_PI);
+            float value = 0.8f + 0.2f * sinf(normalized_dist * 12.0f * (float) M_PI);
 
             unsigned char r, g, b;
             hsv_to_rgb(hue, saturation, value, &r, &g, &b);
@@ -149,7 +149,7 @@ int create_demo_image(void)
             scanline[idx + 2] = b;
         }
 
-        if (!TIFFWriteScanline(tif, scanline, (uint32_t)row, 0)) {
+        if (!TIFFWriteScanline(tif, scanline, (uint32_t) row, 0)) {
             fprintf(stderr, "Failed to write scanline %d\n", row);
             free(scanline);
             GTIFFree(gtif);

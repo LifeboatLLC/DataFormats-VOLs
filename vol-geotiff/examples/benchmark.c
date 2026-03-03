@@ -21,28 +21,24 @@
 
 /* Test files from the test directory (run from build/) */
 static const char *test_files[] = {
-    "../test/byte.tif",
-    "../test/utmsmall.tif",
-    "../test/byte_with_ovr.tif",
-    "../test/stefan_full_rgba.tif",
+    "../test/byte.tif",          "../test/utmsmall.tif",
+    "../test/byte_with_ovr.tif", "../test/stefan_full_rgba.tif",
     "../test/PIA26616.tif",
 };
 static const int num_files = sizeof(test_files) / sizeof(test_files[0]);
 
 /* Suppress libtiff warnings (GeoTIFF tags are unknown to plain libtiff) */
-static void
-tiff_warning_handler(const char *module, const char *fmt, va_list ap)
+static void tiff_warning_handler(const char *module, const char *fmt, va_list ap)
 {
-    (void)module;
-    (void)fmt;
-    (void)ap;
+    (void) module;
+    (void) fmt;
+    (void) ap;
 }
 
-static double
-elapsed_us(struct timespec *start, struct timespec *end)
+static double elapsed_us(struct timespec *start, struct timespec *end)
 {
-    double s  = (double)(end->tv_sec - start->tv_sec);
-    double ns = (double)(end->tv_nsec - start->tv_nsec);
+    double s = (double) (end->tv_sec - start->tv_sec);
+    double ns = (double) (end->tv_nsec - start->tv_nsec);
     return (s * 1e6) + (ns / 1e3);
 }
 
@@ -50,9 +46,8 @@ elapsed_us(struct timespec *start, struct timespec *end)
  * Read all image data via libtiff into a caller-freed buffer.
  * Returns the buffer in *out_data and its size in *out_size.
  */
-static int
-bench_libtiff(const char *filename, double *open_us, double *read_us, uint8_t **out_data,
-              size_t *out_size)
+static int bench_libtiff(const char *filename, double *open_us, double *read_us, uint8_t **out_data,
+                         size_t *out_size)
 {
     struct timespec t0, t1, t2;
 
@@ -76,8 +71,8 @@ bench_libtiff(const char *filename, double *open_us, double *read_us, uint8_t **
     TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
     TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &spp);
 
-    size_t   total = (size_t)width * height * spp;
-    uint8_t *data  = (uint8_t *)malloc(total);
+    size_t total = (size_t) width * height * spp;
+    uint8_t *data = (uint8_t *) malloc(total);
     if (!data) {
         TIFFClose(tif);
         return 1;
@@ -88,7 +83,7 @@ bench_libtiff(const char *filename, double *open_us, double *read_us, uint8_t **
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
     for (uint32_t row = 0; row < height; row++) {
-        TIFFReadScanline(tif, data + (size_t)row * (size_t)scanline_size, row, 0);
+        TIFFReadScanline(tif, data + (size_t) row * (size_t) scanline_size, row, 0);
     }
     clock_gettime(CLOCK_MONOTONIC, &t2);
 
@@ -104,9 +99,8 @@ bench_libtiff(const char *filename, double *open_us, double *read_us, uint8_t **
  * Read /image0 via the VOL connector into a caller-freed buffer.
  * Returns the buffer in *out_data and its size in *out_size.
  */
-static int
-bench_vol(const char *filename, hid_t fapl_id, double *open_us, double *read_us,
-          uint8_t **out_data, size_t *out_size)
+static int bench_vol(const char *filename, hid_t fapl_id, double *open_us, double *read_us,
+                     uint8_t **out_data, size_t *out_size)
 {
     struct timespec t0, t1, t2;
 
@@ -130,16 +124,16 @@ bench_vol(const char *filename, hid_t fapl_id, double *open_us, double *read_us,
         return 1;
     }
 
-    hid_t   space_id = H5Dget_space(dset_id);
-    int     ndims    = H5Sget_simple_extent_ndims(space_id);
-    hsize_t dims[3]  = {0};
+    hid_t space_id = H5Dget_space(dset_id);
+    int ndims = H5Sget_simple_extent_ndims(space_id);
+    hsize_t dims[3] = {0};
     H5Sget_simple_extent_dims(space_id, dims, NULL);
 
     size_t total = 1;
     for (int i = 0; i < ndims; i++)
-        total *= (size_t)dims[i];
+        total *= (size_t) dims[i];
 
-    uint8_t *data = (uint8_t *)malloc(total);
+    uint8_t *data = (uint8_t *) malloc(total);
     if (!data) {
         H5Sclose(space_id);
         H5Dclose(dset_id);
@@ -156,20 +150,19 @@ bench_vol(const char *filename, hid_t fapl_id, double *open_us, double *read_us,
     H5Dclose(dset_id);
     H5Fclose(file_id);
 
-    *read_us  = elapsed_us(&t1, &t2);
+    *read_us = elapsed_us(&t1, &t2);
     *out_data = data;
     *out_size = total;
 
     return 0;
 }
 
-int
-main(void)
+int main(void)
 {
-    char        plugin_path[PATH_MAX];
-    char        cwd[PATH_MAX];
+    char plugin_path[PATH_MAX];
+    char cwd[PATH_MAX];
     struct stat st;
-    int         verify_failures = 0;
+    int verify_failures = 0;
 
     /* Suppress libtiff warnings about unknown GeoTIFF tags */
     TIFFSetWarningHandler(tiff_warning_handler);
@@ -191,7 +184,7 @@ main(void)
         return 1;
     }
     int ret = snprintf(plugin_path, sizeof(plugin_path), "%s/src", cwd);
-    if (ret < 0 || (size_t)ret >= sizeof(plugin_path)) {
+    if (ret < 0 || (size_t) ret >= sizeof(plugin_path)) {
         fprintf(stderr, "ERROR: Path too long\n");
         return 1;
     }
@@ -225,26 +218,25 @@ main(void)
         /* Check file exists */
         if (stat(fname, &st) != 0) {
             const char *bname = strrchr(fname, '/');
-            bname             = bname ? bname + 1 : fname;
+            bname = bname ? bname + 1 : fname;
             printf("%-25s (not found, skipping)\n", bname);
             continue;
         }
 
-        double   tiff_open = 0, tiff_read = 0;
-        double   vol_open = 0, vol_read = 0;
+        double tiff_open = 0, tiff_read = 0;
+        double vol_open = 0, vol_read = 0;
         uint8_t *tiff_data = NULL, *vol_data = NULL;
-        size_t   tiff_size = 0, vol_size = 0;
+        size_t tiff_size = 0, vol_size = 0;
 
         int tiff_ok = bench_libtiff(fname, &tiff_open, &tiff_read, &tiff_data, &tiff_size);
-        int vol_ok  = bench_vol(fname, fapl_id, &vol_open, &vol_read, &vol_data, &vol_size);
+        int vol_ok = bench_vol(fname, fapl_id, &vol_open, &vol_read, &vol_data, &vol_size);
 
         /* Verify data matches */
         const char *verify = "---";
         if (tiff_ok == 0 && vol_ok == 0) {
             if (tiff_size == vol_size && memcmp(tiff_data, vol_data, tiff_size) == 0) {
                 verify = "OK";
-            }
-            else {
+            } else {
                 verify = "MISMATCH";
                 verify_failures++;
             }
@@ -255,17 +247,15 @@ main(void)
 
         /* Extract just the filename for display */
         const char *basename = strrchr(fname, '/');
-        basename             = basename ? basename + 1 : fname;
+        basename = basename ? basename + 1 : fname;
 
         if (tiff_ok == 0 && vol_ok == 0) {
             printf("%-25s %9.0f us %9.0f us %9.0f us %9.0f us %8s\n", basename, tiff_open,
                    tiff_read, vol_open, vol_read, verify);
-        }
-        else if (tiff_ok == 0) {
+        } else if (tiff_ok == 0) {
             printf("%-25s %9.0f us %9.0f us %12s %12s %8s\n", basename, tiff_open, tiff_read,
                    "FAIL", "FAIL", "---");
-        }
-        else {
+        } else {
             printf("%-25s %12s %12s %12s %12s %8s\n", basename, "FAIL", "FAIL", "FAIL", "FAIL",
                    "---");
         }

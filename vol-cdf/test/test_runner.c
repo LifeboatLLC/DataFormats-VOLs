@@ -22,13 +22,13 @@ int main(int argc, char **argv)
 
     if (run_all || strcmp(test_name, "links_and_groups") == 0)
         num_failures += (OpenLinksandGroupsTest() != 0 ? 1 : 0);
-        
+
     if (run_all || strcmp(test_name, "multi_links_exist") == 0)
         num_failures += (MultiLinksExistTest() != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "link_iterate_test") == 0)
         num_failures += (LinkIterateTest() != 0 ? 1 : 0);
-        
+
     if (run_all || strcmp(test_name, "read_variable") == 0)
         num_failures += (ReadCDFVariableTest() != 0 ? 1 : 0);
 
@@ -45,8 +45,8 @@ int main(int argc, char **argv)
         num_failures += (ReadIndexedGlobalAttributeTest() != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "read_basic_rVariable_and_rEntry") == 0)
-        num_failures += (ReadBasicRVariableAndREntryTest() != 0 ? 1 : 0); 
-    
+        num_failures += (ReadBasicRVariableAndREntryTest() != 0 ? 1 : 0);
+
 #ifdef TODO
     if (run_all || strcmp(test_name, "indexed_gattribute_dtype_conversion_test") == 0)
         num_failures += (IndexedGAttributeDtypeConversionTest() != 0 ? 1 : 0);

@@ -21,7 +21,7 @@
 #include <xtiffio.h>
 
 #define GEOTIFF_VOL_CONNECTOR_NAME "geotiff_vol_connector"
-#define TEST_FILENAME              "metadata_test.tif"
+#define TEST_FILENAME "metadata_test.tif"
 
 /* Forward declaration - test file creation is at end of file */
 int create_metadata_rich_tiff(const char *filename);
@@ -30,10 +30,9 @@ int create_metadata_rich_tiff(const char *filename);
  * Read and print a string attribute. Returns 0 on success.
  * The VOL connector returns variable-length strings as char* pointers.
  */
-static int
-print_string_attr(hid_t obj_id, const char *attr_name)
+static int print_string_attr(hid_t obj_id, const char *attr_name)
 {
-    hid_t  attr_id = H5Aopen(obj_id, attr_name, H5P_DEFAULT);
+    hid_t attr_id = H5Aopen(obj_id, attr_name, H5P_DEFAULT);
     if (attr_id < 0) {
         printf("  %-20s (not found)\n", attr_name);
         return 1;
@@ -50,8 +49,7 @@ print_string_attr(hid_t obj_id, const char *attr_name)
 /*
  * Read and print a uint16 attribute.
  */
-static int
-print_uint16_attr(hid_t obj_id, const char *attr_name)
+static int print_uint16_attr(hid_t obj_id, const char *attr_name)
 {
     hid_t attr_id = H5Aopen(obj_id, attr_name, H5P_DEFAULT);
     if (attr_id < 0) {
@@ -61,7 +59,7 @@ print_uint16_attr(hid_t obj_id, const char *attr_name)
 
     uint16_t value;
     H5Aread(attr_id, H5T_NATIVE_UINT16, &value);
-    printf("  %-20s %u\n", attr_name, (unsigned)value);
+    printf("  %-20s %u\n", attr_name, (unsigned) value);
 
     H5Aclose(attr_id);
     return 0;
@@ -70,8 +68,7 @@ print_uint16_attr(hid_t obj_id, const char *attr_name)
 /*
  * Read and print a uint32 attribute.
  */
-static int
-print_uint32_attr(hid_t obj_id, const char *attr_name)
+static int print_uint32_attr(hid_t obj_id, const char *attr_name)
 {
     hid_t attr_id = H5Aopen(obj_id, attr_name, H5P_DEFAULT);
     if (attr_id < 0) {
@@ -81,21 +78,19 @@ print_uint32_attr(hid_t obj_id, const char *attr_name)
 
     uint32_t value;
     H5Aread(attr_id, H5T_NATIVE_UINT32, &value);
-    printf("  %-20s %u\n", attr_name, (unsigned)value);
+    printf("  %-20s %u\n", attr_name, (unsigned) value);
 
     H5Aclose(attr_id);
     return 0;
 }
 
-
-int
-main(void)
+int main(void)
 {
-    hid_t       vol_id  = H5I_INVALID_HID;
-    hid_t       fapl_id = H5I_INVALID_HID;
-    hid_t       file_id = H5I_INVALID_HID;
-    char        plugin_path[PATH_MAX];
-    char        cwd[PATH_MAX];
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    char plugin_path[PATH_MAX];
+    char cwd[PATH_MAX];
     struct stat st;
 
     printf("=========================================\n");
@@ -116,7 +111,7 @@ main(void)
     }
 
     int ret = snprintf(plugin_path, sizeof(plugin_path), "%s/src", cwd);
-    if (ret < 0 || (size_t)ret >= sizeof(plugin_path)) {
+    if (ret < 0 || (size_t) ret >= sizeof(plugin_path)) {
         fprintf(stderr, "ERROR: Path too long\n");
         return 1;
     }
@@ -202,13 +197,12 @@ main(void)
  * Test file creation helper (not the focus of this demo)
  * Creates a 128x128 RGB checkerboard with rich metadata tags.
  * ================================================================ */
-int
-create_metadata_rich_tiff(const char *filename)
+int create_metadata_rich_tiff(const char *filename)
 {
-    TIFF         *tif     = NULL;
+    TIFF *tif = NULL;
     unsigned char *scanline = NULL;
-    const int     width   = 128;
-    const int     height  = 128;
+    const int width = 128;
+    const int height = 128;
 
     printf("Creating test file: %s (%dx%d RGB)\n", filename, width, height);
 
@@ -235,7 +229,7 @@ create_metadata_rich_tiff(const char *filename)
     TIFFSetField(tif, TIFFTAG_DATETIME, "2026:02:05 12:00:00");
 
     /* Write checkerboard pattern */
-    scanline = (unsigned char *)malloc((size_t)(width * 3));
+    scanline = (unsigned char *) malloc((size_t) (width * 3));
     if (!scanline) {
         fprintf(stderr, "ERROR: Failed to allocate scanline buffer\n");
         XTIFFClose(tif);
@@ -245,13 +239,13 @@ create_metadata_rich_tiff(const char *filename)
     for (int row = 0; row < height; row++) {
         for (int col = 0; col < width; col++) {
             int is_white = ((row / 16) + (col / 16)) % 2;
-            int idx      = col * 3;
+            int idx = col * 3;
             unsigned char val = is_white ? 255 : 64;
             scanline[idx + 0] = val;
             scanline[idx + 1] = val;
             scanline[idx + 2] = val;
         }
-        TIFFWriteScanline(tif, scanline, (uint32_t)row, 0);
+        TIFFWriteScanline(tif, scanline, (uint32_t) row, 0);
     }
 
     free(scanline);

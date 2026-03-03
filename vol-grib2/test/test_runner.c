@@ -23,7 +23,7 @@ int main(int argc, char **argv)
     if (run_all || strcmp(test_name, "open_close") == 0)
         num_failures += (OpenGRIB2Test("example-1.grib2", "message_5/values") != 0 ? 1 : 0);
 
-    if (run_all || strcmp(test_name, "link_exists") == 0) 
+    if (run_all || strcmp(test_name, "link_exists") == 0)
         num_failures += (LinkExistsTest("example-1.grib2") != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "multi_link_exists") == 0)

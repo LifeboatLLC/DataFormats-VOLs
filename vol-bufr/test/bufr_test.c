@@ -158,26 +158,26 @@ int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
         goto error;
     }
 
-        /* Get dataspace */
+    /* Get dataspace */
     if ((space_id = H5Dget_space(dset_id)) < 0) {
         printf("Failed to get dataspace\n");
         goto error;
-    }    
+    }
 
-    if ((ndims = H5Sget_simple_extent_ndims(space_id)) < 0) { 
+    if ((ndims = H5Sget_simple_extent_ndims(space_id)) < 0) {
         printf("Failed to get number of dimensions\n");
         goto error;
-    }    
+    }
 
-    if (ndims >= 0) { 
-        if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) { 
+    if (ndims >= 0) {
+        if (H5Sget_simple_extent_dims(space_id, dims, NULL) < 0) {
             printf("Failed to get dimensions\n");
             goto error;
-        }    
-    }    
+        }
+    }
 
     /* Get datatype */
-    if ((type_id = H5Dget_type(dset_id)) < 0) { 
+    if ((type_id = H5Dget_type(dset_id)) < 0) {
         printf("Failed to get datatype\n");
         goto error;
     }
@@ -199,26 +199,28 @@ int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
         }
         printf("\n");
         for (int i = 0; i < dims[0]; i++) {
-             printf("%ld \n", data[i]);
+            printf("%ld \n", data[i]);
         }
     }
-    
+
     /* Get attribute */
     if ((attr_id = H5Aopen(file_id, "/message_1/masterTablesVersionNumber", H5P_DEFAULT)) < 0) {
         printf("Failed to open  masterTablesVersionNumber attribute\n");
-        goto error; 
+        goto error;
     }
-     
+
     if (H5Aread(attr_id, H5T_NATIVE_LONG, &table_num) < 0) {
         printf("Failed to read attribute\n");
         goto error;
     } else {
         if (table_num != 13) {
-            printf("VERIFICATION FAILED: Expected masterTablesVersionNumber attribute value is 13 but got %ld \n", table_num);
+            printf("VERIFICATION FAILED: Expected masterTablesVersionNumber attribute value is 13 "
+                   "but got %ld \n",
+                   table_num);
             goto error;
         }
     }
-    
+
     /* Close the BUFR dataset */
     free(data);
     if (H5Aclose(attr_id) < 0) {

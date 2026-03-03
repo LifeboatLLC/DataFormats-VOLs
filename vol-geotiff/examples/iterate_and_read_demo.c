@@ -23,19 +23,18 @@
 #include <unistd.h>
 
 #define GEOTIFF_VOL_CONNECTOR_NAME "geotiff_vol_connector"
-#define TEST_FILENAME              "../test/byte_with_ovr.tif"
+#define TEST_FILENAME "../test/byte_with_ovr.tif"
 
-int
-main(void)
+int main(void)
 {
-    hid_t       vol_id  = H5I_INVALID_HID;
-    hid_t       fapl_id = H5I_INVALID_HID;
-    hid_t       file_id = H5I_INVALID_HID;
-    hid_t       attr_id = H5I_INVALID_HID;
-    char        plugin_path[PATH_MAX];
-    char        cwd[PATH_MAX];
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    char plugin_path[PATH_MAX];
+    char cwd[PATH_MAX];
     struct stat st;
-    uint64_t    num_images = 0;
+    uint64_t num_images = 0;
 
     printf("=========================================\n");
     printf("Iterate and Read Demo\n");
@@ -62,7 +61,7 @@ main(void)
     }
 
     int ret = snprintf(plugin_path, sizeof(plugin_path), "%s/src", cwd);
-    if (ret < 0 || (size_t)ret >= sizeof(plugin_path)) {
+    if (ret < 0 || (size_t) ret >= sizeof(plugin_path)) {
         fprintf(stderr, "ERROR: Path too long\n");
         return 1;
     }
@@ -119,24 +118,24 @@ main(void)
     }
     H5Aclose(attr_id);
 
-    printf("Found %lu image(s) in file\n\n", (unsigned long)num_images);
+    printf("Found %lu image(s) in file\n\n", (unsigned long) num_images);
 
     /* Iterate through each image and read its data */
     for (uint64_t i = 0; i < num_images; i++) {
-        hid_t          dset_id  = H5I_INVALID_HID;
-        hid_t          space_id = H5I_INVALID_HID;
-        hid_t          type_id  = H5I_INVALID_HID;
-        char           dset_name[32];
-        hsize_t        dims[2];
-        int            ndims;
+        hid_t dset_id = H5I_INVALID_HID;
+        hid_t space_id = H5I_INVALID_HID;
+        hid_t type_id = H5I_INVALID_HID;
+        char dset_name[32];
+        hsize_t dims[2];
+        int ndims;
         unsigned char *data = NULL;
-        size_t         npixels;
-        unsigned char  min_val, max_val;
-        double         sum;
+        size_t npixels;
+        unsigned char min_val, max_val;
+        double sum;
 
-        snprintf(dset_name, sizeof(dset_name), "/image%lu", (unsigned long)i);
+        snprintf(dset_name, sizeof(dset_name), "/image%lu", (unsigned long) i);
 
-        printf("--- Image %lu: %s ---\n", (unsigned long)i, dset_name);
+        printf("--- Image %lu: %s ---\n", (unsigned long) i, dset_name);
 
         /* Open dataset */
         dset_id = H5Dopen2(file_id, dset_name, H5P_DEFAULT);
@@ -155,19 +154,19 @@ main(void)
 
         ndims = H5Sget_simple_extent_ndims(space_id);
         H5Sget_simple_extent_dims(space_id, dims, NULL);
-        printf("  Dimensions: %lu x %lu (%dD)\n", (unsigned long)dims[0], (unsigned long)dims[1],
+        printf("  Dimensions: %lu x %lu (%dD)\n", (unsigned long) dims[0], (unsigned long) dims[1],
                ndims);
 
         /* Get datatype info */
         type_id = H5Dget_type(dset_id);
         if (type_id >= 0) {
-            printf("  Datatype size: %lu byte(s)\n", (unsigned long)H5Tget_size(type_id));
+            printf("  Datatype size: %lu byte(s)\n", (unsigned long) H5Tget_size(type_id));
             H5Tclose(type_id);
         }
 
         /* Read the full raster data */
-        npixels = (size_t)(dims[0] * dims[1]);
-        data    = (unsigned char *)malloc(npixels);
+        npixels = (size_t) (dims[0] * dims[1]);
+        data = (unsigned char *) malloc(npixels);
         if (!data) {
             fprintf(stderr, "ERROR: Failed to allocate %zu bytes\n", npixels);
             H5Sclose(space_id);
@@ -186,7 +185,7 @@ main(void)
         /* Compute summary statistics */
         min_val = data[0];
         max_val = data[0];
-        sum     = 0.0;
+        sum = 0.0;
 
         for (size_t p = 0; p < npixels; p++) {
             if (data[p] < min_val)
@@ -197,7 +196,7 @@ main(void)
         }
 
         printf("  Pixels read: %zu\n", npixels);
-        printf("  Min: %u  Max: %u  Mean: %.1f\n", min_val, max_val, sum / (double)npixels);
+        printf("  Min: %u  Max: %u  Mean: %.1f\n", min_val, max_val, sum / (double) npixels);
 
         /* Print first few pixel values as a preview */
         printf("  First 10 values:");
@@ -212,7 +211,7 @@ main(void)
     }
 
     printf("=========================================\n");
-    printf("Done - successfully read all %lu image(s)\n", (unsigned long)num_images);
+    printf("Done - successfully read all %lu image(s)\n", (unsigned long) num_images);
     printf("=========================================\n");
 
 cleanup:
