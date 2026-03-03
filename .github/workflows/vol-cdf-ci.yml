@@ -1,0 +1,129 @@
+---
+name: CDF VOL CI
+
+'on':
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test:
+    name: Build and Test CDF VOL
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        build-type: [Release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libncurses5-dev
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake
+
+      - name: Install HDF5
+        run: |
+          cd ${{ github.workspace }}
+          if [ "$(uname)" = "Darwin" ]; then
+            wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-macos14_clang.tar.gz -O hdf5-release.tar.gz
+            tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Darwin.tar.gz
+            tar xzf hdf5/HDF5-2.0.0-Darwin.tar.gz
+            mv HDF5-2.0.0-Darwin/HDF_Group/HDF5/2.0.0 hdf5-install
+          else
+            wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-ubuntu-2404_gcc.tar.gz -O hdf5-release.tar.gz
+            tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Linux.tar.gz
+            tar xzf hdf5/HDF5-2.0.0-Linux.tar.gz
+            mv HDF5-2.0.0-Linux/HDF_Group/HDF5/2.0.0 hdf5-install
+          fi
+
+      - name: Install CDF library (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Use prebuilt .pkg instead of building from source on macOS due to Xcode compatibility issues
+          curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/macosx/CDF3_9_1-binary_signed.pkg
+          sudo installer -pkg CDF3_9_1-binary_signed.pkg -target /
+          # The .pkg installs as root with restrictive permissions; make readable
+          # so CMake and the linker can find headers/libraries.
+          sudo chmod -R a+rX /Applications/cdf
+
+      - name: Cache CDF library (Linux)
+        if: runner.os == 'Linux'
+        id: cache-cdf
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/cdf-install
+          key: >-
+            cdf-3.9.1-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-cdf-ci.yml') }}
+          restore-keys: |
+            cdf-3.9.1-${{ matrix.os }}-${{ matrix.build-type }}-
+
+      - name: Download and build CDF library (Linux)
+        if: runner.os == 'Linux' && steps.cache-cdf.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ github.workspace }}
+          wget -q https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/linux/cdf39_1-dist-all.tar.gz
+          tar -xzf cdf39_1-dist-all.tar.gz
+          cd cdf39_1-dist
+          make OS=linux ENV=gnu all
+          make INSTALLDIR=${{ github.workspace }}/cdf-install install
+
+      - name: Set up CDF environment
+        run: |
+          if [ "$(uname)" = "Darwin" ]; then
+            echo "CDF_BASE=/Applications/cdf/cdf39_1-dist" >> $GITHUB_ENV
+            echo "/Applications/cdf/cdf39_1-dist/bin" >> $GITHUB_PATH
+          else
+            echo "CDF_BASE=${{ github.workspace }}/cdf-install" >> $GITHUB_ENV
+            echo "${{ github.workspace }}/cdf-install/bin" >> $GITHUB_PATH
+          fi
+
+      - name: Configure CMake
+        run: |
+          cd vol-cdf
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;$CDF_BASE"
+
+      - name: Build
+        run: |
+          cd vol-cdf/build
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
+
+      - name: Run tests
+        run: |
+          cd vol-cdf/build
+          export HDF5_PLUGIN_PATH=$PWD/src
+          export HDF5_VOL_CONNECTOR=""
+          if [ "$(uname)" = "Darwin" ]; then
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:$CDF_BASE/lib:$DYLD_LIBRARY_PATH
+          else
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:$CDF_BASE/lib:$LD_LIBRARY_PATH
+          fi
+          export PATH=${{ github.workspace }}/hdf5-install/bin:$PATH
+          ctest --output-on-failure --verbose
+
+      - name: Upload build artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-cdf-${{ matrix.os }}-${{ matrix.build-type }}
+          path: |
+            vol-cdf/build/CMakeFiles/CMakeOutput.log
+            vol-cdf/build/CMakeFiles/CMakeError.log
+            vol-cdf/build/Testing/Temporary/

@@ -1,0 +1,133 @@
+---
+name: GRIB2 VOL CI
+
+'on':
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test:
+    name: Build and Test GRIB2 VOL
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        build-type: [Release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            gfortran \
+            libopenjp2-7-dev \
+            libpng-dev \
+            libnetcdf-dev \
+            libaec-dev
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install \
+            cmake \
+            gcc \
+            openjpeg \
+            libpng \
+            netcdf \
+            libaec
+
+      - name: Cache ecCodes
+        id: cache-eccodes
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/eccodes-install
+          key: >-
+            eccodes-2.38.3-${{ matrix.os }}-${{ matrix.build-type }}-
+            ${{ hashFiles('.github/workflows/vol-grib2-ci.yml') }}
+          restore-keys: |
+            eccodes-2.38.3-${{ matrix.os }}-${{ matrix.build-type }}-
+
+      - name: Download and build ecCodes
+        if: steps.cache-eccodes.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ github.workspace }}
+          wget -q https://confluence.ecmwf.int/download/attachments/45757960/eccodes-2.38.3-Source.tar.gz
+          tar -xzf eccodes-2.38.3-Source.tar.gz
+          cd eccodes-2.38.3-Source
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/eccodes-install \
+            -DENABLE_FORTRAN=OFF \
+            -DENABLE_PYTHON=OFF \
+            -DENABLE_BUILD_TOOLS=ON \
+            -DENABLE_ECCODES_THREADS=ON
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
+          make install
+
+      - name: Install HDF5
+        run: |
+          cd ${{ github.workspace }}
+          if [ "$(uname)" = "Darwin" ]; then
+            wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-macos14_clang.tar.gz -O hdf5-release.tar.gz
+            tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Darwin.tar.gz
+            tar xzf hdf5/HDF5-2.0.0-Darwin.tar.gz
+            mv HDF5-2.0.0-Darwin/HDF_Group/HDF5/2.0.0 hdf5-install
+          else
+            wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-ubuntu-2404_gcc.tar.gz -O hdf5-release.tar.gz
+            tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Linux.tar.gz
+            tar xzf hdf5/HDF5-2.0.0-Linux.tar.gz
+            mv HDF5-2.0.0-Linux/HDF_Group/HDF5/2.0.0 hdf5-install
+          fi
+
+      - name: Configure CMake
+        run: |
+          cd vol-grib2
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${{ github.workspace }}/eccodes-install"
+
+      - name: Build
+        run: |
+          cd vol-grib2/build
+          if [ "$(uname)" = "Darwin" ]; then
+            make -j$(sysctl -n hw.ncpu)
+          else
+            make -j$(nproc)
+          fi
+
+      - name: Run tests
+        run: |
+          cd vol-grib2/build
+          export HDF5_PLUGIN_PATH=$PWD/src
+          export HDF5_VOL_CONNECTOR=""
+          if [ "$(uname)" = "Darwin" ]; then
+            export DYLD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:${{ github.workspace }}/eccodes-install/lib:$DYLD_LIBRARY_PATH
+          else
+            export LD_LIBRARY_PATH=${{ github.workspace }}/hdf5-install/lib:${{ github.workspace }}/eccodes-install/lib:$LD_LIBRARY_PATH
+          fi
+          export PATH=${{ github.workspace }}/hdf5-install/bin:$PATH
+          ctest --output-on-failure --verbose
+
+      - name: Upload build artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-grib2-${{ matrix.os }}-${{ matrix.build-type }}
+          path: |
+            vol-grib2/build/CMakeFiles/CMakeOutput.log
+            vol-grib2/build/CMakeFiles/CMakeError.log
+            vol-grib2/build/Testing/Temporary/
