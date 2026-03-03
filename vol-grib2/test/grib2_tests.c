@@ -199,7 +199,7 @@ int OpenGRIB2Test(const char *filename, const char *dsetname)
         goto error;
     }
 
-    data = (double *) malloc(dims[0]);
+    data = (double *) malloc(dims[0] * sizeof(double));
     if (!data) {
         printf("Failed to allocate read buffer\n");
         goto error;
