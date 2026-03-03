@@ -1,4 +1,5 @@
 cmake_minimum_required (VERSION 3.9)
+cmake_policy(SET CMP0074 NEW)
 project (geotiff_vol VERSION 1.0.0 DESCRIPTION "HDF5 VOL connector for GeoTIFF files" LANGUAGES C)
 
 # Enable testing
