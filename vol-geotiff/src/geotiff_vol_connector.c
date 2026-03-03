@@ -44,8 +44,7 @@
 
 static hbool_t H5_geotiff_initialized_g = FALSE;
 
-/* Identifiers for HDF5's error API */
-hid_t H5_geotiff_err_stack_g = H5I_INVALID_HID;
+/* Identifier for HDF5's error API */
 hid_t H5_geotiff_err_class_g = H5I_INVALID_HID;
 
 /* Helper functions */
@@ -1880,10 +1879,6 @@ herr_t geotiff_init_connector(hid_t __attribute__((unused)) vipl_id)
                                HDF5_VOL_GEOTIFF_LIB_VER)) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't register with HDF5 error API");
 
-    /* Create a separate error stack for the GEOTIFF VOL to report errors with */
-    if ((H5_geotiff_err_stack_g = H5Ecreate_stack()) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error stack");
-
     /* Initialized */
     H5_geotiff_initialized_g = TRUE;
 
@@ -1900,20 +1895,9 @@ herr_t geotiff_term_connector(void)
 
     /* Unregister from the HDF5 error API */
     if (H5_geotiff_err_class_g >= 0) {
-
         if (H5Eunregister_class(H5_geotiff_err_class_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't unregister from HDF5 error API");
 
-        /* Print the current error stack before destroying it */
-        PRINT_ERROR_STACK;
-
-        /* Destroy the error stack */
-        if (H5Eclose_stack(H5_geotiff_err_stack_g) < 0) {
-            FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't close error stack");
-            PRINT_ERROR_STACK;
-        }
-
-        H5_geotiff_err_stack_g = H5I_INVALID_HID;
         H5_geotiff_err_class_g = H5I_INVALID_HID;
     }
 
@@ -2007,9 +1991,9 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                 for (hsize_t i = *iter_args->idx_p; i < num_dirs; i++) {
                     H5L_info2_t link_info;
                     herr_t cb_ret;
-                    char link_name[32];
+                    char iter_link_name[32];
 
-                    snprintf(link_name, sizeof(link_name), "image%u", (unsigned) i);
+                    snprintf(iter_link_name, sizeof(iter_link_name), "image%u", (unsigned) i);
 
                     memset(&link_info, 0, sizeof(H5L_info2_t));
                     link_info.type = H5L_TYPE_HARD;
@@ -2017,7 +2001,7 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                     link_info.corder = (int64_t) i;
                     link_info.cset = H5T_CSET_ASCII;
 
-                    cb_ret = iter_args->op(0, link_name, &link_info, iter_args->op_data);
+                    cb_ret = iter_args->op(0, iter_link_name, &link_info, iter_args->op_data);
                     *iter_args->idx_p = i + 1;
 
                     if (cb_ret < 0) {
