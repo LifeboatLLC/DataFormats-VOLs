@@ -1991,9 +1991,9 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                 for (hsize_t i = *iter_args->idx_p; i < num_dirs; i++) {
                     H5L_info2_t link_info;
                     herr_t cb_ret;
-                    char link_name[32];
+                    char iter_link_name[32];
 
-                    snprintf(link_name, sizeof(link_name), "image%u", (unsigned) i);
+                    snprintf(iter_link_name, sizeof(iter_link_name), "image%u", (unsigned) i);
 
                     memset(&link_info, 0, sizeof(H5L_info2_t));
                     link_info.type = H5L_TYPE_HARD;
@@ -2001,7 +2001,7 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                     link_info.corder = (int64_t) i;
                     link_info.cset = H5T_CSET_ASCII;
 
-                    cb_ret = iter_args->op(0, link_name, &link_info, iter_args->op_data);
+                    cb_ret = iter_args->op(0, iter_link_name, &link_info, iter_args->op_data);
                     *iter_args->idx_p = i + 1;
 
                     if (cb_ret < 0) {
