@@ -14,8 +14,7 @@ extern "C" {
 
 #include "H5pubconf.h"
 
-/* Identifiers for HDF5's error API */
-extern hid_t H5_grib2_err_stack_g;
+/* Identifier for HDF5's error API */
 extern hid_t H5_grib2_err_class_g;
 extern hid_t H5_grib2_obj_err_maj_g;
 
@@ -50,8 +49,8 @@ extern hid_t H5_grib2_obj_err_maj_g;
         /* Check whether automatic error reporting has been disabled */                            \
         (void) H5Eget_auto2(H5E_DEFAULT, &err_func, NULL);                                         \
         if (err_func) {                                                                            \
-            if (H5_grib2_err_stack_g >= 0 && H5_grib2_err_class_g >= 0) {                          \
-                H5Epush2(H5_grib2_err_stack_g, __FILE__, __func__, __LINE__, H5_grib2_err_class_g, \
+            if (H5_grib2_err_class_g >= 0) {                                                       \
+                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_grib2_err_class_g,          \
                          err_major, err_minor, __VA_ARGS__);                                       \
             } else {                                                                               \
                 fprintf(stderr, __VA_ARGS__);                                                      \
@@ -77,8 +76,8 @@ extern hid_t H5_grib2_obj_err_maj_g;
         /* Check whether automatic error reporting has been disabled */                            \
         (void) H5Eget_auto2(H5E_DEFAULT, &err_func, NULL);                                         \
         if (err_func) {                                                                            \
-            if (H5_grib2_err_stack_g >= 0 && H5_grib2_err_class_g >= 0)                            \
-                H5Epush2(H5_grib2_err_stack_g, __FILE__, __func__, __LINE__, H5_grib2_err_class_g, \
+            if (H5_grib2_err_class_g >= 0)                                                          \
+                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_grib2_err_class_g,          \
                          err_major, err_minor, __VA_ARGS__);                                       \
             else {                                                                                 \
                 fprintf(stderr, __VA_ARGS__);                                                      \
@@ -87,24 +86,6 @@ extern hid_t H5_grib2_obj_err_maj_g;
         }                                                                                          \
                                                                                                    \
         ret_value = ret_val;                                                                       \
-    } while (0)
-
-/*
- * Macro to print out the GRIB2 VOL connector's current error stack
- * and then clear it for future use. (v2 errors only)
- */
-#define PRINT_ERROR_STACK                                                                          \
-    do {                                                                                           \
-        H5E_auto2_t err_func;                                                                      \
-                                                                                                   \
-        /* Check whether automatic error reporting has been disabled */                            \
-        (void) H5Eget_auto2(H5E_DEFAULT, &err_func, NULL);                                         \
-        if (err_func) {                                                                            \
-            if ((H5_grib2_err_stack_g >= 0) && (H5Eget_num(H5_grib2_err_stack_g) > 0)) {           \
-                H5Eprint2(H5_grib2_err_stack_g, NULL);                                             \
-                H5Eclear2(H5_grib2_err_stack_g);                                                   \
-            }                                                                                      \
-        }                                                                                          \
     } while (0)
 
 #else
@@ -132,8 +113,8 @@ extern hid_t H5_grib2_obj_err_maj_g;
                                                                                                    \
         /* Check whether automatic error reporting has been disabled */                            \
         if ((is_v2_err && err_func.err_func_v2) || (!is_v2_err && err_func.err_func_v1)) {         \
-            if (H5_grib2_err_stack_g >= 0 && H5_grib2_err_class_g >= 0) {                          \
-                H5Epush2(H5_grib2_err_stack_g, __FILE__, __func__, __LINE__, H5_grib2_err_class_g, \
+            if (H5_grib2_err_class_g >= 0) {                                                       \
+                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_grib2_err_class_g,          \
                          err_major, err_minor, __VA_ARGS__);                                       \
             } else {                                                                               \
                 fprintf(stderr, __VA_ARGS__);                                                      \
@@ -171,8 +152,8 @@ extern hid_t H5_grib2_obj_err_maj_g;
                                                                                                    \
         /* Check whether automatic error reporting has been disabled */                            \
         if ((is_v2_err && err_func.err_func_v2) || (!is_v2_err && err_func.err_func_v1)) {         \
-            if (H5_grib2_err_stack_g >= 0 && H5_grib2_err_class_g >= 0) {                          \
-                H5Epush2(H5_grib2_err_stack_g, __FILE__, __func__, __LINE__, H5_grib2_err_class_g, \
+            if (H5_grib2_err_class_g >= 0) {                                                       \
+                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_grib2_err_class_g,          \
                          err_major, err_minor, __VA_ARGS__);                                       \
             } else {                                                                               \
                 fprintf(stderr, __VA_ARGS__);                                                      \
@@ -181,35 +162,6 @@ extern hid_t H5_grib2_obj_err_maj_g;
         }                                                                                          \
                                                                                                    \
         ret_value = ret_val;                                                                       \
-    } while (0)
-
-/*
- * Macro to print out the GRIB2 VOL connector's current error stack
- * and then clear it for future use. (compatible with v1 and v2 errors)
- */
-#define PRINT_ERROR_STACK                                                                          \
-    do {                                                                                           \
-        unsigned is_v2_err;                                                                        \
-        union {                                                                                    \
-            H5E_auto1_t err_func_v1;                                                               \
-            H5E_auto2_t err_func_v2;                                                               \
-        } err_func;                                                                                \
-                                                                                                   \
-        /* Determine version of error */                                                           \
-        (void) H5Eauto_is_v2(H5E_DEFAULT, &is_v2_err);                                             \
-                                                                                                   \
-        if (is_v2_err)                                                                             \
-            (void) H5Eget_auto2(H5E_DEFAULT, &err_func.err_func_v2, NULL);                         \
-        else                                                                                       \
-            (void) H5Eget_auto1(&err_func.err_func_v1, NULL);                                      \
-                                                                                                   \
-        /* Check whether automatic error reporting has been disabled */                            \
-        if ((is_v2_err && err_func.err_func_v2) || (!is_v2_err && err_func.err_func_v1)) {         \
-            if ((H5_grib2_err_stack_g >= 0) && (H5Eget_num(H5_grib2_err_stack_g) > 0)) {           \
-                H5Eprint2(H5_grib2_err_stack_g, NULL);                                             \
-                H5Eclear2(H5_grib2_err_stack_g);                                                   \
-            }                                                                                      \
-        }                                                                                          \
     } while (0)
 
 #endif /* H5_NO_DEPRECATED_SYMBOLS */
