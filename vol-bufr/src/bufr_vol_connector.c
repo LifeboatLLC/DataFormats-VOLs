@@ -37,8 +37,7 @@
 
 static hbool_t H5_bufr_initialized_g = FALSE;
 
-/* Identifiers for HDF5's error API */
-hid_t H5_bufr_err_stack_g = H5I_INVALID_HID;
+/* Identifier for HDF5's error API */
 hid_t H5_bufr_err_class_g = H5I_INVALID_HID;
 hid_t H5_bufr_obj_err_maj_g = H5I_INVALID_HID;
 
@@ -1659,10 +1658,6 @@ herr_t bufr_init_connector(hid_t __attribute__((unused)) vipl_id)
                                                  HDF5_VOL_BUFR_LIB_VER)) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't register with HDF5 error API");
 
-    /* Create a separate error stack for the BUFR VOL to report errors with */
-    if ((H5_bufr_err_stack_g = H5Ecreate_stack()) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error stack");
-
     /* Set up a few BUFR VOL-specific error API message classes */
     if ((H5_bufr_obj_err_maj_g =
              H5Ecreate_msg(H5_bufr_err_class_g, H5E_MAJOR, "Object interface")) < 0)
@@ -1691,16 +1686,6 @@ herr_t bufr_term_connector(void)
         if (H5Eunregister_class(H5_bufr_err_class_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't unregister from HDF5 error API");
 
-        /* Print the current error stack before destroying it */
-        PRINT_ERROR_STACK;
-
-        /* Destroy the error stack */
-        if (H5Eclose_stack(H5_bufr_err_stack_g) < 0) {
-            FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't close error stack");
-            PRINT_ERROR_STACK;
-        }
-
-        H5_bufr_err_stack_g = H5I_INVALID_HID;
         H5_bufr_err_class_g = H5I_INVALID_HID;
         H5_bufr_obj_err_maj_g = H5I_INVALID_HID;
     }
