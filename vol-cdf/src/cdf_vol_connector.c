@@ -2884,7 +2884,7 @@ const void *H5PLget_plugin_info(void)
  *---------------------------------------------------------------------------
  */
 herr_t cdf_introspect_opt_query(void __attribute__((unused)) * obj, H5VL_subclass_t subcls,
-                                    int opt_type, uint64_t __attribute__((unused)) * flags)
+                                int opt_type, uint64_t __attribute__((unused)) * flags)
 {
     /* We don't support any optional operations */
     (void) subcls;
@@ -2894,8 +2894,8 @@ herr_t cdf_introspect_opt_query(void __attribute__((unused)) * obj, H5VL_subclas
 } /* end cdf_introspect_opt_query() */
 
 herr_t cdf_introspect_get_conn_cls(void __attribute__((unused)) * obj,
-                                       H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
-                                       const H5VL_class_t __attribute__((unused)) * *conn_cls)
+                                   H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
+                                   const H5VL_class_t __attribute__((unused)) * *conn_cls)
 {
     herr_t ret_value = SUCCEED;
 
@@ -2912,18 +2912,13 @@ herr_t cdf_init_connector(hid_t __attribute__((unused)) vipl_id)
     herr_t ret_value = SUCCEED;
 
     /* Register the connector with HDF5's error reporting API */
-    if ((H5_cdf_err_class_g =
-             H5Eregister_class(HDF5_VOL_CDF_ERR_CLS_NAME, HDF5_VOL_CDF_LIB_NAME,
-                               HDF5_VOL_CDF_LIB_VER)) < 0)
+    if ((H5_cdf_err_class_g = H5Eregister_class(HDF5_VOL_CDF_ERR_CLS_NAME, HDF5_VOL_CDF_LIB_NAME,
+                                                HDF5_VOL_CDF_LIB_VER)) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't register with HDF5 error API");
 
-    /* Create a separate error stack for the CDF VOL to report errors with */
-    if ((H5_cdf_err_stack_g = H5Ecreate_stack()) < 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error stack");
-
     /* Set up a few CDF VOL-specific error API message classes */
-    if ((H5_cdf_obj_err_maj_g =
-             H5Ecreate_msg(H5_cdf_err_class_g, H5E_MAJOR, "Object interface")) < 0)
+    if ((H5_cdf_obj_err_maj_g = H5Ecreate_msg(H5_cdf_err_class_g, H5E_MAJOR, "Object interface")) <
+        0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
                         "can't create error message for object interface");
 
@@ -2949,21 +2944,9 @@ herr_t cdf_term_connector(void)
         if (H5Eunregister_class(H5_cdf_err_class_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't unregister from HDF5 error API");
 
-        /* Print the current error stack before destroying it */
-        PRINT_ERROR_STACK;
-
-        /* Destroy the error stack */
-        if (H5Eclose_stack(H5_cdf_err_stack_g) < 0) {
-            FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't close error stack");
-            PRINT_ERROR_STACK;
-        }
-
-        H5_cdf_err_stack_g = H5I_INVALID_HID;
         H5_cdf_err_class_g = H5I_INVALID_HID;
         H5_cdf_obj_err_maj_g = H5I_INVALID_HID;
     }
 
     return ret_value;
 } /* end cdf_term_connector() */
-
-
