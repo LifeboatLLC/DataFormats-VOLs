@@ -5,15 +5,14 @@
 
 /* CDF functionality tests */
 int OpenCDFTest(const char *filename);
-int OpenLinksandGroupsTest(void);
+int CheckExistenceAndOpenTest(void);
 int MultiLinksExistTest(void);
-int LinkIterateTest(void);
+int LinkAttrIterateTest(void);
 int ReadCDFVariableTest(void);
 int DatasetDatatypeConversionTest(void);
 int ReadVariableAttributeTest(void);
 int ReadUnindexedGlobalArrayAttributeTest(void);
 int ReadIndexedGlobalAttributeTest(void);
 int ReadBasicRVariableAndREntryTest(void);
-// int IndexedGAttributeDtypeConversionTest(void);
 
 #endif /* TEST_CDF_H */

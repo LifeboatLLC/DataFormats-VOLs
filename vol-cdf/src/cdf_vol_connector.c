@@ -72,14 +72,14 @@ static const H5VL_class_t cdf_class_g = {
     },
     {
         /* attribute_cls */
-        NULL,          /* create       */
-        cdf_attr_open, /* open         */
-        cdf_attr_read, /* read         */
-        NULL,          /* write        */
-        cdf_attr_get,  /* get          */
-        NULL,          /* specific     */
-        NULL,          /* optional     */
-        cdf_attr_close /* close        */
+        NULL,              /* create       */
+        cdf_attr_open,     /* open         */
+        cdf_attr_read,     /* read         */
+        NULL,              /* write        */
+        cdf_attr_get,      /* get          */
+        cdf_attr_specific, /* specific     */
+        NULL,              /* optional     */
+        cdf_attr_close     /* close        */
     },
     {
         /* dataset_cls */
@@ -415,72 +415,68 @@ done:
     return ret_value;
 } /* end transfer_data_to_user() */
 
-/* Helper function: Parse attribute name to find optional [index] suffix
+/* Helper function: Parse attribute name to find optional "_#" index suffix
  * If no index is found, the name will just be copied as is */
 static herr_t parse_attr_name(const char *name, cdf_attr_t *attr)
 {
     herr_t ret_value = SUCCEED;
-    const char *bracket_open = NULL;
-    const char *bracket_close = NULL;
+    const char *underscore = NULL;
 
     if (!name || !attr) {
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "invalid arguments");
     }
 
-    /* Look for [index] suffix */
-    bracket_open = strrchr(name, '[');
-    bracket_close = strrchr(name, ']');
+    /* Assume attribute name is non-indexed by default */
+    attr->indexed = false;
+    attr->index = -1;
 
-    /* Check if there is only one valid index */
-    if (bracket_open != strchr(name, '[') || bracket_close != strrchr(name, ']')) {
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "invalid attribute index format");
-    }
+    /* Look for last '_' character in the string */
+    underscore = strrchr(name, '_');
 
-    if (bracket_open && bracket_close && (bracket_close > bracket_open)) {
-        /* Ensure that the index is at the end of the name */
-        if (bracket_close != name + strlen(name) - 1) {
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "invalid attribute index format");
+    if (underscore != NULL) { /* Underscore exists */
+        /* Get char after underscore */
+        const char *suffix = underscore + 1;
+
+        /* Check that next character isnt the end of string */
+        if (*suffix != '\0') {
+            /* Attempt to read suffix into long */
+            char *endptr = NULL;
+            errno = 0;
+            long index = strtol(suffix, &endptr, 10);
+            if (errno == ERANGE) { /* Check for conversion errors */
+                FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "index out of range");
+            }
+
+            /* Check for non-numeric suffix */
+            if (suffix != endptr && *endptr == '\0') {
+                /* Successfully parsed index from suffix */
+                attr->indexed = true;
+                attr->index = index;
+            }
         }
-
-        /* Found brackets - attempt to parse index */
-        char *endptr = NULL;
-        long index = strtol(bracket_open + 1, &endptr, 10);
-        /* Check for non numerical chars in index or conversion errors */
-        if (endptr != bracket_close || errno == ERANGE) {
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "invalid attribute index format");
-        }
-        if (index < 0) {
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "attribute index cannot be negative");
-        }
-        attr->indexed = true;
-        attr->index = index;
-
-        /* Copy the base name of the attribute (without the [index] suffix) */
-        size_t base_len = (size_t) (bracket_open - name);
-
-        attr->name = (char *) malloc(base_len + 1);
+    } 
+    
+    if (attr->indexed) {
+        /* Copy the base name of the attribute (without the _# index suffix) */
+        size_t base_len = (size_t)(underscore - name);
+        
+        attr->name = (char *)malloc(base_len + 1);
         if (!attr->name) {
             FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
                             "failed to allocate memory for attribute name");
         }
 
+        /* Only copy the name to the character right before '_' (not including it) */
         memcpy(attr->name, name, base_len);
 
         attr->name[base_len] = '\0'; /* Null-terminate the name */
-    } else if (!bracket_open && !bracket_close) {
-        /* No brackets - not indexed */
-        attr->indexed = false;
-        attr->index = -1;
-
-        /* Copy the full name */
+    } else {
+        /* Not indexed. Copy the full name */
         attr->name = strdup(name);
         if (!attr->name) {
             FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
                             "failed to copy attribute name to attribute struct");
         }
-    } else {
-        /* Mismatched brackets */
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, FAIL, "invalid attribute index format");
     }
 
 done:
@@ -518,6 +514,111 @@ done:
     return ret_value;
 }
 
+/* Helper function that loops through all attributes in the CDF file and gathers basic information
+ * about each one. The information gathered includes*/
+static herr_t cache_cdf_attribute_info(cdf_file_t *file)
+{
+    herr_t ret_value = SUCCEED;
+    CDFstatus status; /* CDF completion status. */
+    char attrName[CDF_ATTR_NAME_LEN256+1]; /* Temp name storage */
+    long attrScope;  /* Temporary scope storage variable */
+    long max_gEntry; /* Maximum valid entry number for a gAttribute */
+    long max_rEntry; /* Maximum valid entry number for an rVar vAttribute */
+    long max_zEntry; /* Maximum valid entry number for a zVar vAttribute */
+    long gAttr_count = 0; /* Index for creating gAttrCache */
+    long vAttr_count = 0; /* Index for creating gAttrCache */
+    
+    /* Get number of global attributes in CDF */
+    status = CDFgetNumgAttributes(file->id, &file->numgAttrs);
+    if (status != CDF_OK) {
+        cdf_print_error(status);
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, FAIL, "Failed to get the number of gAttributes from CDF file");
+    }
+
+    /* Get number of Variable attributes in CDF */
+    status = CDFgetNumvAttributes(file->id, &file->numvAttrs);
+    if (status != CDF_OK) {
+        cdf_print_error(status);
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, FAIL, "Failed to get the number of vAttributes from CDF file");
+    }
+
+    /* Allocate memory for attribute lists */
+    file->gAttrCache = calloc(file->numgAttrs, sizeof(cdf_attr_cache_t));
+    file->vAttrCache = calloc(file->numvAttrs, sizeof(cdf_attr_cache_t));
+    if (file->gAttrCache == NULL || file->vAttrCache == NULL) {
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTALLOC, FAIL,
+                        "Failed to allocate memory for CDF attribute caches");
+    }
+
+    /* Cache all basic attribute information */
+    for (long attrNum = 0; attrNum < file->numAttrs; attrNum++) {
+        status = CDFinquireAttr(
+            file->id,
+            attrNum, 
+            attrName, 
+            &attrScope,
+            &max_gEntry,  /* Only applicable for gAttribute */
+            &max_rEntry,  /* Only applicable for vAttribute */
+            &max_zEntry   /* Only applicable for vAttribute */
+        );
+        if (status != CDF_OK){
+            cdf_print_error(status);
+            FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, FAIL,
+                            "CDFinquireAttr failed to get attribute information");
+        }
+
+        if (attrScope == GLOBAL_SCOPE) {
+            cdf_attr_cache_t *cache_entry = &file->gAttrCache[gAttr_count]; /* Convenience pointer */
+
+            /* Store known attribute info */
+            cache_entry->attrName = strdup(attrName);
+            cache_entry->attrNum = attrNum;
+            cache_entry->maxEntryNum = max_gEntry;
+            
+            /* Get total number of gEntries and store it in cache_entry */
+            status = CDFgetNumAttrgEntries(file->id, attrNum, &cache_entry->numEntries);
+            if (status != CDF_OK) {
+                cdf_print_error(status);
+                FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, FAIL,
+                                "failed to get number of entries of gAttribute: %s", attrName);
+            }
+            
+            gAttr_count++; /* Increment gAttrCache index */
+
+        } else if (attrScope == VARIABLE_SCOPE) {
+            cdf_attr_cache_t *cache_entry = &file->vAttrCache[vAttr_count]; /* Convenience pointer */
+            
+            /* Store the other attribute info */
+            cache_entry->attrName = strdup(attrName);
+            cache_entry->attrNum = attrNum;
+            cache_entry->maxEntryNum = max_zEntry;
+            
+            /* Get number of zEntries for this vAttribute*/
+            status = CDFgetNumAttrzEntries(file->id, attrNum, &cache_entry->numEntries);
+            if (status != CDF_OK) {
+                cdf_print_error(status);
+                FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, FAIL,
+                                "failed to get number of entries for vAttribute #%ld", attrNum);
+            }
+
+            vAttr_count++; /* Increment vAttrCache index */
+
+        } else { /* Sanity check */
+            FUNC_GOTO_ERROR(H5E_FILE, H5E_UNSUPPORTED, FAIL,
+                            "Attribute scope returned by CDFinquireAttr is not valid");
+        }
+    }
+
+    /* Check that # of cached attributes matches # of CDF attributes */
+    if (gAttr_count != file->numgAttrs || vAttr_count != file->numvAttrs){
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_READERROR, FAIL,
+                        "Mismatch between cached CDF attributes and reported counts");
+    }
+
+done:
+    return ret_value;
+}
+
 void *cdf_file_open(const char *name, unsigned flags, hid_t fapl_id,
                     hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
@@ -525,6 +626,10 @@ void *cdf_file_open(const char *name, unsigned flags, hid_t fapl_id,
     CDFstatus status; /* CDF completion status. */
     cdf_object_t *file_obj = NULL;
     cdf_object_t *ret_value = NULL;
+     
+    /* Temporary variables for unused CDFinquireCDF() call parameters */
+    long numDims, maxrRec, numrVars; /* Information about rVariables - not useful with zMode 2 */
+    long dimSizes[CDF_MAX_DIMS];     /* Dimension sizes for rVariables - not useful with zMode 2 */
 
     cdf_file_t *file = NULL; /* Convenience pointer */
 
@@ -561,6 +666,33 @@ void *cdf_file_open(const char *name, unsigned flags, hid_t fapl_id,
     /* Set file zMode/2 - Specifies that all rVariables are to be converted to zVariables,
      * and all false dimensions from dimension variances are removed */
     status = CDFsetzMode(file->id, zMODEon2);
+    if (status != CDF_OK) {
+        cdf_print_error(status);
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTSET, NULL, "Failed to set zMode to zMODEon2 in CDF: %s", name);
+    }
+
+    /* Cache file specific information with CDFinquireCDF() */
+    status = CDFinquireCDF(
+        file->id, 
+        &numDims, 
+        dimSizes, 
+        &file->encoding, 
+        &file->majority, 
+        &maxrRec,
+        &numrVars,
+        &file->maxzRec,
+        &file->numzVars,
+        &file->numAttrs
+    );
+    if (status != CDF_OK) {
+        cdf_print_error(status);
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, NULL, "Failed to inquire data while opening CDF: %s", name);
+    }
+
+    /* Cache CDF file information */
+    if (cache_cdf_attribute_info(file) < 0){
+        FUNC_GOTO_ERROR(H5E_FILE, H5E_CANTGET, NULL, "Failed to cache CDF attribute information");
+    }
 
     file->flags = flags;
     file->plist_id = fapl_id;
@@ -569,7 +701,7 @@ void *cdf_file_open(const char *name, unsigned flags, hid_t fapl_id,
 
 done:
     if (!ret_value) {
-        if (file_obj) {
+        if (file_obj) { 
             H5E_BEGIN_TRY
             {
                 cdf_file_close(file_obj, dxpl_id, req);
@@ -607,6 +739,23 @@ herr_t cdf_file_close(void *file, hid_t __attribute__((unused)) dxpl_id,
                 o->u.file.id = NULL;
             }
         }
+
+        if (o->u.file.gAttrCache) {
+            for (long i = 0; i < o->u.file.numgAttrs; i++) {
+                free(o->u.file.gAttrCache[i].attrName);
+            }
+            free(o->u.file.gAttrCache);
+            o->u.file.gAttrCache = NULL;
+        }
+        
+        if (o->u.file.vAttrCache) {
+            for (long i = 0; i < o->u.file.numvAttrs; i++) {
+                free(o->u.file.vAttrCache[i].attrName);
+            }
+            free(o->u.file.vAttrCache);
+            o->u.file.vAttrCache = NULL;
+        }
+
         if (o->u.file.filename) {
             free(o->u.file.filename);
         }
@@ -654,8 +803,7 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     cdf_dataset_t *dset = NULL; /* Convenience pointer */
     cdf_file_t *file = NULL;    /* Convenience pointer */
 
-    H5T_class_t dtype_class = H5T_NO_CLASS;
-    hsize_t dspace_dims[CDF_MAX_DIMS]; /* Dataspace dimensions */
+    hsize_t dspace_dims[CDF_MAX_DIMS];    /* Dataspace dimensions */
 
     if (!base_obj || !name) {
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file or dataset name");
@@ -697,6 +845,7 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
     dset->num_records = 0;
     dset->num_dims = 0;
     memset(dset->dim_sizes, 0, sizeof(dset->dim_sizes));
+    dset->parent = obj;
     dset->type_id = H5I_INVALID_HID;
     dset->space_id = H5I_INVALID_HID;
     long data_type = -1;
@@ -734,10 +883,6 @@ void *cdf_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)
             FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_CANTGET, NULL,
                             "Failed to map CDF data type %ld to HDF5 datatype", data_type);
         }
-    }
-
-    if ((dtype_class = H5Tget_class(dset->type_id)) < 0) {
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL, "Failed to get datatype class");
     }
 
     /* Get the maximum number of records written to this variable*/
@@ -1310,12 +1455,11 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
 
     /* Check if attribute exists in CDF file at all (Either as gAttribute or vAttribute) */
     CDFid id = parent_obj->parent_file->u.file.id;
-    attr->attr_num = CDFgetAttrNum(id, attr->name);
 
-    if (attr->attr_num < CDF_OK) {
-        cdf_print_error(attr->attr_num);
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_NOTFOUND, NULL, "Attribute '%s' not found in CDF file.",
-                        attr->name);
+    attr->attrNum = CDFgetAttrNum(id, attr->name);
+    if (attr->attrNum < CDF_OK) {
+        cdf_print_error(attr->attrNum);
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_NOTFOUND, NULL, "Attribute '%s' not found in CDF file.", attr->name);
     }
 
     /* Inquire attribute information from CDF */
@@ -1323,9 +1467,15 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
     long max_gEntry, max_rEntry, max_zEntry;
     char attrName[CDF_ATTR_NAME_LEN256 + 1];
 
-    status = CDFinquireAttr(id, attr->attr_num, attrName, &attr->scope, &max_gEntry,
-                            &max_rEntry,  /* Only applicable for vAttribute */
-                            &max_zEntry); /* Only applicable for vAttribute */
+    status = CDFinquireAttr(
+        id,
+        attr->attrNum, 
+        attrName, 
+        &attr->scope,
+        &max_gEntry,
+        &max_rEntry,  /* Only applicable for vAttribute */
+        &max_zEntry   /* Only applicable for vAttribute */
+    ); 
     if (status != CDF_OK) {
         cdf_print_error(status);
         FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, NULL, "failed to read data from CDF attribute '%s'",
@@ -1354,8 +1504,8 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
             }
 
             /* Query specific gEntry using parsed index */
-            status = CDFinquireAttrgEntry(id, attr->attr_num, attr->index, &attr->datatype,
-                                          &attr->num_elements);
+            status = CDFinquireAttrgEntry(id, attr->attrNum, attr->index, &attr->datatype,
+                                    &attr->num_elements);
             if (status != CDF_OK) {
                 cdf_print_error(status);
                 FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, NULL,
@@ -1424,7 +1574,7 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
             size_t max_len = 0;    /* Max length of single gEntry string */
 
             /* Get total number of gEntries */
-            status = CDFgetNumAttrgEntries(id, attr->attr_num, &num_gEntries);
+            status = CDFgetNumAttrgEntries(id, attr->attrNum, &num_gEntries);
             if (status != CDF_OK) {
                 cdf_print_error(status);
                 FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, NULL,
@@ -1448,9 +1598,9 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
              *   the resulting HDF5 string type will still have size 1
              *   to accommodate the null terminator.
              */
-            for (int i = 0; i <= max_gEntry; i++) {
-                status =
-                    CDFinquireAttrgEntry(id, attr->attr_num, (long) i, &datatype, &num_elements);
+            for (int i=0; i <= max_gEntry; i++) {
+                status = CDFinquireAttrgEntry (id, attr->attrNum, (long) i, &datatype, 
+                                        &num_elements);
                 if (status == NO_SUCH_ENTRY || num_elements == 0) {
                     gEntry_len = 0; /* Empty string for non-existent gEntry */
                 } else if (status != CDF_OK) {
@@ -1513,12 +1663,13 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
         }
 
         /* Inquire vAttribute zEntry info */
-        status = CDFinquireAttrzEntry(id, attr->attr_num, parent_dset->var_num, &attr->datatype,
-                                      &attr->num_elements);
+        status = CDFinquireAttrzEntry (id, attr->attrNum, parent_dset->var_num,
+                               &attr->datatype, &attr->num_elements);
         if (status != CDF_OK) {
             cdf_print_error(status);
-            FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, NULL,
-                            "failed to read data from CDF vAttribute '%s'", attr->name);
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_READERROR, NULL, 
+                            "failed while inquiring information about zEntry #%ld from Attribute '%s'", 
+                            parent_dset->var_num, attr->name); 
         }
 
         if (attr->num_elements <= 0) {
@@ -1759,8 +1910,8 @@ done:
 } /* end get_cdf_datatype_name() */
 
 /* Helper function: stringify a given gEntry */
-static herr_t stringify_gEntry(CDFid id, long attr_num, long gEntry_index, long cdf_datatype,
-                               long num_elements, size_t str_size, char *out)
+static herr_t stringify_gEntry(CDFid id, long attrNum, long gEntry_index, long cdf_datatype, 
+                                long num_elements, size_t str_size, char *out )
 {
     herr_t ret_value = SUCCEED;
     CDFstatus status;
@@ -1814,8 +1965,8 @@ static herr_t stringify_gEntry(CDFid id, long attr_num, long gEntry_index, long 
     /* String case */
     if (cdf_datatype == CDF_CHAR || cdf_datatype == CDF_UCHAR) {
         /* Read string data directly into output buffer */
-        status = CDFgetAttrgEntry(id, attr_num, gEntry_index, out + offset);
-        if (status != CDF_OK) {
+        status = CDFgetAttrgEntry(id, attrNum, gEntry_index, out + offset);
+        if (status != CDF_OK){
             cdf_print_error(status);
             FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "Failed to get CDF attribute gEntry data");
         }
@@ -1832,7 +1983,7 @@ static herr_t stringify_gEntry(CDFid id, long attr_num, long gEntry_index, long 
     }
 
     /* Read data into buffer */
-    status = CDFgetAttrgEntry(id, attr_num, gEntry_index, buffer);
+    status = CDFgetAttrgEntry(id, attrNum, gEntry_index, buffer);
     if (status != CDF_OK) {
         cdf_print_error(status);
         free(buffer);
@@ -1978,7 +2129,7 @@ herr_t cdf_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, vo
 
                 memset(str_buf, 0, a->num_elements);
 
-                status = CDFgetAttrgEntry(id, a->attr_num, a->index, str_buf);
+                status = CDFgetAttrgEntry(id, a->attrNum, a->index, str_buf);
                 if (status != CDF_OK) {
                     cdf_print_error(status);
                     FUNC_GOTO_ERROR(
@@ -2005,7 +2156,7 @@ herr_t cdf_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, vo
                 }
 
                 /* Read non-string global attribute */
-                status = CDFgetAttrgEntry(id, a->attr_num, a->index, cdf_buf);
+                status = CDFgetAttrgEntry(id, a->attrNum, a->index, cdf_buf);
                 if (status != CDF_OK) {
                     cdf_print_error(status);
                     FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL,
@@ -2074,24 +2225,26 @@ herr_t cdf_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, vo
 
                 /* Inquire gEntry to ensure it exists and get its datatype/num_elements */
                 long datatype, num_elements;
-                status = CDFinquireAttrgEntry(id, a->attr_num, cdf_entry_index, &datatype,
-                                              &num_elements);
+                status = CDFinquireAttrgEntry (id, a->attrNum, cdf_entry_index,
+                                       &datatype, &num_elements);
                 if (status == NO_SUCH_ENTRY || num_elements == 0) {
-                    /* Entry no longer exists -> write empty string */
-                    memset(entry_buf, 0, str_size);
-                    continue;
-                } else if (status != CDF_OK) {
-                    cdf_print_error(status);
+                    /* This shouldn't be possible since we are already using only valid gEntry indices ... */
                     FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL,
-                                    "failed to read data from CDF gEntry #%zu from gAttribute '%s'",
-                                    i, a->name);
+                                    "Could not inquire expected CDF gEntry #%zu on gAttribute '%s'",
+                                    cdf_entry_index, a->name);
+                }
+                else if (status != CDF_OK) {
+                    cdf_print_error(status);
+                    FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL, 
+                                    "failed to read data from CDF gEntry #%zu from gAttribute '%s'", 
+                                    cdf_entry_index, a->name); 
                 }
                 /* Stringify gEntry into the appropriate location in user buffer */
-                if (stringify_gEntry(id, a->attr_num, cdf_entry_index, datatype, num_elements,
-                                     str_size, entry_buf) < 0) {
+                if (stringify_gEntry(id, a->attrNum, cdf_entry_index, datatype, 
+                                    num_elements, str_size, entry_buf) < 0) {
                     FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_READERROR, FAIL,
-                                    "failed to stringify gEntry #%zu from gAttribute '%s'", i,
-                                    a->name);
+                                    "failed to stringify gEntry #%zu from gAttribute '%s'", 
+                                    cdf_entry_index, a->name);
                 }
             }
         }
@@ -2130,7 +2283,7 @@ herr_t cdf_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, vo
             memset(str_buf, 0, a->num_elements);
 
             /* Read string attribute */
-            status = CDFgetAttrzEntry(id, a->attr_num, varNum, str_buf);
+            status = CDFgetAttrzEntry(id, a->attrNum, varNum, str_buf);
             if (status != CDF_OK) {
                 cdf_print_error(status);
                 FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL,
@@ -2154,7 +2307,7 @@ herr_t cdf_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, vo
             }
 
             /* Read non-string attribute */
-            status = CDFgetAttrzEntry(id, a->attr_num, varNum, cdf_buf);
+            status = CDFgetAttrzEntry(id, a->attrNum, varNum, cdf_buf);
             if (status != CDF_OK) {
                 cdf_print_error(status);
                 FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL,
@@ -2298,6 +2451,418 @@ herr_t cdf_attr_close(void *attr, hid_t dxpl_id, void **req)
     return ret_value;
 } /* end cdf_attr_close() */
 
+
+/* cppcheck-suppress constParameterCallback */
+herr_t cdf_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                         H5VL_attr_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                         void __attribute__((unused)) * *req)
+{
+    herr_t ret_value = SUCCEED;
+    const char *attr_name = NULL;
+    cdf_object_t *o = (cdf_object_t *) obj;
+    cdf_file_t *file = NULL;
+    CDFstatus status;
+
+    if (!obj || !loc_params || !args) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to attr_specific");
+    }
+
+    cdf_object_t *file_obj = o->parent_file;
+    if (!file_obj || file_obj->obj_type != H5I_FILE) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid file object in attr_specific");
+    }
+    file = &file_obj->u.file;
+    CDFid id = file->id;
+
+    /* Accept only H5VL_ATTR_EXISTS and H5VL_ATTR_ITER */
+    switch (args->op_type) {
+        case H5VL_ATTR_EXISTS: {
+
+            attr_name = args->args.exists.name;
+            *args->args.exists.exists = false; /* Assume it doesn't exist by default */
+
+            if (!attr_name) {
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "No attribute name provided");
+            }
+            
+            /* Fail on non name-based location parameter type */
+            if (loc_params->type != H5VL_OBJECT_BY_SELF) {
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
+                                "unexpected location type for attribute existence check");
+            }
+
+            if (o->obj_type == H5I_FILE || o->obj_type == H5I_GROUP) {
+                /* Search gAttrCache for matching name */
+                for (long i = 0; i < file->numgAttrs; i++) {
+                    if (strcmp(file->gAttrCache[i].attrName, attr_name) == 0){
+                        *args->args.exists.exists = true;
+                        break;
+                    }
+                }
+
+            } else if (o->obj_type == H5I_DATASET) {
+                /* Get parent dataset object */
+                cdf_dataset_t *dset = &o->u.dataset;
+
+                /* Search vAttrCache for matching name */
+                for (long i = 0; i < file->numvAttrs; i++) {
+                    if (strcmp(file->vAttrCache[i].attrName, attr_name) == 0) {
+                        /* Make sure that this attribute has an entry for this variable (dataset) */
+                        status = CDFconfirmzEntryExistence(id, file->vAttrCache[i].attrNum, dset->var_num);
+                        if (status == CDF_OK) {
+                            *args->args.exists.exists = true;
+                            break;
+                        }
+                    }
+                }
+
+            } else {
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid object type");
+            }
+
+            break;
+        }
+
+        case H5VL_ATTR_ITER: {
+            /* Wrap internal object with "wrap context" to get valid hid_t for it */
+            hid_t loc_id = H5VLwrap_register(obj, o->obj_type);
+            if (loc_id == H5I_INVALID_HID) {
+                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTREGISTER, FAIL,
+                                "could not register object for attribute iteration");
+            }
+
+            H5VL_attr_iterate_args_t *iter_args = &args->args.iterate;
+
+            long datatype, num_elements; /* For CDFinquireAttr() */
+            hsize_t data_size;           /* Expected size of attribute data */
+
+            assert(iter_args);
+            assert(iter_args->idx);
+
+            if (o->obj_type == H5I_FILE || o->obj_type == H5I_GROUP) {
+
+                if (*iter_args->idx >= (hsize_t) file->numgAttrs) {
+                    /* Iteration index is beyond number of gAttributes - mark iteration complete */
+                    break;
+                }
+                
+                if (iter_args->op) {
+                    for (long cache_index = (long)(*iter_args->idx); cache_index < file->numgAttrs; cache_index++) {
+                        H5A_info_t attr_info;
+                        herr_t cb_ret;
+
+                        /* Grab pre-cached info for this specific gAttribute */
+                        cdf_attr_cache_t *cache_entry = &file->gAttrCache[cache_index];
+
+                        /* Get the data size of the stringified gEntry array
+                        * - NO_SUCH_ENTRY and existing entries with num_elements == 0
+                        *   are both represented as empty strings.
+                        * - max_len may legitimately remain 0 if all gEntries are empty;
+                        *   the resulting HDF5 string type will still have size 1
+                        *   to accommodate the null terminator. 
+                        */
+                        size_t gEntry_len = 0;
+                        size_t max_len = 0;
+                        for (long i = 0; i <= cache_entry->maxEntryNum; i++) {
+                            status = CDFinquireAttrgEntry (id, cache_entry->attrNum, i, &datatype, 
+                                                    &num_elements);
+                            if (status == NO_SUCH_ENTRY || num_elements == 0) {
+                                gEntry_len = 0; /* Empty string for non-existent gEntry */
+                            }
+                            else if (status != CDF_OK) {
+                                cdf_print_error(status);
+                                FUNC_GOTO_ERROR(H5E_VOL, H5E_READERROR, FAIL, 
+                                                "failed to read data from CDF gEntry #%ld from CDF gAttribute '%s'", 
+                                                i, cache_entry->attrName);
+                            } else {
+                                gEntry_len = calculate_gEntry_str_len(datatype, num_elements);
+                                if (gEntry_len <= 0) {
+                                    FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL,
+                                                    "failed to calculate string size for gEntry #%ld from gAttribute '%s'", i, cache_entry->attrName);
+                                }
+                            }
+                            if (gEntry_len > max_len) {
+                                max_len = gEntry_len;
+                            }
+                        }
+
+
+                        memset(&attr_info, 0, sizeof(H5A_info_t));
+                        
+                        /* Set gAttribute data size to be large enough for stringified gEntry array.
+                        * The largest stringified gEntry sets the length of each string in the array,
+                        * and there is 1 string per gEntry. (+1 to max_len for null terminator) */
+                        data_size = (max_len + 1) * cache_entry->numEntries; 
+
+                        /* Use cache index as creation order since lower indices correspond to older attrs */
+                        attr_info.corder_valid = true;
+                        attr_info.corder       = (int64_t)cache_index; 
+                        attr_info.cset         = H5T_CSET_ASCII;
+                        attr_info.data_size    = data_size;
+
+                        cb_ret = iter_args->op(loc_id, cache_entry->attrName, &attr_info, iter_args->op_data);
+                        *iter_args->idx = (hsize_t)(cache_index + 1); /* TODO: is this needed? */
+
+                        if (cb_ret < 0)
+                            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADITER, FAIL, "Iterator callback returned error");
+                        else if (cb_ret > 0) {
+                            ret_value = cb_ret;
+                            goto done;
+                        }
+                    }
+                }
+
+            } else if (o->obj_type == H5I_DATASET) {
+
+                /* Object type is H5I_DATASET, iterate through attributes attached to the dataset only*/
+                cdf_dataset_t *dset = &o->u.dataset;
+
+                /* Allocate space for array that will track which vAttributes have an entry attached to this variable */
+                long *varAttrCacheIndices = (long *) malloc(file->numvAttrs * sizeof(long));
+                long varAttrCount = 0;
+
+                for (long cache_index = 0; cache_index < file->numvAttrs; cache_index++) {
+                    /* Grab pre-cached info for this specific vAttribute */
+                    cdf_attr_cache_t *cache_entry = &file->vAttrCache[cache_index];
+
+                    /* Check that current vAttribute has an entry for this variable */
+                    status = CDFconfirmzEntryExistence(file->id, cache_entry->attrNum, dset->var_num);
+                    if (status == CDF_OK) {
+                        varAttrCacheIndices[varAttrCount++] = cache_index;
+                    } else if (status == NO_SUCH_ENTRY) {
+                        continue;
+                    } else {
+                        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, FAIL,
+                                        "failed to check if vEntry #%ld exists on vAttr '%s'",
+                                        dset->var_num, cache_entry->attrName);
+                    }
+                }
+                
+                if (*iter_args->idx >= (hsize_t)varAttrCount) {
+                    /* Iteration index is beyond number of variable vAttributes - mark iteration complete */
+                    break;
+                }
+
+                if (iter_args->op) {
+                    for (long i = (long)(*iter_args->idx); i < varAttrCount; i++) {
+                        H5A_info_t attr_info;
+                        herr_t cb_ret;
+
+                        /* Grab the index of the current attribute */
+                        long index = varAttrCacheIndices[i];
+
+                        /* Grab pre-cached info for this specific vAttribute */
+                        cdf_attr_cache_t *cache_entry = &file->vAttrCache[index];
+
+                        /* Get datatype and num elements of the selected vEntry to calculate size */
+                        status = CDFinquireAttrzEntry(file->id, cache_entry->attrNum, dset->var_num, 
+                                                      &datatype, &num_elements);
+                        if (status != CDF_OK) {
+                            cdf_print_error(status);
+                            FUNC_GOTO_ERROR(H5E_ATTR, H5E_READERROR, FAIL,
+                                            "failed while inquiring information about zEntry #%ld from Attribute '%s'", 
+                                            dset->var_num, cache_entry->attrName);
+                        }
+
+                        memset(&attr_info, 0, sizeof(H5A_info_t));
+
+                        /* Calculate data size of attribute based on data type */
+                        if (datatype == CDF_CHAR || datatype == CDF_UCHAR) {
+                            data_size = num_elements + 1; /* +1 for null terminator */
+                        } else {
+                            /* Get HDF5 datatype */
+                            hid_t type_id = H5I_INVALID_HID;
+                            if (cdf_get_hdf5_type_from_cdf(datatype, &type_id) < 0) {
+                                FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, FAIL,
+                                                "Failed to map CDF data type %ld to HDF5 datatype",
+                                                datatype);
+                            }
+
+                            /* Get size of HDF5 datatype */
+                            size_t type_size = 0;
+                            if ((type_size = H5Tget_size(type_id)) == 0) {
+                                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, FAIL, "failed to get dataset type size");
+                            }
+
+                            /* Calculate expected data size */
+                            data_size = type_size * num_elements;
+                        }
+
+                        /* Use current index as creation order since lower indices correspond to older attrs */
+                        attr_info.corder_valid = true;
+                        attr_info.corder       = (int64_t)i; 
+                        attr_info.cset         = H5T_CSET_ASCII;
+                        attr_info.data_size    = data_size;
+
+                        cb_ret = iter_args->op(loc_id, cache_entry->attrName, &attr_info, iter_args->op_data);
+                        *iter_args->idx = (hsize_t)(i + 1);
+
+                        if (cb_ret < 0)
+                            FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADITER, FAIL, "Iterator callback returned error");
+                        else if (cb_ret > 0) {
+                            ret_value = cb_ret;
+                            goto done;
+                        }
+                    }
+                }
+
+            } else {
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid object type");
+            }
+            
+            break;
+        }
+
+        case H5VL_ATTR_DELETE:
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL,
+                            "Attribute deletion is not supported in read-only GRIB2 VOL connector");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL, "Unsupported attribute specific operation");
+    }
+
+done:
+    return ret_value;
+}
+
+/* cppcheck-suppress constParameterCallback */
+herr_t cdf_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                         H5VL_link_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                         void __attribute__((unused)) * *req)
+{
+    herr_t ret_value = SUCCEED;
+    cdf_object_t *o = (cdf_object_t *) obj;
+    cdf_object_t *file_obj = NULL;
+    CDFstatus status;
+    char var_name[CDF_VAR_NAME_LEN256 + 1];
+
+    /* Object could be file, group, or dataset - we need the file */
+    /* For simplicity, try to extract file pointer based on common structure pattern */
+    if (!o || !loc_params || !args) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to link_specific");
+    }
+
+    if (o->obj_type != H5I_FILE && o->obj_type != H5I_GROUP) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Object type not supported");
+    }
+
+    file_obj = o->parent_file;
+    if (!file_obj || file_obj->obj_type != H5I_FILE) {
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid file object in link_specific");
+    }
+
+    switch (args->op_type) {
+        case H5VL_LINK_EXISTS: {
+            const char *link_name = NULL;
+            /* Get the link name from loc_params */
+            if (loc_params->type == H5VL_OBJECT_BY_NAME) {
+                link_name = loc_params->loc_data.loc_by_name.name;
+            } else {
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
+                                "Link exists check requires name-based location");
+            }
+
+            if (!link_name) {
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "No link name provided");
+            }
+
+            /* Resolve name with leading root group '/' */
+            const char *resolved_name = NULL;
+            if (resolve_root_name(link_name, &resolved_name) < 0) {
+                *args->args.exists.exists = 0; /* Default to not found */
+                break;
+            }
+
+            /* Check that variable with the provided name exists*/
+            status = CDFconfirmzVarExistence(file_obj->u.file.id, resolved_name);
+
+            if (status == CDF_OK) {
+                *args->args.exists.exists = 1;
+            } else if (status == NO_SUCH_VAR) {
+                *args->args.exists.exists = 0;
+            } else {
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_CANTGET, FAIL,
+                                "Failed to check variable existence: %s\n", link_name);
+            }
+            
+            break;
+        }
+
+        case H5VL_LINK_ITER: {
+            /* Wrap internal object with "wrap context" to get valid hid_t for it */
+            hid_t loc_id = H5VLwrap_register(obj, o->obj_type);
+            if (loc_id == H5I_INVALID_HID) {
+                FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTREGISTER, FAIL,
+                                "could not register object for attribute iteration");
+            }
+
+            H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
+
+            assert(iter_args);
+            assert(iter_args->idx_p);
+            
+            long numzVars = file_obj->u.file.numzVars;
+
+            if (*iter_args->idx_p >= (hsize_t) numzVars) {
+                /* Iteration index is beyond number of zVariables - mark iteration complete */
+                break;
+            }
+
+            if (iter_args->op) {
+                /* Loop through zVariables starting from the provided index */
+                for (long i = (long)(*iter_args->idx_p); i < numzVars; i++) {
+                    H5L_info2_t link_info;
+                    herr_t cb_ret;
+
+                    status = CDFgetzVarName(file_obj->u.file.id, i, var_name);
+                    if (status != CDF_OK) {
+                        cdf_print_error(status);
+                        FUNC_GOTO_ERROR(H5E_LINK, H5E_CANTGET, FAIL,
+                                        "Failed to get zVariable name for variable index %ld", i);
+                    }
+
+                    /* Fill in minimal link info */
+                    memset(&link_info, 0, sizeof(H5L_info2_t));
+                    /* Consider all CDF "links" to be hard links */
+                    link_info.type = H5L_TYPE_HARD;
+                    link_info.corder_valid = true;
+                    link_info.corder = i; /* Use zVariable index as creation order */
+                    link_info.cset = H5T_CSET_ASCII;
+
+                    /* Call user's callback */
+                    cb_ret = iter_args->op(loc_id, var_name, &link_info, iter_args->op_data);
+
+                    *iter_args->idx_p = (hsize_t)(i + 1);
+                    
+                    if (cb_ret < 0) {
+                        FUNC_GOTO_ERROR(H5E_LINK, H5E_BADITER, FAIL,
+                                        "Iterator callback returned error");
+                    }
+                    else if (cb_ret > 0) {
+                        ret_value = cb_ret;
+                        goto done;
+                    }
+                }
+            }
+
+            break;
+        }
+
+        case H5VL_LINK_DELETE:
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL,
+                            "Link deletion is not supported in read-only GeoTIFF VOL connector");
+            break;
+
+        default:
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL, "Unsupported link specific operation");
+    }
+
+done:
+    return ret_value;
+} /* end cdf_link_specific() */
+
+
 /* These two functions are necessary to load this plugin using
  * the HDF5 library. */
 H5PL_type_t H5PLget_plugin_type(void)
@@ -2319,7 +2884,7 @@ const void *H5PLget_plugin_info(void)
  *---------------------------------------------------------------------------
  */
 herr_t cdf_introspect_opt_query(void __attribute__((unused)) * obj, H5VL_subclass_t subcls,
-                                int opt_type, uint64_t __attribute__((unused)) * flags)
+                                    int opt_type, uint64_t __attribute__((unused)) * flags)
 {
     /* We don't support any optional operations */
     (void) subcls;
@@ -2329,8 +2894,8 @@ herr_t cdf_introspect_opt_query(void __attribute__((unused)) * obj, H5VL_subclas
 } /* end cdf_introspect_opt_query() */
 
 herr_t cdf_introspect_get_conn_cls(void __attribute__((unused)) * obj,
-                                   H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
-                                   const H5VL_class_t __attribute__((unused)) * *conn_cls)
+                                       H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
+                                       const H5VL_class_t __attribute__((unused)) * *conn_cls)
 {
     herr_t ret_value = SUCCEED;
 
@@ -2347,13 +2912,18 @@ herr_t cdf_init_connector(hid_t __attribute__((unused)) vipl_id)
     herr_t ret_value = SUCCEED;
 
     /* Register the connector with HDF5's error reporting API */
-    if ((H5_cdf_err_class_g = H5Eregister_class(HDF5_VOL_CDF_ERR_CLS_NAME, HDF5_VOL_CDF_LIB_NAME,
-                                                HDF5_VOL_CDF_LIB_VER)) < 0)
+    if ((H5_cdf_err_class_g =
+             H5Eregister_class(HDF5_VOL_CDF_ERR_CLS_NAME, HDF5_VOL_CDF_LIB_NAME,
+                               HDF5_VOL_CDF_LIB_VER)) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't register with HDF5 error API");
 
+    /* Create a separate error stack for the CDF VOL to report errors with */
+    if ((H5_cdf_err_stack_g = H5Ecreate_stack()) < 0)
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL, "can't create error stack");
+
     /* Set up a few CDF VOL-specific error API message classes */
-    if ((H5_cdf_obj_err_maj_g = H5Ecreate_msg(H5_cdf_err_class_g, H5E_MAJOR, "Object interface")) <
-        0)
+    if ((H5_cdf_obj_err_maj_g =
+             H5Ecreate_msg(H5_cdf_err_class_g, H5E_MAJOR, "Object interface")) < 0)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTINIT, FAIL,
                         "can't create error message for object interface");
 
@@ -2379,6 +2949,16 @@ herr_t cdf_term_connector(void)
         if (H5Eunregister_class(H5_cdf_err_class_g) < 0)
             FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't unregister from HDF5 error API");
 
+        /* Print the current error stack before destroying it */
+        PRINT_ERROR_STACK;
+
+        /* Destroy the error stack */
+        if (H5Eclose_stack(H5_cdf_err_stack_g) < 0) {
+            FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL, "can't close error stack");
+            PRINT_ERROR_STACK;
+        }
+
+        H5_cdf_err_stack_g = H5I_INVALID_HID;
         H5_cdf_err_class_g = H5I_INVALID_HID;
         H5_cdf_obj_err_maj_g = H5I_INVALID_HID;
     }
@@ -2386,145 +2966,4 @@ herr_t cdf_term_connector(void)
     return ret_value;
 } /* end cdf_term_connector() */
 
-/* cppcheck-suppress constParameterCallback */
-herr_t cdf_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
-                         H5VL_link_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
-                         void __attribute__((unused)) * *req)
-{
-    herr_t ret_value = SUCCEED;
-    cdf_object_t *o = (cdf_object_t *) obj;
-    cdf_object_t *file_obj = NULL;
-    CDFstatus status;
-    long num_zVars = 0;
-    char var_name[CDF_VAR_NAME_LEN256 + 1];
 
-    /* object could be file, group, or dataset - we need the file */
-    /* For simplicity, try to extract file pointer based on common structure pattern */
-    if (!o || !loc_params || !args) {
-        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to link_specific");
-    }
-
-    file_obj = o->parent_file;
-    if (!file_obj || file_obj->obj_type != H5I_FILE) {
-        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid file object in link_specific");
-    }
-
-    /* Get number of zVars in the CDF file */
-    status = CDFgetNumzVars(file_obj->u.file.id, &num_zVars);
-    if (status != CDF_OK) {
-        cdf_print_error(status);
-        FUNC_GOTO_ERROR(H5E_LINK, H5E_CANTGET, FAIL,
-                        "Failed to get number of zVariables in CDF file");
-    }
-
-    switch (args->op_type) {
-        case H5VL_LINK_EXISTS: {
-            const char *link_name = NULL;
-            /* Get the link name from loc_params */
-            if (loc_params->type == H5VL_OBJECT_BY_NAME) {
-                link_name = loc_params->loc_data.loc_by_name.name;
-            } else {
-                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
-                                "Link exists check requires name-based location");
-            }
-
-            if (!link_name) {
-                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "No link name provided");
-            }
-
-            /* Resolve name with leading root group '/' */
-            const char *resolved_name = NULL;
-            if (resolve_root_name(link_name, &resolved_name) < 0) {
-                *args->args.exists.exists = 0; /* Default to not found */
-                break;
-            }
-
-            /* Loop through all zVariables to see if link_name matches any zVariable name */
-            *args->args.exists.exists = 0; /* Default to not found */
-            for (long i = 0; i < num_zVars; i++) {
-                /* Get the name of the zVariable */
-                status = CDFgetzVarName(file_obj->u.file.id, i, var_name);
-                if (status != CDF_OK) {
-                    cdf_print_error(status);
-                    FUNC_GOTO_ERROR(H5E_LINK, H5E_CANTGET, FAIL,
-                                    "Failed to get zVariable name for variable index %ld", i);
-                }
-
-                if (strcmp(var_name, resolved_name) == 0) {
-                    *args->args.exists.exists = 1;
-                    break;
-                }
-            }
-            break;
-        }
-
-        case H5VL_LINK_ITER: {
-            H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
-
-            assert(iter_args);
-            assert(iter_args->idx_p);
-
-            if (*iter_args->idx_p >= (hsize_t) num_zVars) {
-                /* Iteration index is beyond number of zVariables - mark iteration complete */
-                break;
-            }
-
-            if (!iter_args->op) {
-                /* If no callback is provided, set iteration index to number of zVars to mark
-                 * iteration complete */
-                *iter_args->idx_p = (hsize_t) num_zVars;
-                break;
-            }
-
-            /* Loop through zVariables starting from the provided index */
-            for (long i = (long) (*iter_args->idx_p); i < num_zVars; i++) {
-                H5L_info2_t link_info;
-                herr_t cb_ret;
-
-                status = CDFgetzVarName(file_obj->u.file.id, i, var_name);
-                if (status != CDF_OK) {
-                    cdf_print_error(status);
-                    FUNC_GOTO_ERROR(H5E_LINK, H5E_CANTGET, FAIL,
-                                    "Failed to get zVariable name for variable index %ld", i);
-                }
-
-                /* Fill in minimal link info */
-                memset(&link_info, 0, sizeof(H5L_info2_t));
-                /* Consider all CDF "links" to be hard links */
-                link_info.type = H5L_TYPE_HARD;
-                link_info.corder_valid = true;
-                link_info.corder = i; /* Use zVariable index as creation order */
-                link_info.cset = H5T_CSET_ASCII;
-
-                /* Call user's callback. Use 0 as group hid_t since we don't have a proper group ID
-                 */
-                cb_ret = iter_args->op(0, var_name, &link_info, iter_args->op_data);
-
-                if (iter_args->idx_p) {
-                    *iter_args->idx_p = (hsize_t) (i + 1);
-                }
-
-                if (cb_ret < 0) {
-                    FUNC_GOTO_ERROR(H5E_LINK, H5E_BADITER, FAIL,
-                                    "Iterator callback returned error");
-                } else if (cb_ret > 0) {
-                    ret_value = cb_ret;
-                    goto done;
-                }
-            }
-
-            break;
-        }
-
-        case H5VL_LINK_DELETE:
-            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL,
-                            "Link deletion is not supported in read-only GeoTIFF VOL connector");
-            break;
-
-        default:
-            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL, "Unsupported link specific operation");
-    }
-
-done:
-    return ret_value;
-} /* end cdf_link_specific() */

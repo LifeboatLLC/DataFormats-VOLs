@@ -5,7 +5,9 @@ project (cdf_vol VERSION 1.0.0 DESCRIPTION "HDF5 VOL connector for CDF files" LA
 enable_testing ()
 include (CTest)
 
+# --------------------------
 # Find HDF5 (prefer CONFIG mode). Try lowercase first (HDF5 develop installs 'hdf5'), then uppercase
+# --------------------------
 set(_HDF5_FOUND FALSE)
 find_package (hdf5 COMPONENTS C CONFIG QUIET)
 if (hdf5_FOUND)
@@ -44,26 +46,35 @@ if (TARGET HDF5::HDF5)
     get_target_property(HDF5_INCLUDE_DIRS HDF5::HDF5 INTERFACE_INCLUDE_DIRECTORIES)
 endif()
 
-# Link to CDF library specified through CMAKE_PREFIX_PATH in the command line
+# --------------------------
+# Find CDF library
+# --------------------------
 find_library(CDF_LIBRARY NAMES cdf HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib)
-find_path(CDF_INCLUDE_DIR NAMES cdf.h PATHS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES include)
+find_path(CDF_INCLUDE_DIR NAMES cdf.h HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES include)
 
-if(CDF_LIBRARY)
+if(NOT CDF_LIBRARY)
+    message(FATAL_ERROR "CDF library not found.")
+else()
     message(STATUS "Found CDF library at: ${CDF_LIBRARY}")
-    add_library(cdf::cdf SHARED IMPORTED)
-else()
-    message(FATAL_ERROR "CDF library is not found.")
 endif()
 
-if(CDF_INCLUDE_DIR)
-    message(STATUS "Found CDF header under: ${CDF_INCLUDE_DIR}")
+if(NOT CDF_INCLUDE_DIR)
+    message(FATAL_ERROR "CDF header not found.")
 else()
-    message(FATAL_ERROR "CDF header is not found.")
+    message(STATUS "Found CDF header at: ${CDF_INCLUDE_DIR}")
 endif()
 
+# --------------------------
+# Create imported target for CDF
+# --------------------------
+add_library(cdf::cdf SHARED IMPORTED)
 set_target_properties(cdf::cdf PROPERTIES
-	IMPORTED_LOCATION "${CDF_LIBRARY}"
-	INTERFACE_INCLUDE_DIRECTORIES "${CDF_INCLUDE_DIR}")
+    IMPORTED_LOCATION "${CDF_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${CDF_INCLUDE_DIR}"
+)
 
-add_subdirectory (src)
-add_subdirectory (test)
+# --------------------------
+# Add subdirectories
+# --------------------------
+add_subdirectory(src)
+add_subdirectory(test)

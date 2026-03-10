@@ -54,14 +54,14 @@ set(TEST_ENVIRONMENT "HDF5_PLUGIN_PATH=${PROJECT_BINARY_DIR}/src/Release\;${PROJ
 add_test(NAME open_close COMMAND test_runner open_close)
 set_tests_properties(open_close PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
-add_test(NAME links_and_groups COMMAND test_runner links_and_groups)
-set_tests_properties(links_and_groups PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+add_test(NAME check_existence_and_open COMMAND test_runner check_existence_and_open)
+set_tests_properties(check_existence_and_open PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
 add_test(NAME multi_links_exist COMMAND test_runner multi_links_exist)
 set_tests_properties(multi_links_exist PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
-add_test(NAME link_iterate_test COMMAND test_runner link_iterate_test)
-set_tests_properties(link_iterate_test PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+add_test(NAME link_attr_iterate_test COMMAND test_runner link_attr_iterate_test)
+set_tests_properties(link_attr_iterate_test PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
 add_test(NAME read_variable COMMAND test_runner read_variable)
 set_tests_properties(read_variable PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
@@ -81,6 +81,4 @@ set_tests_properties(read_indexed_global_attribute PROPERTIES ENVIRONMENT "${TES
 add_test(NAME read_basic_rVariable_and_rEntry COMMAND test_runner read_basic_rVariable_and_rEntry)
 set_tests_properties(read_basic_rVariable_and_rEntry PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
-# add_test(NAME indexed_gattribute_dtype_conversion_test COMMAND test_runner indexed_gattribute_dtype_conversion_test)
-# set_tests_properties(indexed_gattribute_dtype_conversion_test PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
 
