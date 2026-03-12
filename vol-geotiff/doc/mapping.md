@@ -57,7 +57,7 @@ This allows users to retrieve the geographic location of any pixel in the image 
 
 #### Data Type Limitations
 
-The VOL connector supports integer data types (8, 16, 32, and 64-bit signed and unsigned). Floating-point sample formats and complex data types are not currently supported.
+The VOL connector supports integer data types (8, 16, 32, and 64-bit signed and unsigned) and floating-point data types (32-bit float and 64-bit double). Complex data types are not currently supported.
 
 ### Multi-Resolution Images
 
