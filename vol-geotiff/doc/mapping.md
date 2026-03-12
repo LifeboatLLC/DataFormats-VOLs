@@ -65,4 +65,10 @@ TIFF and GeoTIFF files may contain multiple resolution levels (also called "over
 
 This design reflects the fact that: (1) the TIFF `SUBFILETYPE` tag merely hints that an image is reduced-resolution without specifying which image it's derived from, (2) there is no explicit parent-child association between directories in the TIFF format, and (3) each directory appears as a separate directory in TIFF with fully duplicated data. Any ambiguity in determining which reduced-resolution images correspond to which full-resolution images is inherent to the TIFF format itself, not introduced by the VOL connector.
 
-## (TBD) Metadata & Tags
+## Metadata & Tags
+
+TIFF metadata tags are exposed as HDF5 attributes on the top-level HDF5 file. They are opened by calling `H5Aopen` on the file ID, using the target TIFF tag name as the attribute name. Tag names can be specified with or without the `TIFFTAG_` prefix — for example, both `"SOFTWARE"` and `"TIFFTAG_SOFTWARE"` will resolve to the same tag. If the requested tag is not present in the file, the open call will fail. The data type and dataspace of each attribute are internally determined automatically via libtiff introspection of the tag's field metadata, and can be queried at the user level via `H5Aget_type()` and `H5Aget_space()`.
+
+The full list of supported TIFF tag names is defined in the `tiff_tag_table` in `src/geotiff_vol_connector.h`. Generally, most standard TIFF tags are accessible, with a few exceptions for color-space-specific tags like `YCBCRCOEFFICIENTS` and certain pseudo-tags. Only tags that appear in this table can be opened as HDF5 attributes; any other name will result in a "not found" error.
+
+Note that these file-level tag attributes are distinct from the per-dataset `coordinates` computed attribute described above, which is opened on an individual image dataset rather than on the file.
