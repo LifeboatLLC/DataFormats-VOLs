@@ -24,16 +24,29 @@
 #include <stdint.h>
 #include <tiffio.h>
 
+/* Cross-platform unused parameter macro */
+#ifdef _MSC_VER
+#define GEOTIFF_UNUSED(x) (void) (x)
+#define GEOTIFF_UNUSED_PARAM
+#else
+#define GEOTIFF_UNUSED(x)
+#define GEOTIFF_UNUSED_PARAM __attribute__((unused))
+#endif
+
 /* The value must be between 256 and 65535 (inclusive) */
 #define GEOTIFF_VOL_CONNECTOR_VALUE ((H5VL_class_value_t) 12203)
 #define GEOTIFF_VOL_CONNECTOR_NAME "geotiff_vol_connector"
 
+/* Forward declaration for GDAL metadata type used in geotiff_file_t */
+typedef struct gdal_metadata_t gdal_metadata_t;
+
 /* GeoTIFF VOL file object structure */
 typedef struct geotiff_file_t {
-    TIFF *tiff;         /* TIFF file handle - shared across datasets */
-    char *filename;     /* File name */
-    unsigned int flags; /* File access flags */
-    hid_t plist_id;     /* Property list ID */
+    TIFF *tiff;                /* TIFF file handle - shared across datasets */
+    char *filename;            /* File name */
+    unsigned int flags;        /* File access flags */
+    hid_t plist_id;            /* Property list ID */
+    gdal_metadata_t *gdal_meta; /* Parsed GDAL metadata (tag 42112) */
     /* NOTE: For thread safety with multi-image files, each dataset should
      * have its own TIFF handle via TIFFOpen(). Currently using shared handle. */
 } geotiff_file_t;
@@ -51,6 +64,8 @@ typedef struct geotiff_dataset_t {
     void *data;          /* Cached data */
     size_t data_size;    /* Data size in bytes */
     bool is_image;       /* Is this an image dataset */
+    bool is_latlon;      /* Is this a latN or lonN coordinate dataset */
+    bool is_lat;         /* True for latN, false for lonN (only valid if is_latlon) */
 } geotiff_dataset_t;
 
 /* GeoTIFF VOL group object structure */
@@ -64,9 +79,6 @@ typedef struct geotiff_attr_t {
     char *name;              /* Attribute name */
     hid_t type_id;           /* HDF5 datatype */
     hid_t space_id;          /* HDF5 dataspace */
-    bool is_coordinate_attr; /* True if this is the computed 'coordinates' attribute */
-    uint32_t tiff_tag;       /* TIFF tag value (0 if not a TIFF tag attr) */
-    void *tiff_data;         /* Cached TIFF tag data (for complex types) */
 } geotiff_attr_t;
 
 /* Unified GeoTIFF VOL object structure */
@@ -82,98 +94,6 @@ struct geotiff_object_t {
     } u;
 };
 
-typedef struct {
-    double lon;
-    double lat;
-} coord_t;
-
-/* TIFF tag name to value mapping table */
-typedef struct {
-    const char *name;   /* Tag name without "TIFFTAG_" prefix */
-    uint32_t tag_value; /* TIFF tag numeric value */
-} tiff_tag_entry_t;
-
-/* TIFF tags supported by TIFFGetField - from libtiff documentation */
-static const tiff_tag_entry_t tiff_tag_table[] = {
-    {"ARTIST", TIFFTAG_ARTIST},
-    {"BITSPERSAMPLE", TIFFTAG_BITSPERSAMPLE},
-    {"COLORMAP", TIFFTAG_COLORMAP},
-    {"COMPRESSION", TIFFTAG_COMPRESSION},
-    {"COPYRIGHT", TIFFTAG_COPYRIGHT},
-    {"DATATYPE", TIFFTAG_DATATYPE},
-    {"DATETIME", TIFFTAG_DATETIME},
-    {"DOCUMENTNAME", TIFFTAG_DOCUMENTNAME},
-    {"DOTRANGE", TIFFTAG_DOTRANGE},
-    // {"EXTRASAMPLES", TIFFTAG_EXTRASAMPLES},
-    {"FAXFILLFUNC", TIFFTAG_FAXFILLFUNC},
-    {"FILLORDER", TIFFTAG_FILLORDER},
-    {"GROUP4OPTIONS", TIFFTAG_GROUP4OPTIONS},
-    {"HALFTONEHINTS", TIFFTAG_HALFTONEHINTS},
-    {"HOSTCOMPUTER", TIFFTAG_HOSTCOMPUTER},
-    {"ICCPROFILE", TIFFTAG_ICCPROFILE},
-    {"IMAGEDEPTH", TIFFTAG_IMAGEDEPTH},
-    {"IMAGEDESCRIPTION", TIFFTAG_IMAGEDESCRIPTION},
-    {"IMAGELENGTH", TIFFTAG_IMAGELENGTH},
-    {"IMAGEWIDTH", TIFFTAG_IMAGEWIDTH},
-    {"INKNAMES", TIFFTAG_INKNAMES},
-    {"INKSET", TIFFTAG_INKSET},
-    {"JPEGQUALITY", TIFFTAG_JPEGQUALITY},
-    {"JPEGTABLES", TIFFTAG_JPEGTABLES},
-    {"MAKE", TIFFTAG_MAKE},
-    {"MATTEING", TIFFTAG_MATTEING},
-    {"MAXSAMPLEVALUE", TIFFTAG_MAXSAMPLEVALUE},
-    {"MINSAMPLEVALUE", TIFFTAG_MINSAMPLEVALUE},
-    {"MODEL", TIFFTAG_MODEL},
-    {"ORIENTATION", TIFFTAG_ORIENTATION},
-    {"PAGENAME", TIFFTAG_PAGENAME},
-    {"PAGENUMBER", TIFFTAG_PAGENUMBER},
-    {"PHOTOMETRIC", TIFFTAG_PHOTOMETRIC},
-    {"PHOTOSHOP", TIFFTAG_PHOTOSHOP},
-    {"PLANARCONFIG", TIFFTAG_PLANARCONFIG},
-    // {"PRIMARYCHROMATICITIES", TIFFTAG_PRIMARYCHROMATICITIES},
-    // {"REFERENCEBLACKWHITE", TIFFTAG_REFERENCEBLACKWHITE},
-    {"RESOLUTIONUNIT", TIFFTAG_RESOLUTIONUNIT},
-    {"RICHTIFFIPTC", TIFFTAG_RICHTIFFIPTC},
-    {"ROWSPERSTRIP", TIFFTAG_ROWSPERSTRIP},
-    {"SAMPLEFORMAT", TIFFTAG_SAMPLEFORMAT},
-    {"SAMPLESPERPIXEL", TIFFTAG_SAMPLESPERPIXEL},
-    {"SMAXSAMPLEVALUE", TIFFTAG_SMAXSAMPLEVALUE},
-    {"SMINSAMPLEVALUE", TIFFTAG_SMINSAMPLEVALUE},
-    {"SOFTWARE", TIFFTAG_SOFTWARE},
-    {"STONITS", TIFFTAG_STONITS},
-    {"STRIPBYTECOUNTS", TIFFTAG_STRIPBYTECOUNTS},
-    {"STRIPOFFSETS", TIFFTAG_STRIPOFFSETS},
-    {"SUBFILETYPE", TIFFTAG_SUBFILETYPE},
-    {"SUBIFD", TIFFTAG_SUBIFD},
-    {"TARGETPRINTER", TIFFTAG_TARGETPRINTER},
-    {"THRESHHOLDING", TIFFTAG_THRESHHOLDING},
-    {"TILEBYTECOUNTS", TIFFTAG_TILEBYTECOUNTS},
-    {"TILEDEPTH", TIFFTAG_TILEDEPTH},
-    {"TILELENGTH", TIFFTAG_TILELENGTH},
-    {"TILEOFFSETS", TIFFTAG_TILEOFFSETS},
-    {"TILEWIDTH", TIFFTAG_TILEWIDTH},
-    {"TRANSFERFUNCTION", TIFFTAG_TRANSFERFUNCTION},
-    // {"WHITEPOINT", TIFFTAG_WHITEPOINT},
-    {"XMLPACKET", TIFFTAG_XMLPACKET},
-    {"XPOSITION", TIFFTAG_XPOSITION},
-    {"XRESOLUTION", TIFFTAG_XRESOLUTION},
-    // Unsupported color space tags
-    // {"YCBCRCOEFFICIENTS", TIFFTAG_YCBCRCOEFFICIENTS},
-    // {"YCBCRPOSITIONING", TIFFTAG_YCBCRPOSITIONING},
-    // {"YCBCRSUBSAMPLING", TIFFTAG_YCBCRSUBSAMPLING},
-    {"YPOSITION", TIFFTAG_YPOSITION},
-    {"YRESOLUTION", TIFFTAG_YRESOLUTION},
-    // Pseudo-tag values
-    // {"BADFAXLINES", TIFFTAG_BADFAXLINES},
-    // {"CLEANFAXDATA", TIFFTAG_CLEANFAXDATA},
-    // {"CONSECUTIVEBADFAXLINES", TIFFTAG_CONSECUTIVEBADFAXLINES},
-    //{"FAXMODE", TIFFTAG_FAXMODE},
-    // {"GROUP3OPTIONS", TIFFTAG_GROUP3OPTIONS},
-    // {"JPEGCOLORMODE", TIFFTAG_JPEGCOLORMODE},
-    // {"JPEGTABLESMODE", TIFFTAG_JPEGTABLESMODE},
-    // {"PREDICTOR", TIFFTAG_PREDICTOR},
-    {NULL, 0} /* Sentinel */
-};
 
 /* Function prototypes (HDF5 develop expects hid_t vipl_id) */
 herr_t geotiff_init_connector(hid_t vipl_id);
@@ -211,20 +131,25 @@ herr_t geotiff_attr_close(void *attr, hid_t dxpl_id, void **req);
 herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                              H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req);
 
+/* Attribute specific operation */
+herr_t geotiff_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                              H5VL_attr_specific_args_t *args, hid_t dxpl_id, void **req);
+
+/* Object get operation */
+herr_t geotiff_object_get(void *obj, const H5VL_loc_params_t *loc_params,
+                           H5VL_object_get_args_t *args, hid_t dxpl_id, void **req);
+
 /* Helper functions */
 herr_t geotiff_read_hyperslab(const geotiff_object_t *dset_obj, const hsize_t *start,
                               const hsize_t *stride, const hsize_t *count, const hsize_t *block,
                               int ndims, hid_t mem_type_id, void *buf);
-hid_t geotiff_create_coordinate_type(void);
-herr_t geotiff_compute_coordinates(const geotiff_dataset_t *dset, void *buf, hid_t mem_space_id);
 
 herr_t geotiff_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type,
                                     uint64_t *flags);
 
-herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
-                                       H5VL_get_conn_lvl_t __attribute__((unused)) lvl,
-                                       const H5VL_class_t __attribute__((unused)) * *conn_cls);
+herr_t geotiff_introspect_get_conn_cls(void GEOTIFF_UNUSED_PARAM *obj,
+                                       H5VL_get_conn_lvl_t GEOTIFF_UNUSED_PARAM lvl,
+                                       const H5VL_class_t GEOTIFF_UNUSED_PARAM **conn_cls);
 
-herr_t geotiff_introspect_get_cap_flags(const void __attribute__((unused)) * info,
-                                        uint64_t *cap_flags);
+herr_t geotiff_introspect_get_cap_flags(const void GEOTIFF_UNUSED_PARAM *info, uint64_t *cap_flags);
 #endif /* _geotiff_vol_connector_H */
