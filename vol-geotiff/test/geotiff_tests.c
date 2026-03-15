@@ -3767,3 +3767,458 @@ error:
     H5E_END_TRY;
     return -1;
 }
+
+/* Test H5Lexists on a multi-image GeoTIFF file */
+int MultiImageLinkExistsTest(void)
+{
+    const char    *filename   = "_tmp_multi_link_exists.tif";
+    const uint32_t NUM_IMAGES = 3;
+    hid_t          vol_id     = H5I_INVALID_HID;
+    hid_t          fapl_id    = H5I_INVALID_HID;
+    hid_t          file_id    = H5I_INVALID_HID;
+    htri_t         exists;
+
+    printf("Testing link exists on multi-image GeoTIFF  ");
+
+    if (CreateMultiImageGeoTIFF(filename, NUM_IMAGES) != 0) {
+        printf("Failed to create multi-image test file\n");
+        goto error;
+    }
+
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open multi-image GeoTIFF\n");
+        goto error;
+    }
+
+    /* Verify imageN links exist for all images */
+    for (uint32_t i = 0; i < NUM_IMAGES; i++) {
+        char link_name[32];
+        snprintf(link_name, sizeof(link_name), "image%u", i);
+        if ((exists = H5Lexists(file_id, link_name, H5P_DEFAULT)) < 0) {
+            printf("Failed to check existence of '%s'\n", link_name);
+            goto error;
+        }
+        if (!exists) {
+            printf("VERIFICATION FAILED: '%s' should exist\n", link_name);
+            goto error;
+        }
+    }
+
+    /* Verify image beyond count does not exist */
+    if ((exists = H5Lexists(file_id, "image3", H5P_DEFAULT)) < 0) {
+        printf("Failed to check existence of 'image3'\n");
+        goto error;
+    }
+    if (exists) {
+        printf("VERIFICATION FAILED: 'image3' should not exist\n");
+        goto error;
+    }
+
+    /* Verify a completely non-existent link */
+    if ((exists = H5Lexists(file_id, "nonexistent", H5P_DEFAULT)) < 0) {
+        printf("Failed to check existence of 'nonexistent'\n");
+        goto error;
+    }
+    if (exists) {
+        printf("VERIFICATION FAILED: 'nonexistent' should not exist\n");
+        goto error;
+    }
+
+    if (H5Fclose(file_id) < 0) {
+        printf("Failed to close file\n");
+        goto error;
+    }
+    if (H5Pclose(fapl_id) < 0) {
+        printf("Failed to close FAPL\n");
+        goto error;
+    }
+    if (H5VLunregister_connector(vol_id) < 0) {
+        printf("Failed to unregister VOL connector\n");
+        goto error;
+    }
+    remove(filename);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+    remove(filename);
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Create a minimal plain TIFF with no GeoTIFF geo-reference tags */
+static int CreatePlainTIFF(const char *filename)
+{
+    TIFF         *tif = NULL;
+    unsigned char buffer[WIDTH];
+
+    if ((tif = TIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create plain TIFF %s\n", filename);
+        return -1;
+    }
+
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, (uint32_t) WIDTH);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, (uint32_t) HEIGHT);
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, (uint16_t) 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, (uint16_t) 1);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, (uint32_t) HEIGHT);
+
+    for (uint32_t row = 0; row < HEIGHT; row++) {
+        for (uint32_t col = 0; col < WIDTH; col++)
+            buffer[col] = (unsigned char) ((row + col) % 256);
+        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+            TIFFClose(tif);
+            return -1;
+        }
+    }
+
+    TIFFClose(tif);
+    return 0;
+}
+
+/* Test that coordinates attribute behaves correctly for a plain TIFF
+ * (one with no GeoTIFF geo-reference tags). */
+int CoordinatesAttributePlainTIFFTest(void)
+{
+    const char *filename = "_tmp_plain_tiff_coords.tif";
+    hid_t       vol_id   = H5I_INVALID_HID;
+    hid_t       fapl_id  = H5I_INVALID_HID;
+    hid_t       file_id  = H5I_INVALID_HID;
+    hid_t       dset_id  = H5I_INVALID_HID;
+    htri_t      exists;
+
+    printf("Testing coordinates attribute on plain TIFF (no georef)  ");
+
+    if (CreatePlainTIFF(filename) != 0) {
+        printf("Failed to create plain TIFF\n");
+        goto error;
+    }
+
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open plain TIFF file\n");
+        goto error;
+    }
+
+    if ((dset_id = H5Dopen(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open image0\n");
+        goto error;
+    }
+
+    /* coordinates attribute always exists for image datasets */
+    H5E_BEGIN_TRY
+    {
+        exists = H5Aexists(dset_id, "coordinates");
+    }
+    H5E_END_TRY;
+    if (exists < 0) {
+        printf("H5Aexists failed for 'coordinates'\n");
+        goto error;
+    }
+    if (!exists) {
+        printf("VERIFICATION FAILED: 'coordinates' attribute should exist on image dataset\n");
+        goto error;
+    }
+
+    /* lat0 link reports as existing (directory index 0 is valid) */
+    if ((exists = H5Lexists(file_id, "lat0", H5P_DEFAULT)) < 0) {
+        printf("Failed to check 'lat0' link existence\n");
+        goto error;
+    }
+    if (!exists) {
+        printf("VERIFICATION FAILED: 'lat0' link should exist (dir 0 is valid)\n");
+        goto error;
+    }
+
+    /* Opening lat0 must FAIL: plain TIFF has no geotransform */
+    hid_t lat_id = H5I_INVALID_HID;
+    H5E_BEGIN_TRY
+    {
+        lat_id = H5Dopen(file_id, "lat0", H5P_DEFAULT);
+    }
+    H5E_END_TRY;
+    if (lat_id >= 0) {
+        H5Dclose(lat_id);
+        printf("VERIFICATION FAILED: opening lat0 should fail for plain TIFF\n");
+        goto error;
+    }
+
+    H5Dclose(dset_id);
+    H5Fclose(file_id);
+    H5Pclose(fapl_id);
+    H5VLunregister_connector(vol_id);
+    unlink(filename);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5E_BEGIN_TRY
+    {
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+    unlink(filename);
+    printf("FAILED\n");
+    return 1;
+}
+
+/* Create a GeoTIFF with comprehensive TIFF tag coverage for attribute tests */
+static int CreateComprehensiveTiffTagFileLocal(const char *filename)
+{
+    TIFF         *tif             = NULL;
+    GTIF         *gtif            = NULL;
+    unsigned char buffer[32];
+
+    if ((tif = XTIFFOpen(filename, "w")) == NULL) {
+        printf("Failed to create %s\n", filename);
+        return -1;
+    }
+
+    if ((gtif = GTIFNew(tif)) == NULL) {
+        printf("Failed to create GeoTIFF handle for %s\n", filename);
+        TIFFClose(tif);
+        return -1;
+    }
+
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, (uint32_t) 32);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, (uint32_t) 24);
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, (uint16_t) 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, (uint16_t) 1);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, (uint32_t) 24);
+
+    TIFFSetField(tif, TIFFTAG_SOFTWARE, "GeoTIFF VOL Test Suite v1.0");
+    TIFFSetField(tif, TIFFTAG_DATETIME, "2025:01:15 12:34:56");
+    TIFFSetField(tif, TIFFTAG_ARTIST, "Test Artist");
+    TIFFSetField(tif, TIFFTAG_IMAGEDESCRIPTION, "Test image for tag attribute test");
+
+    const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
+    const double pixscale[3]  = {1.0, 1.0, 0.0};
+    TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
+    TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
+
+    SetUpGeoKeys(gtif);
+
+    for (uint32_t row = 0; row < 24; row++) {
+        for (uint32_t col = 0; col < 32; col++)
+            buffer[col] = (unsigned char) ((row * 8 + col / 4) % 256);
+        if (!TIFFWriteScanline(tif, buffer, row, 0)) {
+            GTIFFree(gtif);
+            TIFFClose(tif);
+            return -1;
+        }
+    }
+
+    GTIFWriteKeys(gtif);
+    GTIFFree(gtif);
+    XTIFFClose(tif);
+    return 0;
+}
+
+/* Test that standard TIFF tags (SOFTWARE, DATETIME, etc.) are NOT exposed
+ * as HDF5 attributes, and that the regular VOL attributes still work. */
+int TiffTagAttributeReadTest(void)
+{
+    const char *filename  = "_tmp_tiff_tag_attrs.tif";
+    hid_t       vol_id    = H5I_INVALID_HID;
+    hid_t       fapl_id   = H5I_INVALID_HID;
+    hid_t       file_id   = H5I_INVALID_HID;
+    hid_t       dset_id   = H5I_INVALID_HID;
+    hid_t       attr_id   = H5I_INVALID_HID;
+    hid_t       vlen_str  = H5I_INVALID_HID;
+    char       *coord_val = NULL;
+    uint64_t    num_images;
+    htri_t      exists;
+
+    printf("Testing TIFF tag attributes are not exposed as HDF5 attrs  ");
+
+    if (CreateComprehensiveTiffTagFileLocal(filename) != 0) {
+        printf("Failed to create test file\n");
+        goto error;
+    }
+
+#ifdef GEOTIFF_VOL_PLUGIN_PATH
+    if (H5PLappend(GEOTIFF_VOL_PLUGIN_PATH) < 0) {
+        printf("Failed to append plugin path\n");
+        goto error;
+    }
+#endif
+
+    if ((vol_id = H5VLregister_connector_by_name(GEOTIFF_VOL_CONNECTOR_NAME, H5P_DEFAULT)) < 0) {
+        printf("Failed to register VOL connector\n");
+        goto error;
+    }
+
+    if ((fapl_id = H5Pcreate(H5P_FILE_ACCESS)) < 0) {
+        printf("Failed to create FAPL\n");
+        goto error;
+    }
+
+    if (H5Pset_vol(fapl_id, vol_id, NULL) < 0) {
+        printf("Failed to set VOL connector\n");
+        goto error;
+    }
+
+    if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
+        printf("Failed to open file\n");
+        goto error;
+    }
+
+    /* num_images attribute should be 1 */
+    if ((attr_id = H5Aopen(file_id, "num_images", H5P_DEFAULT)) < 0) {
+        printf("Failed to open num_images attribute\n");
+        goto error;
+    }
+    if (H5Aread(attr_id, H5T_NATIVE_UINT64, &num_images) < 0) {
+        printf("Failed to read num_images\n");
+        goto error;
+    }
+    H5Aclose(attr_id);
+    attr_id = H5I_INVALID_HID;
+    if (num_images != 1) {
+        printf("VERIFICATION FAILED: expected num_images=1, got %llu\n",
+               (unsigned long long) num_images);
+        goto error;
+    }
+
+    /* Open image0 and verify coordinates attribute */
+    if ((dset_id = H5Dopen(file_id, "image0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open image0\n");
+        goto error;
+    }
+
+    if ((attr_id = H5Aopen(dset_id, "coordinates", H5P_DEFAULT)) < 0) {
+        printf("Failed to open coordinates attribute\n");
+        goto error;
+    }
+
+    vlen_str = H5Tcopy(H5T_C_S1);
+    H5Tset_size(vlen_str, H5T_VARIABLE);
+    if (H5Aread(attr_id, vlen_str, &coord_val) < 0) {
+        printf("Failed to read coordinates attribute\n");
+        H5Tclose(vlen_str);
+        goto error;
+    }
+    H5Tclose(vlen_str);
+    vlen_str = H5I_INVALID_HID;
+    H5Aclose(attr_id);
+    attr_id = H5I_INVALID_HID;
+
+    if (!coord_val || strcmp(coord_val, "lat0 lon0") != 0) {
+        printf("VERIFICATION FAILED: expected 'lat0 lon0', got '%s'\n",
+               coord_val ? coord_val : "(null)");
+        H5free_memory(coord_val);
+        goto error;
+    }
+    H5free_memory(coord_val);
+    coord_val = NULL;
+
+    /* Standard TIFF tags must NOT be exposed as HDF5 attributes */
+    H5E_BEGIN_TRY
+    {
+        exists = H5Aexists(dset_id, "SOFTWARE");
+    }
+    H5E_END_TRY;
+    if (exists > 0) {
+        printf("VERIFICATION FAILED: 'SOFTWARE' tag should not be an HDF5 attribute\n");
+        goto error;
+    }
+
+    H5E_BEGIN_TRY
+    {
+        exists = H5Aexists(dset_id, "DATETIME");
+    }
+    H5E_END_TRY;
+    if (exists > 0) {
+        printf("VERIFICATION FAILED: 'DATETIME' tag should not be an HDF5 attribute\n");
+        goto error;
+    }
+
+    H5Dclose(dset_id);
+    dset_id = H5I_INVALID_HID;
+    H5Fclose(file_id);
+    H5Pclose(fapl_id);
+    H5VLunregister_connector(vol_id);
+    unlink(filename);
+
+    printf("PASSED\n");
+    return 0;
+
+error:
+    H5free_memory(coord_val);
+    H5E_BEGIN_TRY
+    {
+        H5Aclose(attr_id);
+        H5Dclose(dset_id);
+        H5Fclose(file_id);
+        H5Pclose(fapl_id);
+        if (vol_id != H5I_INVALID_HID)
+            H5VLunregister_connector(vol_id);
+    }
+    H5E_END_TRY;
+    unlink(filename);
+    printf("FAILED\n");
+    return 1;
+}
