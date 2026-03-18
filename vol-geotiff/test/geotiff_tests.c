@@ -3771,12 +3771,12 @@ error:
 /* Test H5Lexists on a multi-image GeoTIFF file */
 int MultiImageLinkExistsTest(void)
 {
-    const char    *filename   = "_tmp_multi_link_exists.tif";
+    const char *filename = "_tmp_multi_link_exists.tif";
     const uint32_t NUM_IMAGES = 3;
-    hid_t          vol_id     = H5I_INVALID_HID;
-    hid_t          fapl_id    = H5I_INVALID_HID;
-    hid_t          file_id    = H5I_INVALID_HID;
-    htri_t         exists;
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    htri_t exists;
 
     printf("Testing link exists on multi-image GeoTIFF  ");
 
@@ -3880,7 +3880,7 @@ error:
 /* Create a minimal plain TIFF with no GeoTIFF geo-reference tags */
 static int CreatePlainTIFF(const char *filename)
 {
-    TIFF         *tif = NULL;
+    TIFF *tif = NULL;
     unsigned char buffer[WIDTH];
 
     if ((tif = TIFFOpen(filename, "w")) == NULL) {
@@ -3915,11 +3915,11 @@ static int CreatePlainTIFF(const char *filename)
 int CoordinatesAttributePlainTIFFTest(void)
 {
     const char *filename = "_tmp_plain_tiff_coords.tif";
-    hid_t       vol_id   = H5I_INVALID_HID;
-    hid_t       fapl_id  = H5I_INVALID_HID;
-    hid_t       file_id  = H5I_INVALID_HID;
-    hid_t       dset_id  = H5I_INVALID_HID;
-    htri_t      exists;
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    htri_t exists;
 
     printf("Testing coordinates attribute on plain TIFF (no georef)  ");
 
@@ -4025,8 +4025,8 @@ error:
 /* Create a GeoTIFF with comprehensive TIFF tag coverage for attribute tests */
 static int CreateComprehensiveTiffTagFileLocal(const char *filename)
 {
-    TIFF         *tif             = NULL;
-    GTIF         *gtif            = NULL;
+    TIFF *tif = NULL;
+    GTIF *gtif = NULL;
     unsigned char buffer[32];
 
     if ((tif = XTIFFOpen(filename, "w")) == NULL) {
@@ -4055,7 +4055,7 @@ static int CreateComprehensiveTiffTagFileLocal(const char *filename)
     TIFFSetField(tif, TIFFTAG_IMAGEDESCRIPTION, "Test image for tag attribute test");
 
     const double tiepoints[6] = {0, 0, 0, 100.0, 50.0, 0.0};
-    const double pixscale[3]  = {1.0, 1.0, 0.0};
+    const double pixscale[3] = {1.0, 1.0, 0.0};
     TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiepoints);
     TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixscale);
 
@@ -4081,16 +4081,16 @@ static int CreateComprehensiveTiffTagFileLocal(const char *filename)
  * as HDF5 attributes, and that the regular VOL attributes still work. */
 int TiffTagAttributeReadTest(void)
 {
-    const char *filename  = "_tmp_tiff_tag_attrs.tif";
-    hid_t       vol_id    = H5I_INVALID_HID;
-    hid_t       fapl_id   = H5I_INVALID_HID;
-    hid_t       file_id   = H5I_INVALID_HID;
-    hid_t       dset_id   = H5I_INVALID_HID;
-    hid_t       attr_id   = H5I_INVALID_HID;
-    hid_t       vlen_str  = H5I_INVALID_HID;
-    char       *coord_val = NULL;
-    uint64_t    num_images;
-    htri_t      exists;
+    const char *filename = "_tmp_tiff_tag_attrs.tif";
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t vlen_str = H5I_INVALID_HID;
+    char *coord_val = NULL;
+    uint64_t num_images;
+    htri_t exists;
 
     printf("Testing TIFF tag attributes are not exposed as HDF5 attrs  ");
 

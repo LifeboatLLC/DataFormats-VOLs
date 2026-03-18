@@ -2389,9 +2389,8 @@ static herr_t geotiff_read_image_data(geotiff_object_t *dset_obj)
                     uint32_t image_row = tile_row + ty;
                     size_t tile_row_offset =
                         (size_t) ty * tile_width * samples_per_pixel * elem_size;
-                    size_t image_row_offset =
-                        (size_t) image_row * (size_t) scanline_size +
-                        (size_t) tile_col * samples_per_pixel * elem_size;
+                    size_t image_row_offset = (size_t) image_row * (size_t) scanline_size +
+                                              (size_t) tile_col * samples_per_pixel * elem_size;
                     size_t copy_bytes = actual_tile_width * samples_per_pixel * elem_size;
 
                     memcpy(image_data + image_row_offset, tile_buf + tile_row_offset, copy_bytes);
