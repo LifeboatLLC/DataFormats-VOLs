@@ -59,3 +59,49 @@ set_tests_properties(bufr_example_runs PROPERTIES
     ENVIRONMENT "${EXAMPLE_TEST_ENV}"
 )
 
+# ------------------------------------------------------------
+# bufr_eccodes_demo
+# ------------------------------------------------------------
+
+add_executable(bufr_eccodes_demo
+    bufr_eccodes_demo.c
+    "${PROJECT_SOURCE_DIR}/src/bufr_helper.c"
+)
+
+target_include_directories(bufr_eccodes_demo
+    PRIVATE
+        "${PROJECT_SOURCE_DIR}/src"
+)
+
+target_link_libraries(bufr_eccodes_demo
+    PRIVATE
+        HDF5::HDF5
+        ECCODES::eccodes
+)
+
+target_compile_definitions(bufr_eccodes_demo
+    PRIVATE
+        BUFR_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src"
+)
+
+install(TARGETS bufr_eccodes_demo
+    RUNTIME DESTINATION bin
+)
+
+# Copy sample BUFR file next to demo executable
+add_custom_command(TARGET bufr_eccodes_demo POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${BUFR_SAMPLE}"
+            "$<TARGET_FILE_DIR:bufr_eccodes_demo>/temp.bufr"
+    COMMENT "Copying temp.bufr to bufr_eccodes_demo output directory"
+)
+
+# ------------------------------------------------------------
+# CTest: run demo as a smoke test
+# ------------------------------------------------------------
+
+add_test(NAME bufr_eccodes_demo_runs COMMAND bufr_eccodes_demo temp.bufr 0)
+set_tests_properties(bufr_eccodes_demo_runs PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:bufr_eccodes_demo>"
+    ENVIRONMENT "${EXAMPLE_TEST_ENV}"
+)

@@ -884,9 +884,10 @@ void *bufr_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused))
     if (bufr_build_group_inventory(h, inv) !=0)
         FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL, "Failed to create group inventory");
 
-       /*EP remove after debugging */
-       //printf ("\n \n ====In a group, printing group inventory ==== \n"); 
-       //bufr_inv_print(inv);
+#ifdef BUFR_DEBUG
+    bufr_inv_print(inv);
+#endif
+
     grp->inv = inv;    
 
     ret_value = grp_obj;
@@ -1368,7 +1369,31 @@ herr_t bufr_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid
             FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
                             "file and memory selections have different number of points");
     }
+    if (d->is_vlen_string) {
+    char **dst = (char **)buf[0];
+    char **src = (char **)d->data;
+    size_t i;
 
+    if (H5Tequal(mem_type_id[0], d->type_id) <= 0)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL,
+                        "VL string datatype conversion not supported");
+
+    if (!src)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
+                        "no cached VL string data");
+
+    for (i = 0; i < (size_t)num_elements; i++) {
+        if (src[i]) {
+            size_t len = strlen(src[i]) + 1;
+            dst[i] = (char *)H5allocate_memory(len, 0);
+            memcpy(dst[i], src[i], len);
+        } else {
+            dst[i] = NULL;
+        }
+    }
+
+    FUNC_GOTO_DONE(SUCCEED);
+}
     /* Prepare source buffer with type conversion if needed.
      * If we have a non-trivial file selection, we need the full dataset in the source buffer
      * for H5Dgather to extract the selection from. Otherwise, we only need num_elements.
@@ -1478,74 +1503,6 @@ done:
 }
 
 /* VOL dataset close callback */
-#ifdef EP
-herr_t
-bufr_dataset_close(void *dset, hid_t dxpl_id, void **req)
-{
-    bufr_object_t *d = (bufr_object_t *)dset;
-    herr_t         ret_value = SUCCEED;
-
-    (void)dxpl_id;
-    (void)req;
-
-    assert(d);
-
-    if (d->obj_type != H5I_DATASET)
-        FUNC_DONE_ERROR(H5E_DATASET, H5E_BADTYPE, FAIL,
-                        "Object is not a dataset");
-
-    if (!d->parent_file)
-        FUNC_DONE_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL,
-                        "Dataset has no valid parent file reference");
-
-    if (d->ref_count == 0)
-        FUNC_DONE_ERROR(H5E_DATASET, H5E_CANTCLOSEOBJ, FAIL,
-                        "Dataset already closed (ref_count is 0)");
-
-    d->ref_count--;
-
-    if (d->ref_count == 0) {
-        /* Free cached dataset data */
-        bufr_free_cached_data(&d->u.dataset);
-
-        if (d->u.dataset.name) {
-            free(d->u.dataset.name);
-            d->u.dataset.name = NULL;
-        }
-
-        if (d->u.dataset.space_id != H5I_INVALID_HID) {
-            if (H5Sclose(d->u.dataset.space_id) < 0)
-                FUNC_DONE_ERROR(H5E_DATASET, H5E_CLOSEERROR, FAIL,
-                                "Failed to close dataset dataspace");
-            d->u.dataset.space_id = H5I_INVALID_HID;
-        }
-
-        /* type_id was created by bufr_make_hdf5_type_for_codes_type() */
-        if (d->u.dataset.type_id != H5I_INVALID_HID) {
-            if (H5Tclose(d->u.dataset.type_id) < 0)
-                FUNC_DONE_ERROR(H5E_DATASET, H5E_CLOSEERROR, FAIL,
-                                "Failed to close dataset datatype");
-            d->u.dataset.type_id = H5I_INVALID_HID;
-        }
-
-        /* Do NOT free d->u.dataset.msg here.
-         * It is borrowed/shared from the parent group object.
-         */
-        d->u.dataset.msg = NULL;
-        d->u.dataset.inv = NULL;
-
-        /* Close parent file reference */
-        if (bufr_file_close(d->parent_file, dxpl_id, req) < 0)
-            FUNC_DONE_ERROR(H5E_VOL, H5E_CLOSEERROR, FAIL,
-                            "Failed to close dataset file object");
-
-        free(d);
-    }
-
-done:
-    return ret_value;
-}
-#endif /*EP*/
 herr_t
 bufr_dataset_close(void *dset, hid_t dxpl_id, void **req)
 {
@@ -2389,6 +2346,7 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
 {
     bufr_object_t *o = (bufr_object_t *)obj;
     herr_t         ret_value = SUCCEED;
+    hid_t loc_id = H5I_INVALID_HID;
 
     if (!obj || !loc_params || !args)
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL,
@@ -2451,7 +2409,6 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
         case H5VL_ATTR_ITER: {
             H5VL_attr_iterate_args_t *iter_args = &args->args.iterate;
             H5A_info_t attr_info;
-            hid_t loc_id = H5I_INVALID_HID;
             int cb_ret = 0;
             hsize_t start_idx = 0;
 
@@ -2555,13 +2512,15 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
 done:
     return ret_value;
 }
-
 herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req)
 {
-    bufr_object_t *o = (bufr_object_t *) attr;
-    bufr_attr_t *a = &o->u.attr;
+    bufr_object_t *o = (bufr_object_t *)attr;
+    bufr_attr_t   *a = &o->u.attr;
     bufr_object_t *parent_obj = NULL;
-    herr_t ret_value = SUCCEED;
+    herr_t         ret_value = SUCCEED;
+
+    (void)dxpl_id;
+    (void)req;
 
     assert(a);
 
@@ -2578,36 +2537,32 @@ herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req)
         /* Free cached data */
         bufr_free_attr_cached_data(a);
 
-        /* Use FUNC_DONE_ERROR to try to complete resource release after failure */
         if (a->name)
             free(a->name);
+
         if (a->space_id != H5I_INVALID_HID)
             if (H5Sclose(a->space_id) < 0)
                 FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
                                 "Failed to close attribute dataspace");
-        /* Only close type_id if it's not a predefined type (like H5T_NATIVE_*) */
+
+        /* Only close type_id if it is a created VL string type */
         if ((a->type_id != H5I_INVALID_HID) && a->is_vlen_string)
             if (H5Tclose(a->type_id) < 0)
                 FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
                                 "Failed to close attribute datatype");
 
-        /* Close parent object (dataset, group, or file) */
-        parent_obj = (bufr_object_t *) a->parent;
+        /* Release only the reference this attribute holds on its parent.
+         * Do not recursively close the parent object here.
+         */
+        parent_obj = (bufr_object_t *)a->parent;
+        a->parent = NULL;
+
         if (parent_obj) {
-            switch (parent_obj->obj_type) {
-                case H5I_DATASET:
-                    if (bufr_dataset_close(parent_obj, dxpl_id, req) < 0)
-                        FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
-                                        "Failed to close attribute's parent dataset");
-                    break;
-                case H5I_GROUP:
-                    if (bufr_group_close(parent_obj, dxpl_id, req) < 0)
-                        FUNC_DONE_ERROR(H5E_ATTR, H5E_CLOSEERROR, FAIL,
-                                        "Failed to close attribute's parent group");
-                    break;
-                default:
-                    FUNC_DONE_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid parent object type");
-            }
+            if (parent_obj->ref_count == 0)
+                FUNC_DONE_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
+                                "attribute parent already has ref_count 0");
+            else
+                parent_obj->ref_count--;
         }
 
         free(o);
@@ -2616,7 +2571,7 @@ herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req)
     return ret_value;
 }
 
-herr_t bufr_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, void *buf,
+herr_t bufr_attr_read(void *attr, hid_t mem_type_id, void *buf,
                       hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     const bufr_object_t *o = (const bufr_object_t *) attr;
@@ -2636,6 +2591,54 @@ herr_t bufr_attr_read(void *attr, hid_t __attribute__((unused)) mem_type_id, voi
     if ((types_equal = H5Tequal(mem_type_id, a->type_id)) <= 0)
         FUNC_GOTO_ERROR(H5E_DATATYPE, H5E_BADVALUE, FAIL,
                         "failed to compare datatypes or datatypes are different");
+
+    /* ===== VL STRING SPECIAL HANDLING ===== */
+    if (a->is_vlen_string) {
+        /* Scalar VL string */
+        if (a->nvals <= 1) {
+            char *src = (char *)a->data;
+            char **dst = (char **)buf;
+            if (!src) {
+                *dst = NULL;
+                FUNC_GOTO_DONE(SUCCEED);
+            }
+            size_t len = strlen(src) + 1;
+            *dst = (char *)H5allocate_memory(len, 0);
+            if (!*dst)
+                FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
+                            "VL attr: allocation failed");
+            memcpy(*dst, src, len);
+            FUNC_GOTO_DONE(SUCCEED);
+        }
+        /* Array of VL strings */
+        else {
+            char **src = (char **)a->data;
+            char **dst = (char **)buf;
+            for (size_t i = 0; i < a->nvals; i++) {
+                if (src[i]) {
+                    size_t len = strlen(src[i]) + 1;
+                    dst[i] = (char *)H5allocate_memory(len, 0);
+                    if (!dst[i]) {
+                        /* rollback */
+                        for (size_t j = 0; j < i; j++) {
+                            if (dst[j]) {
+                                H5free_memory(dst[j]);
+                                dst[j] = NULL;
+                            }
+                        }
+                        FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
+                                        "VL attr array: allocation failed");
+                    }
+                    memcpy(dst[i], src[i], len);
+                }
+                else {
+                    dst[i] = NULL;
+                }
+            }
+            FUNC_GOTO_DONE(SUCCEED);
+        }
+    }
+/* ===== END VL STRING HANDLING ===== */
     memcpy(buf, a->data, a->data_size);
 
 done:
@@ -2689,6 +2692,7 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 {
     herr_t         ret_value = SUCCEED;
     const char    *link_name = NULL;
+    hid_t loc_id = H5I_INVALID_HID;
     bufr_object_t *o         = (bufr_object_t *)obj;
 
     if (!o || !loc_params || !args)
@@ -2742,7 +2746,6 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
         case H5VL_LINK_ITER: {
             H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
-            hid_t loc_id = H5I_INVALID_HID;
 
             if (!iter_args || !iter_args->op || !iter_args->idx_p)
                 FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
@@ -2762,8 +2765,8 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
                 for (hsize_t i = *iter_args->idx_p; i < num_groups; i++) {
                     H5L_info2_t link_info;
-                    herr_t      cb_ret;
-                    char        child_name[32];
+                    herr_t cb_ret;
+                    char child_name[32];
 
                     snprintf(child_name, sizeof(child_name), "message_%u", (unsigned)i);
 
@@ -2797,17 +2800,17 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
                 for (hsize_t i = *iter_args->idx_p; i < num_datasets; i++) {
                     H5L_info2_t link_info;
-                    herr_t      cb_ret;
-                    char        child_name[512];
+                    herr_t cb_ret;
+                    char child_name[512];
 
                     bufr_safe_strcpy(child_name, sizeof(child_name),
                                      g->inv->datasets[i].name);
 
                     memset(&link_info, 0, sizeof(link_info));
-                    link_info.type         = H5L_TYPE_HARD;
+                    link_info.type = H5L_TYPE_HARD;
                     link_info.corder_valid = true;
-                    link_info.corder       = (int64_t)i;
-                    link_info.cset         = H5T_CSET_ASCII;
+                    link_info.corder = (int64_t)i;
+                    link_info.cset = H5T_CSET_ASCII;
 
                     cb_ret = iter_args->op(loc_id, child_name, &link_info, iter_args->op_data);
                     *iter_args->idx_p = i + 1;

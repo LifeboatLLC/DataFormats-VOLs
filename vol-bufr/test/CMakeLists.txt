@@ -3,7 +3,7 @@
 # ------------------------------------------------------------
 
 # Build the BUFR test runner
-add_executable(test_runner test_runner.c bufr_test.c)
+add_executable(test_runner test_runner.c bufr_tests.c)
 
 # Include connector headers from src/ plus HDF5 (via imported target)
 target_include_directories(test_runner
