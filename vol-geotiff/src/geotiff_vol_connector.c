@@ -944,8 +944,8 @@ void *geotiff_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unu
             free(X);
             free(Y);
 
-            hsize_t dims[2] = {h, w};
-            if ((dset->space_id = H5Screate_simple(2, dims, NULL)) < 0)
+            hsize_t latlon_dims[2] = {h, w};
+            if ((dset->space_id = H5Screate_simple(2, latlon_dims, NULL)) < 0)
                 FUNC_GOTO_ERROR(H5E_DATASPACE, H5E_CANTCREATE, NULL,
                                 "Failed to create 2D lat/lon dataspace");
         }
@@ -1948,9 +1948,6 @@ herr_t geotiff_attr_specific(void *obj,
             const gdal_metadata_t *meta = file->gdal_meta;
             hid_t loc_id = H5I_INVALID_HID;
 
-            if (!iter)
-                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid iterator args");
-
             hsize_t start_idx = iter->idx ? *iter->idx : 0;
 
             /* For dataset objects, expose per-dataset attributes */
@@ -2565,6 +2562,7 @@ done:
     return ret_value;
 }
 
+// cppcheck-suppress constParameterCallback
 herr_t geotiff_object_get(void *obj, const H5VL_loc_params_t *loc_params,
                           H5VL_object_get_args_t *args, hid_t __attribute__((unused)) dxpl_id,
                           void __attribute__((unused)) * *req)

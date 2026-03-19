@@ -100,6 +100,7 @@ jobs:
         run: |
           cd vol-cdf/build
           if [ "$(uname)" = "Darwin" ]; then
+            export DYLD_LIBRARY_PATH=$CDF_BASE/lib:$DYLD_LIBRARY_PATH
             make -j$(sysctl -n hw.ncpu)
           else
             make -j$(nproc)
