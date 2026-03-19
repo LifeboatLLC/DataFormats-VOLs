@@ -5,17 +5,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void
-die_err(const char *where, int err)
+static void die_err(const char *where, int err)
 {
     fprintf(stderr, "%s: %s\n", where, codes_get_error_message(err));
     exit(1);
 }
 
-static codes_handle *
-open_bufr_message_by_index(FILE *f, long target)
+static codes_handle *open_bufr_message_by_index(FILE *f, long target)
 {
-    int  err = 0;
+    int err = 0;
     long idx = 0;
 
     while (1) {
@@ -34,8 +32,7 @@ open_bufr_message_by_index(FILE *f, long target)
     }
 }
 
-static const inv_dataset_t *
-find_dataset(const inv_t *inv, const char *name)
+static const inv_dataset_t *find_dataset(const inv_t *inv, const char *name)
 {
     if (!inv || !name)
         return NULL;
@@ -48,8 +45,7 @@ find_dataset(const inv_t *inv, const char *name)
     return NULL;
 }
 
-static const inv_dset_attr_t *
-find_dataset_attr(const inv_dataset_t *d, const char *name)
+static const inv_dset_attr_t *find_dataset_attr(const inv_dataset_t *d, const char *name)
 {
     if (!d || !name)
         return NULL;
@@ -62,8 +58,7 @@ find_dataset_attr(const inv_dataset_t *d, const char *name)
     return NULL;
 }
 
-static const inv_attr_t *
-find_group_attr(const inv_t *inv, const char *name)
+static const inv_attr_t *find_group_attr(const inv_t *inv, const char *name)
 {
     if (!inv || !name)
         return NULL;
@@ -76,14 +71,13 @@ find_group_attr(const inv_t *inv, const char *name)
     return NULL;
 }
 
-static void
-print_value_preview(codes_handle *h, const char *key, int native_type, size_t size_hint)
+static void print_value_preview(codes_handle *h, const char *key, int native_type, size_t size_hint)
 {
     int err;
 
     if (native_type == CODES_TYPE_LONG) {
         size_t n = size_hint ? size_hint : 1;
-        long  *buf = (long *)xmalloc(n * sizeof(long));
+        long *buf = (long *) xmalloc(n * sizeof(long));
 
         err = codes_get_long_array(h, key, buf, &n);
         if (err) {
@@ -99,10 +93,9 @@ print_value_preview(codes_handle *h, const char *key, int native_type, size_t si
                 printf("    [%zu]=%ld\n", i, buf[i]);
         }
         free(buf);
-    }
-    else if (native_type == CODES_TYPE_DOUBLE) {
-        size_t  n = size_hint ? size_hint : 1;
-        double *buf = (double *)xmalloc(n * sizeof(double));
+    } else if (native_type == CODES_TYPE_DOUBLE) {
+        size_t n = size_hint ? size_hint : 1;
+        double *buf = (double *) xmalloc(n * sizeof(double));
 
         err = codes_get_double_array(h, key, buf, &n);
         if (err) {
@@ -118,8 +111,7 @@ print_value_preview(codes_handle *h, const char *key, int native_type, size_t si
                 printf("    [%zu]=%.17g\n", i, buf[i]);
         }
         free(buf);
-    }
-    else if (native_type == CODES_TYPE_STRING) {
+    } else if (native_type == CODES_TYPE_STRING) {
         char *s = NULL;
 
         err = read_one_string(h, key, &s);
@@ -128,10 +120,9 @@ print_value_preview(codes_handle *h, const char *key, int native_type, size_t si
 
         printf("  value=%s\n", s ? s : "(null)");
         free(s);
-    }
-    else if (native_type == CODES_TYPE_BYTES) {
-        size_t         n = size_hint ? size_hint : 1;
-        unsigned char *buf = (unsigned char *)xmalloc(n);
+    } else if (native_type == CODES_TYPE_BYTES) {
+        size_t n = size_hint ? size_hint : 1;
+        unsigned char *buf = (unsigned char *) xmalloc(n);
 
         err = codes_get_bytes(h, key, buf, &n);
         if (err) {
@@ -141,20 +132,18 @@ print_value_preview(codes_handle *h, const char *key, int native_type, size_t si
 
         printf("  %zu bytes (first 32):\n    ", n);
         for (size_t i = 0; i < n && i < 32; i++)
-            printf("%02x ", (unsigned)buf[i]);
+            printf("%02x ", (unsigned) buf[i]);
         printf("\n");
         free(buf);
-    }
-    else {
+    } else {
         printf("  unsupported native type %d\n", native_type);
     }
 }
 
-static void
-demo_read_dataset(codes_handle *h, const char *name)
+static void demo_read_dataset(codes_handle *h, const char *name)
 {
     bufr_dataset_spec_t spec;
-    int                 err;
+    int err;
 
     err = bufr_parse_hdf5_dataset_name(name, &spec);
     if (err)
@@ -165,13 +154,12 @@ demo_read_dataset(codes_handle *h, const char *name)
         die_err("bufr_resolve_dataset_spec", err);
 
     printf("\nREAD DSET %s\n", name);
-    printf("  ecc_key=%s type=%d occ_size=%zu replicated=%d rep_count=%d\n",
-           spec.ecc_key, spec.native_type, spec.occ_size,
-           spec.is_replicated, spec.rep_count);
+    printf("  ecc_key=%s type=%d occ_size=%zu replicated=%d rep_count=%d\n", spec.ecc_key,
+           spec.native_type, spec.occ_size, spec.is_replicated, spec.rep_count);
 
     if (spec.native_type == CODES_TYPE_LONG) {
-        long   *buf = NULL;
-        size_t  n = 0;
+        long *buf = NULL;
+        size_t n = 0;
 
         err = bufr_read_long_dataset(h, &spec, &buf, &n);
         if (err)
@@ -181,10 +169,9 @@ demo_read_dataset(codes_handle *h, const char *name)
         for (size_t i = 0; i < n && i < 16; i++)
             printf("    [%zu]=%ld\n", i, buf[i]);
         free(buf);
-    }
-    else if (spec.native_type == CODES_TYPE_DOUBLE) {
+    } else if (spec.native_type == CODES_TYPE_DOUBLE) {
         double *buf = NULL;
-        size_t  n = 0;
+        size_t n = 0;
 
         err = bufr_read_double_dataset(h, &spec, &buf, &n);
         if (err)
@@ -194,10 +181,9 @@ demo_read_dataset(codes_handle *h, const char *name)
         for (size_t i = 0; i < n && i < 16; i++)
             printf("    [%zu]=%.17g\n", i, buf[i]);
         free(buf);
-    }
-    else if (spec.native_type == CODES_TYPE_STRING) {
-        char  **arr = NULL;
-        size_t  n = 0;
+    } else if (spec.native_type == CODES_TYPE_STRING) {
+        char **arr = NULL;
+        size_t n = 0;
 
         err = bufr_read_string_dataset(h, &spec, &arr, &n);
         if (err)
@@ -209,10 +195,9 @@ demo_read_dataset(codes_handle *h, const char *name)
             free(arr[i]);
         }
         free(arr);
-    }
-    else if (spec.native_type == CODES_TYPE_BYTES) {
+    } else if (spec.native_type == CODES_TYPE_BYTES) {
         unsigned char *buf = NULL;
-        size_t         n = 0;
+        size_t n = 0;
 
         err = bufr_read_bytes_dataset(h, &spec, &buf, &n);
         if (err)
@@ -220,17 +205,15 @@ demo_read_dataset(codes_handle *h, const char *name)
 
         printf("  got %zu bytes (first 32):\n    ", n);
         for (size_t i = 0; i < n && i < 32; i++)
-            printf("%02x ", (unsigned)buf[i]);
+            printf("%02x ", (unsigned) buf[i]);
         printf("\n");
         free(buf);
-    }
-    else {
+    } else {
         printf("  unsupported native type %d\n", spec.native_type);
     }
 }
 
-static void
-demo_read_group_attr(codes_handle *h, const inv_t *inv, const char *attr_name)
+static void demo_read_group_attr(codes_handle *h, const inv_t *inv, const char *attr_name)
 {
     const inv_attr_t *a = find_group_attr(inv, attr_name);
 
@@ -248,15 +231,14 @@ demo_read_group_attr(codes_handle *h, const inv_t *inv, const char *attr_name)
     print_value_preview(h, attr_name, a->native_type, a->size);
 }
 
-static void
-demo_read_dataset_attr(codes_handle *h, const inv_t *inv, const char *dataset_name,
-                       const char *attr_name)
+static void demo_read_dataset_attr(codes_handle *h, const inv_t *inv, const char *dataset_name,
+                                   const char *attr_name)
 {
-    const inv_dataset_t   *d = find_dataset(inv, dataset_name);
+    const inv_dataset_t *d = find_dataset(inv, dataset_name);
     const inv_dset_attr_t *a;
-    size_t                 sz;
-    char                   key[1024];
-    int                    found_any = 0;
+    size_t sz;
+    char key[1024];
+    int found_any = 0;
 
     if (!d) {
         fprintf(stderr, "Dataset not found in inventory: %s\n", dataset_name);
@@ -279,7 +261,7 @@ demo_read_dataset_attr(codes_handle *h, const inv_t *inv, const char *dataset_na
 
             sz = a->size;
             if (sz == 0)
-                (void)codes_get_size(h, key, &sz);
+                (void) codes_get_size(h, key, &sz);
 
             printf("  occurrence %d key=%s\n", i, key);
             print_value_preview(h, key, a->native_type, sz);
@@ -287,12 +269,11 @@ demo_read_dataset_attr(codes_handle *h, const inv_t *inv, const char *dataset_na
         }
 
         if (!found_any) {
-            fprintf(stderr, "No defined replicated occurrences for %s->%s\n",
-                    dataset_name, attr_name);
+            fprintf(stderr, "No defined replicated occurrences for %s->%s\n", dataset_name,
+                    attr_name);
             exit(1);
         }
-    }
-    else {
+    } else {
         snprintf(key, sizeof(key), "%s->%s", dataset_name, attr_name);
         if (!codes_is_defined(h, key)) {
             fprintf(stderr, "Attribute key not defined: %s\n", key);
@@ -301,15 +282,14 @@ demo_read_dataset_attr(codes_handle *h, const inv_t *inv, const char *dataset_na
 
         sz = a->size;
         if (sz == 0)
-            (void)codes_get_size(h, key, &sz);
+            (void) codes_get_size(h, key, &sz);
 
         printf("  key=%s\n", key);
         print_value_preview(h, key, a->native_type, sz);
     }
 }
 
-static void
-print_usage(const char *prog)
+static void print_usage(const char *prog)
 {
     fprintf(stderr, "Usage:\n");
     fprintf(stderr, "  %s <file.bufr> <msg_index>\n", prog);
@@ -318,15 +298,14 @@ print_usage(const char *prog)
     fprintf(stderr, "  %s <file.bufr> <msg_index> <dataset_name> <attr_name>\n", prog);
 }
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
-    const char   *path;
-    long          msg_index;
-    FILE         *f = NULL;
+    const char *path;
+    long msg_index;
+    FILE *f = NULL;
     codes_handle *h = NULL;
-    inv_t         inv;
-    int           err;
+    inv_t inv;
+    int err;
 
     if (argc != 3 && argc != 4 && argc != 5) {
         print_usage(argv[0]);
@@ -361,8 +340,7 @@ main(int argc, char **argv)
 
     if (argc == 4) {
         demo_read_dataset(h, argv[3]);
-    }
-    else if (argc == 5) {
+    } else if (argc == 5) {
         if (strcmp(argv[3], "--gattr") == 0)
             demo_read_group_attr(h, &inv, argv[4]);
         else

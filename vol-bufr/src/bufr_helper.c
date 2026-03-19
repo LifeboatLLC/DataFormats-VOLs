@@ -25,10 +25,13 @@
  *     The helper code treats allocation failure as fatal rather than
  *     propagating NULL through every internal path.
  */
-void* xmalloc(size_t n)
+void *xmalloc(size_t n)
 {
-    void* p = malloc(n);
-    if (!p) { fprintf(stderr, "Out of memory\n"); exit(1); }
+    void *p = malloc(n);
+    if (!p) {
+        fprintf(stderr, "Out of memory\n");
+        exit(1);
+    }
     return p;
 }
 
@@ -36,10 +39,13 @@ void* xmalloc(size_t n)
  * xrealloc
  *     realloc() wrapper that aborts on allocation failure.
  */
-void* xrealloc(void* p, size_t n)
+void *xrealloc(void *p, size_t n)
 {
-    void* q = realloc(p, n);
-    if (!q) { fprintf(stderr, "Out of memory\n"); exit(1); }
+    void *q = realloc(p, n);
+    if (!q) {
+        fprintf(stderr, "Out of memory\n");
+        exit(1);
+    }
     return q;
 }
 
@@ -49,10 +55,14 @@ void* xrealloc(void* p, size_t n)
  *     destination capacity is non-zero. A NULL source becomes an
  *     empty string.
  */
-void bufr_safe_strcpy(char* dst, size_t cap, const char* src)
+void bufr_safe_strcpy(char *dst, size_t cap, const char *src)
 {
-    if (!dst || cap == 0) return;
-    if (!src) { dst[0] = '\0'; return; }
+    if (!dst || cap == 0)
+        return;
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
     strncpy(dst, src, cap - 1);
     dst[cap - 1] = '\0';
 }
@@ -61,10 +71,11 @@ void bufr_safe_strcpy(char* dst, size_t cap, const char* src)
  * ends_with
  *     Return non-zero when string s ends with suffix.
  */
-static int ends_with(const char* s, const char* suffix)
+static int ends_with(const char *s, const char *suffix)
 {
     size_t ns = strlen(s), nf = strlen(suffix);
-    if (nf > ns) return 0;
+    if (nf > ns)
+        return 0;
     return memcmp(s + (ns - nf), suffix, nf) == 0;
 }
 
@@ -73,17 +84,19 @@ static int ends_with(const char* s, const char* suffix)
  *     Split an ecCodes metadata key of the form "left->right" into
  *     its base key and attribute suffix. Returns 1 on success.
  */
-static int split_key_arrow(const char* key,
-                           char* left, size_t left_cap,
-                           char* right, size_t right_cap)
+static int split_key_arrow(const char *key, char *left, size_t left_cap, char *right,
+                           size_t right_cap)
 {
-    const char* p = strstr(key, "->");
-    if (!p) return 0;
+    const char *p = strstr(key, "->");
+    if (!p)
+        return 0;
 
-    size_t nleft  = (size_t)(p - key);
+    size_t nleft = (size_t) (p - key);
     size_t nright = strlen(p + 2);
-    if (nleft == 0 || nright == 0) return 0;
-    if (nleft >= left_cap || nright >= right_cap) return 0;
+    if (nleft == 0 || nright == 0)
+        return 0;
+    if (nleft >= left_cap || nright >= right_cap)
+        return 0;
 
     memcpy(left, key, nleft);
     left[nleft] = '\0';
@@ -100,32 +113,35 @@ static int split_key_arrow(const char* key,
  *     1 when the key matches the replicated syntax and the parsed
  *     index/base are returned, otherwise 0.
  */
-static int parse_replicated_key(const char* key,
-                                int* out_n,
-                                char* out_base,
-                                size_t out_cap)
+static int parse_replicated_key(const char *key, int *out_n, char *out_base, size_t out_cap)
 {
-    if (!key || key[0] != '#') return 0;
+    if (!key || key[0] != '#')
+        return 0;
 
-    const char* p = key + 1;
+    const char *p = key + 1;
     int n = 0;
 
-    if (*p < '0' || *p > '9') return 0;
+    if (*p < '0' || *p > '9')
+        return 0;
     while (*p >= '0' && *p <= '9') {
         n = (n * 10) + (*p - '0');
         p++;
     }
-    if (*p != '#') return 0;
+    if (*p != '#')
+        return 0;
 
     p++;
-    if (!*p) return 0;
+    if (!*p)
+        return 0;
 
     size_t len = strlen(p);
-    if (len >= out_cap) len = out_cap - 1;
+    if (len >= out_cap)
+        len = out_cap - 1;
     memcpy(out_base, p, len);
     out_base[len] = '\0';
 
-    if (out_n) *out_n = n;
+    if (out_n)
+        *out_n = n;
     return 1;
 }
 
@@ -135,23 +151,15 @@ static int parse_replicated_key(const char* key,
 
 /* Only these suffixes are mapped to base_attr dataset names.
  * Add more if needed. */
-static const char* const g_known_meta_attrs[] = {
-    "percentConfidence",
-    "units",
-    "code",
-    "scale",
-    "reference",
-    "width",
-    NULL
-};
+static const char *const g_known_meta_attrs[] = {"percentConfidence", "units", "code", "scale",
+                                                 "reference",         "width", NULL};
 
 /*
  * make_meta_dataset_name
  *     Convert a metadata key pair (base, attr) into the synthesized
  *     HDF5 dataset name "base_attr".
  */
-static void make_meta_dataset_name(const char* base, const char* attr,
-                                   char* out, size_t out_cap)
+static void make_meta_dataset_name(const char *base, const char *attr, char *out, size_t out_cap)
 {
     snprintf(out, out_cap, "%s_%s", base, attr);
 }
@@ -160,16 +168,20 @@ static void make_meta_dataset_name(const char* base, const char* attr,
  * inv_init
  *     Initialize an inventory structure to the empty state.
  */
-static void inv_init(inv_t* inv) { memset(inv, 0, sizeof(*inv)); }
+static void inv_init(inv_t *inv)
+{
+    memset(inv, 0, sizeof(*inv));
+}
 
 /*
  * bufr_inv_free
  *     Release dynamic arrays owned by the inventory and reset all
  *     fields to zero so the structure can be safely reused.
  */
-void bufr_inv_free(inv_t* inv)
+void bufr_inv_free(inv_t *inv)
 {
-    if (!inv) return;
+    if (!inv)
+        return;
     for (size_t i = 0; i < inv->ndatasets; i++) {
         free(inv->datasets[i].attrs);
         inv->datasets[i].attrs = NULL;
@@ -204,10 +216,7 @@ void bufr_inv_print(const inv_t *inv)
     for (size_t i = 0; i < inv->ngroup_attrs; i++) {
         const inv_attr_t *a = &inv->group_attrs[i];
 
-        printf("  GATTR %-40s type=%d size=%zu\n",
-               a->name,
-               a->native_type,
-               a->size);
+        printf("  GATTR %-40s type=%d size=%zu\n", a->name, a->native_type, a->size);
     }
 
     /* --------------------------- */
@@ -221,18 +230,11 @@ void bufr_inv_print(const inv_t *inv)
         const inv_dataset_t *d = &inv->datasets[i];
 
         if (d->is_replicated) {
-            printf("  DSET  %-35s type=%d occ_size=%zu REPL rep_count=%d attrs=%zu\n",
-                   d->name,
-                   d->native_type,
-                   d->occ_size,
-                   d->rep_count,
-                   d->nattrs);
+            printf("  DSET  %-35s type=%d occ_size=%zu REPL rep_count=%d attrs=%zu\n", d->name,
+                   d->native_type, d->occ_size, d->rep_count, d->nattrs);
         } else {
-            printf("  DSET  %-35s type=%d occ_size=%zu attrs=%zu\n",
-                   d->name,
-                   d->native_type,
-                   d->occ_size,
-                   d->nattrs);
+            printf("  DSET  %-35s type=%d occ_size=%zu attrs=%zu\n", d->name, d->native_type,
+                   d->occ_size, d->nattrs);
         }
 
         /* --------------------------- */
@@ -245,18 +247,12 @@ void bufr_inv_print(const inv_t *inv)
 
             if (a->per_occurrence) {
 
-                printf("        @%-30s type=%d size=%zu PER_OCC rep=%d\n",
-                       a->name,
-                       a->native_type,
-                       a->size,
-                       a->rep_count);
+                printf("        @%-30s type=%d size=%zu PER_OCC rep=%d\n", a->name, a->native_type,
+                       a->size, a->rep_count);
 
             } else {
 
-                printf("        @%-30s type=%d size=%zu\n",
-                       a->name,
-                       a->native_type,
-                       a->size);
+                printf("        @%-30s type=%d size=%zu\n", a->name, a->native_type, a->size);
             }
         }
     }
@@ -269,7 +265,7 @@ void bufr_inv_print(const inv_t *inv)
  *     Return non-zero when a group attribute with the given name is
  *     already present in the inventory.
  */
-static int inv_group_attr_exists(const inv_t* inv, const char* name)
+static int inv_group_attr_exists(const inv_t *inv, const char *name)
 {
     for (size_t i = 0; i < inv->ngroup_attrs; i++)
         if (strcmp(inv->group_attrs[i].name, name) == 0)
@@ -282,18 +278,20 @@ static int inv_group_attr_exists(const inv_t* inv, const char* name)
  *     Append a new group attribute to the inventory unless it already
  *     exists. The backing array grows geometrically.
  */
-static void inv_add_group_attr(inv_t* inv, const char* name, int ntype, size_t sz)
+static void inv_add_group_attr(inv_t *inv, const char *name, int ntype, size_t sz)
 {
-    if (!inv || !name || !*name) return;
-    if (inv_group_attr_exists(inv, name)) return;
+    if (!inv || !name || !*name)
+        return;
+    if (inv_group_attr_exists(inv, name))
+        return;
 
     if (inv->ngroup_attrs == inv->capgroup_attrs) {
         inv->capgroup_attrs = (inv->capgroup_attrs == 0) ? 128 : inv->capgroup_attrs * 2;
-        inv->group_attrs = (inv_attr_t*)xrealloc(inv->group_attrs,
-                                                 inv->capgroup_attrs * sizeof(inv_attr_t));
+        inv->group_attrs =
+            (inv_attr_t *) xrealloc(inv->group_attrs, inv->capgroup_attrs * sizeof(inv_attr_t));
     }
 
-    inv_attr_t* a = &inv->group_attrs[inv->ngroup_attrs++];
+    inv_attr_t *a = &inv->group_attrs[inv->ngroup_attrs++];
     memset(a, 0, sizeof(*a));
     bufr_safe_strcpy(a->name, sizeof(a->name), name);
     a->native_type = ntype;
@@ -304,7 +302,7 @@ static void inv_add_group_attr(inv_t* inv, const char* name, int ntype, size_t s
  * inv_find_dataset
  *     Look up a dataset by its normalized HDF5-visible name.
  */
-static inv_dataset_t* inv_find_dataset(inv_t* inv, const char* name)
+static inv_dataset_t *inv_find_dataset(inv_t *inv, const char *name)
 {
     for (size_t i = 0; i < inv->ndatasets; i++)
         if (strcmp(inv->datasets[i].name, name) == 0)
@@ -318,24 +316,25 @@ static inv_dataset_t* inv_find_dataset(inv_t* inv, const char* name)
  *     dataset already exists, missing type/occurrence-size metadata is
  *     filled in opportunistically.
  */
-static inv_dataset_t* inv_get_or_add_dataset(inv_t* inv,
-                                             const char* name,
-                                             int ntype,
+static inv_dataset_t *inv_get_or_add_dataset(inv_t *inv, const char *name, int ntype,
                                              size_t occ_size)
 {
-    if (!inv || !name || !*name) return NULL;
+    if (!inv || !name || !*name)
+        return NULL;
 
-    inv_dataset_t* d = inv_find_dataset(inv, name);
+    inv_dataset_t *d = inv_find_dataset(inv, name);
     if (d) {
-        if (d->native_type == 0 && ntype != 0) d->native_type = ntype;
-        if (d->occ_size == 0 && occ_size != 0) d->occ_size = occ_size;
+        if (d->native_type == 0 && ntype != 0)
+            d->native_type = ntype;
+        if (d->occ_size == 0 && occ_size != 0)
+            d->occ_size = occ_size;
         return d;
     }
 
     if (inv->ndatasets == inv->capdatasets) {
         inv->capdatasets = (inv->capdatasets == 0) ? 128 : inv->capdatasets * 2;
-        inv->datasets = (inv_dataset_t*)xrealloc(inv->datasets,
-                                                 inv->capdatasets * sizeof(inv_dataset_t));
+        inv->datasets =
+            (inv_dataset_t *) xrealloc(inv->datasets, inv->capdatasets * sizeof(inv_dataset_t));
     }
 
     d = &inv->datasets[inv->ndatasets++];
@@ -356,20 +355,23 @@ static inv_dataset_t* inv_get_or_add_dataset(inv_t* inv,
  *     Mark a dataset as replicated and keep the largest replication
  *     index observed so far.
  */
-static void inv_mark_dataset_replicated(inv_dataset_t* d, int rep_n)
+static void inv_mark_dataset_replicated(inv_dataset_t *d, int rep_n)
 {
-    if (!d) return;
+    if (!d)
+        return;
     d->is_replicated = 1;
-    if (rep_n > d->rep_count) d->rep_count = rep_n;
+    if (rep_n > d->rep_count)
+        d->rep_count = rep_n;
 }
 
 /*
  * inv_find_dset_attr
  *     Look up a dataset attribute by name.
  */
-static inv_dset_attr_t* inv_find_dset_attr(inv_dataset_t* d, const char* name)
+static inv_dset_attr_t *inv_find_dset_attr(inv_dataset_t *d, const char *name)
 {
-    if (!d || !name) return NULL;
+    if (!d || !name)
+        return NULL;
     for (size_t i = 0; i < d->nattrs; i++)
         if (strcmp(d->attrs[i].name, name) == 0)
             return &d->attrs[i];
@@ -381,25 +383,25 @@ static inv_dset_attr_t* inv_find_dset_attr(inv_dataset_t* d, const char* name)
  *     Return an existing dataset-attribute entry or append a new one.
  *     The first known type/size wins.
  */
-static inv_dset_attr_t* inv_get_or_add_dset_attr(inv_dataset_t* d,
-                                                 const char* name,
-                                                 int ntype,
+static inv_dset_attr_t *inv_get_or_add_dset_attr(inv_dataset_t *d, const char *name, int ntype,
                                                  size_t sz)
 {
-    if (!d || !name || !*name) return NULL;
+    if (!d || !name || !*name)
+        return NULL;
 
-    inv_dset_attr_t* a = inv_find_dset_attr(d, name);
+    inv_dset_attr_t *a = inv_find_dset_attr(d, name);
     if (a) {
         /* Keep first known type/size */
-        if (a->native_type == 0 && ntype != 0) a->native_type = ntype;
-        if (a->size == 0 && sz != 0) a->size = sz;
+        if (a->native_type == 0 && ntype != 0)
+            a->native_type = ntype;
+        if (a->size == 0 && sz != 0)
+            a->size = sz;
         return a;
     }
 
     if (d->nattrs == d->capattrs) {
         d->capattrs = (d->capattrs == 0) ? 16 : d->capattrs * 2;
-        d->attrs = (inv_dset_attr_t*)xrealloc(d->attrs,
-                                              d->capattrs * sizeof(inv_dset_attr_t));
+        d->attrs = (inv_dset_attr_t *) xrealloc(d->attrs, d->capattrs * sizeof(inv_dset_attr_t));
     }
 
     a = &d->attrs[d->nattrs++];
@@ -416,11 +418,13 @@ static inv_dset_attr_t* inv_get_or_add_dset_attr(inv_dataset_t* d,
  * inv_mark_attr_per_occurrence
  *     Record that a dataset attribute varies per replicated occurrence.
  */
-static void inv_mark_attr_per_occurrence(inv_dset_attr_t* a, int rep_n)
+static void inv_mark_attr_per_occurrence(inv_dset_attr_t *a, int rep_n)
 {
-    if (!a) return;
+    if (!a)
+        return;
     a->per_occurrence = 1;
-    if (rep_n > a->rep_count) a->rep_count = rep_n;
+    if (rep_n > a->rep_count)
+        a->rep_count = rep_n;
 }
 
 /* ============================================================
@@ -432,17 +436,29 @@ static void inv_mark_attr_per_occurrence(inv_dset_attr_t* a, int rep_n)
  *     Return non-zero for known BUFR header/control keys that should
  *     always be exposed as HDF5 group attributes.
  */
-static int force_group_attr_key(const char* key)
+static int force_group_attr_key(const char *key)
 {
-    static const char* const exact[] = {
-        "edition","masterTableNumber","masterTablesVersionNumber","localTablesVersionNumber",
-        "bufrHeaderCentre","bufrHeaderSubCentre","dataCategory","dataSubCategory",
-        "internationalDataSubCategory","typicalYear","typicalMonth","typicalDay",
-        "typicalHour","typicalMinute","typicalSecond","numberOfSubsets","compressedData",
-        NULL
-    };
+    static const char *const exact[] = {"edition",
+                                        "masterTableNumber",
+                                        "masterTablesVersionNumber",
+                                        "localTablesVersionNumber",
+                                        "bufrHeaderCentre",
+                                        "bufrHeaderSubCentre",
+                                        "dataCategory",
+                                        "dataSubCategory",
+                                        "internationalDataSubCategory",
+                                        "typicalYear",
+                                        "typicalMonth",
+                                        "typicalDay",
+                                        "typicalHour",
+                                        "typicalMinute",
+                                        "typicalSecond",
+                                        "numberOfSubsets",
+                                        "compressedData",
+                                        NULL};
     for (int i = 0; exact[i]; i++)
-        if (strcmp(key, exact[i]) == 0) return 1;
+        if (strcmp(key, exact[i]) == 0)
+            return 1;
     return 0;
 }
 
@@ -451,30 +467,24 @@ static int force_group_attr_key(const char* key)
  *     Return non-zero for descriptor arrays that should always be
  *     exposed as datasets.
  */
-static int is_descriptor_key(const char* key)
+static int is_descriptor_key(const char *key)
 {
-    static const char* const exact[] = {
-        "unexpandedDescriptors","expandedDescriptors","shortExpandedDescriptors","dataPresentIndicator",
-        NULL
-    };
+    static const char *const exact[] = {"unexpandedDescriptors", "expandedDescriptors",
+                                        "shortExpandedDescriptors", "dataPresentIndicator", NULL};
     for (int i = 0; exact[i]; i++)
-        if (strcmp(key, exact[i]) == 0) return 1;
+        if (strcmp(key, exact[i]) == 0)
+            return 1;
     return 0;
 }
 
-typedef enum {
-    KEY_SKIP = 0,
-    KEY_GROUP_ATTR,
-    KEY_DATASET,
-    KEY_DATASET_ATTR
-} key_role_t;
+typedef enum { KEY_SKIP = 0, KEY_GROUP_ATTR, KEY_DATASET, KEY_DATASET_ATTR } key_role_t;
 
 typedef struct {
     key_role_t role;
 
-    char base_key[512];   /* for group attr or dataset */
-    char dset_key[512];   /* left side for key->attr (may be "#n#base") */
-    char dset_attr[512];  /* right side for key->attr */
+    char base_key[512];  /* for group attr or dataset */
+    char dset_key[512];  /* left side for key->attr (may be "#n#base") */
+    char dset_attr[512]; /* right side for key->attr */
 
     int native_type;
     size_t size;
@@ -490,9 +500,10 @@ typedef struct {
  *     function parses them structurally first and treats type/size as
  *     best-effort metadata.
  */
-static int bufr_classify_key(codes_handle* h, const char* key, key_class_t* out)
+static int bufr_classify_key(codes_handle *h, const char *key, key_class_t *out)
 {
-    if (!h || !key || !out) return CODES_INVALID_ARGUMENT;
+    if (!h || !key || !out)
+        return CODES_INVALID_ARGUMENT;
     memset(out, 0, sizeof(*out));
     out->role = KEY_SKIP;
 
@@ -505,8 +516,8 @@ static int bufr_classify_key(codes_handle* h, const char* key, key_class_t* out)
             bufr_safe_strcpy(out->dset_attr, sizeof(out->dset_attr), right);
 
             /* best-effort type/size; may fail if MISSING */
-            (void)codes_get_native_type(h, key, &out->native_type);
-            (void)codes_get_size(h, key, &out->size);
+            (void) codes_get_native_type(h, key, &out->native_type);
+            (void) codes_get_size(h, key, &out->size);
             return 0;
         }
     }
@@ -514,8 +525,10 @@ static int bufr_classify_key(codes_handle* h, const char* key, key_class_t* out)
     /* regular key */
     size_t sz = 0;
     int ntype = 0;
-    if (codes_get_size(h, key, &sz) != 0) return 0;
-    if (codes_get_native_type(h, key, &ntype) != 0) return 0;
+    if (codes_get_size(h, key, &sz) != 0)
+        return 0;
+    if (codes_get_native_type(h, key, &ntype) != 0)
+        return 0;
 
     bufr_safe_strcpy(out->base_key, sizeof(out->base_key), key);
     out->native_type = ntype;
@@ -564,28 +577,27 @@ static int bufr_classify_key(codes_handle* h, const char* key, key_class_t* out)
  *     this post-pass probing step is used to synthesize metadata
  *     datasets and attach dataset attributes robustly.
  */
-static int probe_any_defined_meta_key(codes_handle* h,
-                                      const char* base,
-                                      int is_repl,
-                                      int rep_count,
-                                      const char* attr,
-                                      int* out_found,
-                                      int* out_native_type,
-                                      size_t* out_size,
-                                      int* out_found_rep_max)
+static int probe_any_defined_meta_key(codes_handle *h, const char *base, int is_repl, int rep_count,
+                                      const char *attr, int *out_found, int *out_native_type,
+                                      size_t *out_size, int *out_found_rep_max)
 {
     *out_found = 0;
-    if (out_native_type) *out_native_type = 0;
-    if (out_size) *out_size = 0;
-    if (out_found_rep_max) *out_found_rep_max = 0;
+    if (out_native_type)
+        *out_native_type = 0;
+    if (out_size)
+        *out_size = 0;
+    if (out_found_rep_max)
+        *out_found_rep_max = 0;
 
     if (!is_repl) {
         char k[1024];
         snprintf(k, sizeof(k), "%s->%s", base, attr);
         if (codes_is_defined(h, k)) {
             *out_found = 1;
-            if (out_native_type) (void)codes_get_native_type(h, k, out_native_type);
-            if (out_size) (void)codes_get_size(h, k, out_size);
+            if (out_native_type)
+                (void) codes_get_native_type(h, k, out_native_type);
+            if (out_size)
+                (void) codes_get_size(h, k, out_size);
         }
         return 0;
     }
@@ -599,14 +611,18 @@ static int probe_any_defined_meta_key(codes_handle* h,
             continue;
 
         *out_found = 1;
-        if (i > found_max) found_max = i;
+        if (i > found_max)
+            found_max = i;
 
         /* capture first successful type/size (best-effort; MISSING can still fail) */
-        if (out_native_type && *out_native_type == 0) (void)codes_get_native_type(h, k, out_native_type);
-        if (out_size && *out_size == 0) (void)codes_get_size(h, k, out_size);
+        if (out_native_type && *out_native_type == 0)
+            (void) codes_get_native_type(h, k, out_native_type);
+        if (out_size && *out_size == 0)
+            (void) codes_get_size(h, k, out_size);
     }
 
-    if (out_found_rep_max) *out_found_rep_max = found_max;
+    if (out_found_rep_max)
+        *out_found_rep_max = found_max;
     return 0;
 }
 
@@ -627,26 +643,29 @@ static int probe_any_defined_meta_key(codes_handle* h,
  *     percentConfidence and synthesize parallel datasets like
  *     temperature_units.
  */
-int bufr_build_group_inventory(codes_handle* h, inv_t* inv)
+int bufr_build_group_inventory(codes_handle *h, inv_t *inv)
 {
-    if (!h || !inv) return CODES_INVALID_ARGUMENT;
+    if (!h || !inv)
+        return CODES_INVALID_ARGUMENT;
     inv_init(inv);
 
     /* Ensure BUFR decoded keys exist */
     {
         int err = codes_set_long(h, "unpack", 1);
-        if (err) return err;
+        if (err)
+            return err;
     }
 
     /* Pass 1: collect group attrs + datasets + replication counts,
      * and record any explicit key->attr we do see. */
-    codes_bufr_keys_iterator* it =
-        codes_bufr_keys_iterator_new(h, CODES_KEYS_ITERATOR_ALL_KEYS);
-    if (!it) return CODES_INTERNAL_ERROR;
+    codes_bufr_keys_iterator *it = codes_bufr_keys_iterator_new(h, CODES_KEYS_ITERATOR_ALL_KEYS);
+    if (!it)
+        return CODES_INTERNAL_ERROR;
 
     while (codes_bufr_keys_iterator_next(it)) {
-        const char* key = codes_bufr_keys_iterator_get_name(it);
-        if (!key || !*key) continue;
+        const char *key = codes_bufr_keys_iterator_get_name(it);
+        if (!key || !*key)
+            continue;
 
         key_class_t kc;
         bufr_classify_key(h, key, &kc);
@@ -656,7 +675,7 @@ int bufr_build_group_inventory(codes_handle* h, inv_t* inv)
             int rep_n = 0;
             char base[512];
             if (parse_replicated_key(kc.base_key, &rep_n, base, sizeof(base))) {
-                inv_dataset_t* d = inv_get_or_add_dataset(inv, base, kc.native_type, kc.size);
+                inv_dataset_t *d = inv_get_or_add_dataset(inv, base, kc.native_type, kc.size);
                 inv_mark_dataset_replicated(d, rep_n);
             } else {
                 inv_add_group_attr(inv, kc.base_key, kc.native_type, kc.size);
@@ -667,10 +686,10 @@ int bufr_build_group_inventory(codes_handle* h, inv_t* inv)
             int rep_n = 0;
             char base[512];
             if (parse_replicated_key(kc.base_key, &rep_n, base, sizeof(base))) {
-                inv_dataset_t* d = inv_get_or_add_dataset(inv, base, kc.native_type, kc.size);
+                inv_dataset_t *d = inv_get_or_add_dataset(inv, base, kc.native_type, kc.size);
                 inv_mark_dataset_replicated(d, rep_n);
             } else {
-                (void)inv_get_or_add_dataset(inv, kc.base_key, kc.native_type, kc.size);
+                (void) inv_get_or_add_dataset(inv, kc.base_key, kc.native_type, kc.size);
             }
 
         } else if (kc.role == KEY_DATASET_ATTR) {
@@ -679,16 +698,16 @@ int bufr_build_group_inventory(codes_handle* h, inv_t* inv)
             int rep_n = 0;
             char base[512];
             if (parse_replicated_key(kc.dset_key, &rep_n, base, sizeof(base))) {
-                inv_dataset_t* d = inv_get_or_add_dataset(inv, base, 0, 0);
+                inv_dataset_t *d = inv_get_or_add_dataset(inv, base, 0, 0);
                 inv_mark_dataset_replicated(d, rep_n);
 
                 /* record as dataset-attr metadata (type/size may be 0 if MISSING) */
-                inv_dset_attr_t* a = inv_get_or_add_dset_attr(d, kc.dset_attr,
-                                                              kc.native_type, kc.size);
+                inv_dset_attr_t *a =
+                    inv_get_or_add_dset_attr(d, kc.dset_attr, kc.native_type, kc.size);
                 inv_mark_attr_per_occurrence(a, rep_n);
             } else {
-                inv_dataset_t* d = inv_get_or_add_dataset(inv, kc.dset_key, 0, 0);
-                (void)inv_get_or_add_dset_attr(d, kc.dset_attr, kc.native_type, kc.size);
+                inv_dataset_t *d = inv_get_or_add_dataset(inv, kc.dset_key, 0, 0);
+                (void) inv_get_or_add_dset_attr(d, kc.dset_attr, kc.native_type, kc.size);
             }
         }
     }
@@ -698,26 +717,24 @@ int bufr_build_group_inventory(codes_handle* h, inv_t* inv)
     /* Pass 2 (ROBUST): synthesize meta datasets by PROBING codes_is_defined()
      * for each dataset and each whitelisted meta attr, regardless of iterator output. */
     for (size_t di = 0; di < inv->ndatasets; di++) {
-        inv_dataset_t* d = &inv->datasets[di];
+        inv_dataset_t *d = &inv->datasets[di];
 
         for (int ai = 0; g_known_meta_attrs[ai]; ai++) {
-            const char* attr = g_known_meta_attrs[ai];
+            const char *attr = g_known_meta_attrs[ai];
 
             int found = 0;
             int ntype = 0;
             size_t sz = 0;
             int found_rep_max = 0;
 
-            (void)probe_any_defined_meta_key(h, d->name,
-                                             d->is_replicated, d->rep_count,
-                                             attr,
-                                             &found, &ntype, &sz, &found_rep_max);
+            (void) probe_any_defined_meta_key(h, d->name, d->is_replicated, d->rep_count, attr,
+                                              &found, &ntype, &sz, &found_rep_max);
 
             if (!found)
                 continue;
 
             /* Attach dataset-attr metadata to base dataset */
-            inv_dset_attr_t* a = inv_get_or_add_dset_attr(d, attr, ntype, sz);
+            inv_dset_attr_t *a = inv_get_or_add_dset_attr(d, attr, ntype, sz);
             if (d->is_replicated) {
                 /* mark per-occurrence; rep_count may be larger than found_rep_max */
                 inv_mark_attr_per_occurrence(a, (found_rep_max > 0) ? found_rep_max : d->rep_count);
@@ -727,7 +744,7 @@ int bufr_build_group_inventory(codes_handle* h, inv_t* inv)
             char meta_name[1024];
             make_meta_dataset_name(d->name, attr, meta_name, sizeof(meta_name));
 
-            inv_dataset_t* md = inv_get_or_add_dataset(inv, meta_name, ntype, sz);
+            inv_dataset_t *md = inv_get_or_add_dataset(inv, meta_name, ntype, sz);
             if (d->is_replicated) {
                 /* replicate like base (or the max we actually found) */
                 inv_mark_dataset_replicated(md, (found_rep_max > 0) ? found_rep_max : d->rep_count);
@@ -746,14 +763,14 @@ int bufr_build_group_inventory(codes_handle* h, inv_t* inv)
 typedef struct {
     char hdf5_name[512];
     char ecc_key[512];
-    int  is_meta_dataset;
+    int is_meta_dataset;
     char meta_base[512];
     char meta_attr[256];
 
-    int  is_replicated;
-    int  rep_count;
+    int is_replicated;
+    int rep_count;
 
-    int    native_type;
+    int native_type;
     size_t occ_size;
 } bufr_dataset_spec_t;
 #endif /*EP*/
@@ -766,14 +783,15 @@ typedef struct {
  *     Recognizes synthesized metadata datasets of the form base_attr
  *     for whitelisted attributes and converts them back to base->attr.
  */
-int bufr_parse_hdf5_dataset_name(const char* hdf5_name, bufr_dataset_spec_t* spec)
+int bufr_parse_hdf5_dataset_name(const char *hdf5_name, bufr_dataset_spec_t *spec)
 {
-    if (!hdf5_name || !spec) return CODES_INVALID_ARGUMENT;
+    if (!hdf5_name || !spec)
+        return CODES_INVALID_ARGUMENT;
     memset(spec, 0, sizeof(*spec));
     bufr_safe_strcpy(spec->hdf5_name, sizeof(spec->hdf5_name), hdf5_name);
 
     for (int i = 0; g_known_meta_attrs[i]; i++) {
-        const char* attr = g_known_meta_attrs[i];
+        const char *attr = g_known_meta_attrs[i];
         char suffix[300];
         snprintf(suffix, sizeof(suffix), "_%s", attr);
 
@@ -790,8 +808,8 @@ int bufr_parse_hdf5_dataset_name(const char* hdf5_name, bufr_dataset_spec_t* spe
 
             spec->is_meta_dataset = 1;
             bufr_safe_strcpy(spec->meta_attr, sizeof(spec->meta_attr), attr);
-            snprintf(spec->ecc_key, sizeof(spec->ecc_key),
-                     "%s->%s", spec->meta_base, spec->meta_attr);
+            snprintf(spec->ecc_key, sizeof(spec->ecc_key), "%s->%s", spec->meta_base,
+                     spec->meta_attr);
             return 0;
         }
     }
@@ -806,9 +824,10 @@ int bufr_parse_hdf5_dataset_name(const char* hdf5_name, bufr_dataset_spec_t* spe
  *     Return whether the logical ecCodes key exists in replicated form
  *     by probing for #1#key.
  */
-static int bufr_is_replicated_key(codes_handle* h, const char* ecc_key, int* out_is_repl)
+static int bufr_is_replicated_key(codes_handle *h, const char *ecc_key, int *out_is_repl)
 {
-    if (!h || !ecc_key || !out_is_repl) return CODES_INVALID_ARGUMENT;
+    if (!h || !ecc_key || !out_is_repl)
+        return CODES_INVALID_ARGUMENT;
     char kname[768];
     snprintf(kname, sizeof(kname), "#1#%s", ecc_key);
     *out_is_repl = codes_is_defined(h, kname) ? 1 : 0;
@@ -820,13 +839,15 @@ static int bufr_is_replicated_key(codes_handle* h, const char* ecc_key, int* out
  *     Determine the highest contiguous replication index for a key by
  *     probing #1#key, #2#key, ... until the first missing occurrence.
  */
-static int bufr_replication_count(codes_handle* h, const char* ecc_key, int* out_rep_count)
+static int bufr_replication_count(codes_handle *h, const char *ecc_key, int *out_rep_count)
 {
-    if (!h || !ecc_key || !out_rep_count) return CODES_INVALID_ARGUMENT;
+    if (!h || !ecc_key || !out_rep_count)
+        return CODES_INVALID_ARGUMENT;
 
     int is_repl = 0;
     int err = bufr_is_replicated_key(h, ecc_key, &is_repl);
-    if (err) return err;
+    if (err)
+        return err;
 
     if (!is_repl) {
         *out_rep_count = 0;
@@ -852,33 +873,43 @@ static int bufr_replication_count(codes_handle* h, const char* ecc_key, int* out
  *     message, filling in native type, occurrence size, and replication
  *     information.
  */
-int bufr_resolve_dataset_spec(codes_handle* h, bufr_dataset_spec_t* spec)
+int bufr_resolve_dataset_spec(codes_handle *h, bufr_dataset_spec_t *spec)
 {
-    if (!h || !spec) return CODES_INVALID_ARGUMENT;
- 
-    { int err = codes_set_long(h, "unpack", 1); if (err) return err; }
+    if (!h || !spec)
+        return CODES_INVALID_ARGUMENT;
+
+    {
+        int err = codes_set_long(h, "unpack", 1);
+        if (err)
+            return err;
+    }
 
     int rep_count = 0;
     int err = bufr_replication_count(h, spec->ecc_key, &rep_count);
-    if (err) return err;
+    if (err)
+        return err;
 
     spec->is_replicated = (rep_count > 0) ? 1 : 0;
     spec->rep_count = rep_count;
 
     char probe[768];
-    if (spec->is_replicated) snprintf(probe, sizeof(probe), "#1#%s", spec->ecc_key);
-    else bufr_safe_strcpy(probe, sizeof(probe), spec->ecc_key);
+    if (spec->is_replicated)
+        snprintf(probe, sizeof(probe), "#1#%s", spec->ecc_key);
+    else
+        bufr_safe_strcpy(probe, sizeof(probe), spec->ecc_key);
 
-
-    if (!codes_is_defined(h, probe)) return CODES_NOT_FOUND;
+    if (!codes_is_defined(h, probe))
+        return CODES_NOT_FOUND;
 
     int ntype = 0;
     size_t sz = 0;
 
     err = codes_get_native_type(h, probe, &ntype);
-    if (err) return err;
+    if (err)
+        return err;
     err = codes_get_size(h, probe, &sz);
-    if (err) return err;
+    if (err)
+        return err;
 
     spec->native_type = ntype;
     spec->occ_size = sz;
@@ -891,21 +922,29 @@ int bufr_resolve_dataset_spec(codes_handle* h, bufr_dataset_spec_t* spec)
  *     Read a LONG-valued dataset. For replicated keys, data from all
  *     occurrences are concatenated in replication order.
  */
-int bufr_read_long_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
-                           long** out_buf, size_t* out_n)
+int bufr_read_long_dataset(codes_handle *h, const bufr_dataset_spec_t *spec, long **out_buf,
+                           size_t *out_n)
 {
-    if (!h || !spec || !out_buf || !out_n) return CODES_INVALID_ARGUMENT;
-    *out_buf = NULL; *out_n = 0;
-    if (spec->native_type != CODES_TYPE_LONG) return CODES_WRONG_TYPE;
+    if (!h || !spec || !out_buf || !out_n)
+        return CODES_INVALID_ARGUMENT;
+    *out_buf = NULL;
+    *out_n = 0;
+    if (spec->native_type != CODES_TYPE_LONG)
+        return CODES_WRONG_TYPE;
 
     if (!spec->is_replicated) {
         size_t n = 0;
         int err = codes_get_size(h, spec->ecc_key, &n);
-        if (err) return err;
-        long* buf = (long*)xmalloc(n * sizeof(long));
+        if (err)
+            return err;
+        long *buf = (long *) xmalloc(n * sizeof(long));
         err = codes_get_long_array(h, spec->ecc_key, buf, &n);
-        if (err) { free(buf); return err; }
-        *out_buf = buf; *out_n = n;
+        if (err) {
+            free(buf);
+            return err;
+        }
+        *out_buf = buf;
+        *out_n = n;
         return 0;
     }
 
@@ -913,29 +952,39 @@ int bufr_read_long_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
     for (int i = 1; i <= spec->rep_count; i++) {
         char kname[768];
         snprintf(kname, sizeof(kname), "#%d#%s", i, spec->ecc_key);
-        if (!codes_is_defined(h, kname)) continue;
+        if (!codes_is_defined(h, kname))
+            continue;
         size_t n = 0;
         int err = codes_get_size(h, kname, &n);
-        if (err) return err;
+        if (err)
+            return err;
         total += n;
     }
 
-    long* buf = (long*)xmalloc(total * sizeof(long));
+    long *buf = (long *) xmalloc(total * sizeof(long));
     size_t off = 0;
 
     for (int i = 1; i <= spec->rep_count; i++) {
         char kname[768];
         snprintf(kname, sizeof(kname), "#%d#%s", i, spec->ecc_key);
-        if (!codes_is_defined(h, kname)) continue;
+        if (!codes_is_defined(h, kname))
+            continue;
         size_t n = 0;
         int err = codes_get_size(h, kname, &n);
-        if (err) { free(buf); return err; }
+        if (err) {
+            free(buf);
+            return err;
+        }
         err = codes_get_long_array(h, kname, buf + off, &n);
-        if (err) { free(buf); return err; }
+        if (err) {
+            free(buf);
+            return err;
+        }
         off += n;
     }
 
-    *out_buf = buf; *out_n = total;
+    *out_buf = buf;
+    *out_n = total;
     return 0;
 }
 
@@ -944,21 +993,29 @@ int bufr_read_long_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
  *     Read a DOUBLE-valued dataset. Replicated occurrences are
  *     concatenated in replication order.
  */
-int bufr_read_double_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
-                             double** out_buf, size_t* out_n)
+int bufr_read_double_dataset(codes_handle *h, const bufr_dataset_spec_t *spec, double **out_buf,
+                             size_t *out_n)
 {
-    if (!h || !spec || !out_buf || !out_n) return CODES_INVALID_ARGUMENT;
-    *out_buf = NULL; *out_n = 0;
-    if (spec->native_type != CODES_TYPE_DOUBLE) return CODES_WRONG_TYPE;
+    if (!h || !spec || !out_buf || !out_n)
+        return CODES_INVALID_ARGUMENT;
+    *out_buf = NULL;
+    *out_n = 0;
+    if (spec->native_type != CODES_TYPE_DOUBLE)
+        return CODES_WRONG_TYPE;
 
     if (!spec->is_replicated) {
         size_t n = 0;
         int err = codes_get_size(h, spec->ecc_key, &n);
-        if (err) return err;
-        double* buf = (double*)xmalloc(n * sizeof(double));
+        if (err)
+            return err;
+        double *buf = (double *) xmalloc(n * sizeof(double));
         err = codes_get_double_array(h, spec->ecc_key, buf, &n);
-        if (err) { free(buf); return err; }
-        *out_buf = buf; *out_n = n;
+        if (err) {
+            free(buf);
+            return err;
+        }
+        *out_buf = buf;
+        *out_n = n;
         return 0;
     }
 
@@ -966,29 +1023,39 @@ int bufr_read_double_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
     for (int i = 1; i <= spec->rep_count; i++) {
         char kname[768];
         snprintf(kname, sizeof(kname), "#%d#%s", i, spec->ecc_key);
-        if (!codes_is_defined(h, kname)) continue;
+        if (!codes_is_defined(h, kname))
+            continue;
         size_t n = 0;
         int err = codes_get_size(h, kname, &n);
-        if (err) return err;
+        if (err)
+            return err;
         total += n;
     }
 
-    double* buf = (double*)xmalloc(total * sizeof(double));
+    double *buf = (double *) xmalloc(total * sizeof(double));
     size_t off = 0;
 
     for (int i = 1; i <= spec->rep_count; i++) {
         char kname[768];
         snprintf(kname, sizeof(kname), "#%d#%s", i, spec->ecc_key);
-        if (!codes_is_defined(h, kname)) continue;
+        if (!codes_is_defined(h, kname))
+            continue;
         size_t n = 0;
         int err = codes_get_size(h, kname, &n);
-        if (err) { free(buf); return err; }
+        if (err) {
+            free(buf);
+            return err;
+        }
         err = codes_get_double_array(h, kname, buf + off, &n);
-        if (err) { free(buf); return err; }
+        if (err) {
+            free(buf);
+            return err;
+        }
         off += n;
     }
 
-    *out_buf = buf; *out_n = total;
+    *out_buf = buf;
+    *out_n = total;
     return 0;
 }
 
@@ -997,21 +1064,29 @@ int bufr_read_double_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
  *     Read a BYTES-valued dataset. Replicated byte sequences are
  *     concatenated into a single output buffer.
  */
-int bufr_read_bytes_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
-                            unsigned char** out_buf, size_t* out_nbytes)
+int bufr_read_bytes_dataset(codes_handle *h, const bufr_dataset_spec_t *spec,
+                            unsigned char **out_buf, size_t *out_nbytes)
 {
-    if (!h || !spec || !out_buf || !out_nbytes) return CODES_INVALID_ARGUMENT;
-    *out_buf = NULL; *out_nbytes = 0;
-    if (spec->native_type != CODES_TYPE_BYTES) return CODES_WRONG_TYPE;
+    if (!h || !spec || !out_buf || !out_nbytes)
+        return CODES_INVALID_ARGUMENT;
+    *out_buf = NULL;
+    *out_nbytes = 0;
+    if (spec->native_type != CODES_TYPE_BYTES)
+        return CODES_WRONG_TYPE;
 
     if (!spec->is_replicated) {
         size_t n = 0;
         int err = codes_get_size(h, spec->ecc_key, &n);
-        if (err) return err;
-        unsigned char* buf = (unsigned char*)xmalloc(n);
+        if (err)
+            return err;
+        unsigned char *buf = (unsigned char *) xmalloc(n);
         err = codes_get_bytes(h, spec->ecc_key, buf, &n);
-        if (err) { free(buf); return err; }
-        *out_buf = buf; *out_nbytes = n;
+        if (err) {
+            free(buf);
+            return err;
+        }
+        *out_buf = buf;
+        *out_nbytes = n;
         return 0;
     }
 
@@ -1019,29 +1094,39 @@ int bufr_read_bytes_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
     for (int i = 1; i <= spec->rep_count; i++) {
         char kname[768];
         snprintf(kname, sizeof(kname), "#%d#%s", i, spec->ecc_key);
-        if (!codes_is_defined(h, kname)) continue;
+        if (!codes_is_defined(h, kname))
+            continue;
         size_t n = 0;
         int err = codes_get_size(h, kname, &n);
-        if (err) return err;
+        if (err)
+            return err;
         total += n;
     }
 
-    unsigned char* buf = (unsigned char*)xmalloc(total);
+    unsigned char *buf = (unsigned char *) xmalloc(total);
     size_t off = 0;
 
     for (int i = 1; i <= spec->rep_count; i++) {
         char kname[768];
         snprintf(kname, sizeof(kname), "#%d#%s", i, spec->ecc_key);
-        if (!codes_is_defined(h, kname)) continue;
+        if (!codes_is_defined(h, kname))
+            continue;
         size_t n = 0;
         int err = codes_get_size(h, kname, &n);
-        if (err) { free(buf); return err; }
+        if (err) {
+            free(buf);
+            return err;
+        }
         err = codes_get_bytes(h, kname, buf + off, &n);
-        if (err) { free(buf); return err; }
+        if (err) {
+            free(buf);
+            return err;
+        }
         off += n;
     }
 
-    *out_buf = buf; *out_nbytes = total;
+    *out_buf = buf;
+    *out_nbytes = total;
     return 0;
 }
 
@@ -1050,16 +1135,21 @@ int bufr_read_bytes_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
  *     Read one ecCodes string key into a newly allocated NUL-terminated
  *     buffer sized using codes_get_length().
  */
-int read_one_string(codes_handle* h, const char* key, char** out_s)
+int read_one_string(codes_handle *h, const char *key, char **out_s)
 {
     size_t len = 0;
     int err = codes_get_length(h, key, &len);
-    if (err) return err;
-    if (len == 0) len = 1;
-    char* s = (char*)xmalloc(len);
+    if (err)
+        return err;
+    if (len == 0)
+        len = 1;
+    char *s = (char *) xmalloc(len);
     size_t cap = len;
     err = codes_get_string(h, key, s, &cap);
-    if (err) { free(s); return err; }
+    if (err) {
+        free(s);
+        return err;
+    }
     *out_s = s;
     return 0;
 }
@@ -1070,34 +1160,42 @@ int read_one_string(codes_handle* h, const char* key, char** out_s)
  *     allocated strings. For replicated keys, one string is returned
  *     per occurrence that is defined.
  */
-int bufr_read_string_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
-                             char*** out_strings, size_t* out_nstrings)
+int bufr_read_string_dataset(codes_handle *h, const bufr_dataset_spec_t *spec, char ***out_strings,
+                             size_t *out_nstrings)
 {
-    if (!h || !spec || !out_strings || !out_nstrings) return CODES_INVALID_ARGUMENT;
-    *out_strings = NULL; *out_nstrings = 0;
-    if (spec->native_type != CODES_TYPE_STRING) return CODES_WRONG_TYPE;
+    if (!h || !spec || !out_strings || !out_nstrings)
+        return CODES_INVALID_ARGUMENT;
+    *out_strings = NULL;
+    *out_nstrings = 0;
+    if (spec->native_type != CODES_TYPE_STRING)
+        return CODES_WRONG_TYPE;
 
     if (!spec->is_replicated) {
-        char** arr = (char**)xmalloc(sizeof(char*));
+        char **arr = (char **) xmalloc(sizeof(char *));
         int err = read_one_string(h, spec->ecc_key, &arr[0]);
-        if (err) { free(arr); return err; }
+        if (err) {
+            free(arr);
+            return err;
+        }
         *out_strings = arr;
         *out_nstrings = 1;
         return 0;
     }
 
-    char** arr = (char**)xmalloc((size_t)spec->rep_count * sizeof(char*));
+    char **arr = (char **) xmalloc((size_t) spec->rep_count * sizeof(char *));
     size_t nout = 0;
 
     for (int i = 1; i <= spec->rep_count; i++) {
         char kname[768];
         snprintf(kname, sizeof(kname), "#%d#%s", i, spec->ecc_key);
-        if (!codes_is_defined(h, kname)) continue;
+        if (!codes_is_defined(h, kname))
+            continue;
 
-        char* s = NULL;
+        char *s = NULL;
         int err = read_one_string(h, kname, &s);
         if (err) {
-            for (size_t j = 0; j < nout; j++) free(arr[j]);
+            for (size_t j = 0; j < nout; j++)
+                free(arr[j]);
             free(arr);
             return err;
         }
@@ -1108,4 +1206,3 @@ int bufr_read_string_dataset(codes_handle* h, const bufr_dataset_spec_t* spec,
     *out_nstrings = nout;
     return 0;
 }
-

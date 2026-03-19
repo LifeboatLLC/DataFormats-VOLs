@@ -47,10 +47,10 @@ typedef struct bufr_message_t {
 
 /* BUFR VOL group object structure */
 typedef struct bufr_group_t {
-    char *name;           /* Group name */
-    bufr_message_t *msg;  /* BUFR message handle */
-    size_t msg_num;       /* BUFR message  number*/
-    inv_t *inv;           /* Group inventory structure defined in bufr_helper.h */
+    char *name;          /* Group name */
+    bufr_message_t *msg; /* BUFR message handle */
+    size_t msg_num;      /* BUFR message  number*/
+    inv_t *inv;          /* Group inventory structure defined in bufr_helper.h */
 } bufr_group_t;
 
 /* BUFR VOL dataset object structure */
@@ -58,7 +58,7 @@ typedef struct bufr_dataset_t {
     void *parent;        /* Parent object - Group */
     char *name;          /* Dataset (key) name */
     bufr_message_t *msg; /* BUFR message handle */
-    inv_t *inv;           /* Group inventory structure */
+    inv_t *inv;          /* Group inventory structure */
     int codes_type;      /* ecCodes datatype */
     hid_t type_id;       /* HDF5 datatype */
     hid_t space_id;      /* HDF5 dataspace */
@@ -88,8 +88,8 @@ struct bufr_object_t {
     size_t ref_count;           /* Reference count for child objects */
     union {
         bufr_file_t file;
-	bufr_group_t group;
-	bufr_dataset_t dataset;
+        bufr_group_t group;
+        bufr_dataset_t dataset;
         bufr_attr_t attr;
     } u;
 };
@@ -105,7 +105,7 @@ herr_t bufr_file_close(void *file, hid_t dxpl_id, void **req);
 
 /* Group operations */
 void *bufr_group_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
-                       hid_t gapl_id, hid_t dxpl_id, void **req);
+                      hid_t gapl_id, hid_t dxpl_id, void **req);
 herr_t bufr_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t bufr_group_close(void *grp, hid_t dxpl_id, void **req);
 
@@ -123,12 +123,12 @@ void *bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char 
 herr_t bufr_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req);
 herr_t bufr_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
-                           H5VL_attr_specific_args_t *args, hid_t dxpl_id, void **req);
+                          H5VL_attr_specific_args_t *args, hid_t dxpl_id, void **req);
 herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req);
 
 /* Link operations */
 herr_t bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
-                           H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req);
+                          H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req);
 
 herr_t bufr_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type, uint64_t *flags);
 

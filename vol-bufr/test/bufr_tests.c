@@ -99,15 +99,15 @@ error:
 /* Verify that BUFR dataset open/close operations work properly */
 int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
 {
-    hid_t vol_id   = H5I_INVALID_HID;
-    hid_t fapl_id  = H5I_INVALID_HID;
-    hid_t file_id  = H5I_INVALID_HID;
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
     hid_t group_id = H5I_INVALID_HID;
-    hid_t dset_id  = H5I_INVALID_HID;
-    hid_t dapl_id  = H5I_INVALID_HID;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t dapl_id = H5I_INVALID_HID;
     hid_t space_id = H5I_INVALID_HID;
-    hid_t type_id  = H5I_INVALID_HID;
-    hid_t attr_id  = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
     hsize_t dims[1];
     int ndims;
     long *data = NULL;
@@ -152,7 +152,7 @@ int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
         printf("Failed to open BUFR file\n");
         goto error;
     }
-    /* Open first group; index is 0-based */ 
+    /* Open first group; index is 0-based */
     if ((group_id = H5Gopen2(file_id, "/message_0", H5P_DEFAULT)) < 0) {
         printf("Failed to open a group \n");
         goto error;
