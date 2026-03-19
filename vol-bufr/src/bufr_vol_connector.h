@@ -16,8 +16,8 @@
 #ifndef _bufr_vol_connector_H
 #define _bufr_vol_connector_H
 
+#include "bufr_helper.h"  /* BUFR helper defintions and oublic functions */
 #include "bufr_vol_err.h" /* Error reporting macros */
-#include <eccodes.h>
 #include <hdf5.h>
 #include <stdint.h>
 
@@ -45,10 +45,20 @@ typedef struct bufr_message_t {
     codes_handle *h;
 } bufr_message_t;
 
+/* BUFR VOL group object structure */
+typedef struct bufr_group_t {
+    char *name;           /* Group name */
+    bufr_message_t *msg;  /* BUFR message handle */
+    size_t msg_num;       /* BUFR message  number*/
+    inv_t *inv;           /* Group inventory structure defined in bufr_helper.h */
+} bufr_group_t;
+
 /* BUFR VOL dataset object structure */
 typedef struct bufr_dataset_t {
+    void *parent;        /* Parent object - Group */
     char *name;          /* Dataset (key) name */
     bufr_message_t *msg; /* BUFR message handle */
+    inv_t *inv;           /* Group inventory structure */
     int codes_type;      /* ecCodes datatype */
     hid_t type_id;       /* HDF5 datatype */
     hid_t space_id;      /* HDF5 dataspace */
@@ -60,15 +70,14 @@ typedef struct bufr_dataset_t {
 
 /* BUFR VOL attribute object structure */
 typedef struct bufr_attr_t {
-    void *parent;        /* Parent object (currently only file) */
+    void *parent;        /* Parent object - Group or Dataset */
     char *name;          /* Attribute (key) name */
-    bufr_message_t *msg; /* BUFR message handle */
     int codes_type;      /* ecCodes datatype */
     hid_t type_id;       /* HDF5 datatype */
     hid_t space_id;      /* HDF5 dataspace */
     void *data;          /* Cached data for the key */
     size_t data_size;    /* Data size in bytes */
-    size_t nvals;        /* Number of values - should be 1 for an attribute */
+    size_t nvals;        /* Number of values */
     bool is_vlen_string; /* True if type_id/data use HDF5 VL-string semantics */
 } bufr_attr_t;
 
@@ -79,7 +88,8 @@ struct bufr_object_t {
     size_t ref_count;           /* Reference count for child objects */
     union {
         bufr_file_t file;
-        bufr_dataset_t dataset;
+	bufr_group_t group;
+	bufr_dataset_t dataset;
         bufr_attr_t attr;
     } u;
 };
@@ -92,6 +102,12 @@ herr_t bufr_term_connector(void);
 void *bufr_file_open(const char *name, unsigned flags, hid_t fapl_id, hid_t dxpl_id, void **req);
 herr_t bufr_file_get(void *file, H5VL_file_get_args_t *args, hid_t dxpl_id, void **req);
 herr_t bufr_file_close(void *file, hid_t dxpl_id, void **req);
+
+/* Group operations */
+void *bufr_group_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
+                       hid_t gapl_id, hid_t dxpl_id, void **req);
+herr_t bufr_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl_id, void **req);
+herr_t bufr_group_close(void *grp, hid_t dxpl_id, void **req);
 
 /* Dataset operations */
 void *bufr_dataset_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
@@ -106,7 +122,13 @@ void *bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char 
                      hid_t aapl_id, hid_t dxpl_id, void **req);
 herr_t bufr_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req);
 herr_t bufr_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
+herr_t bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                           H5VL_attr_specific_args_t *args, hid_t dxpl_id, void **req);
 herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req);
+
+/* Link operations */
+herr_t bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                           H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req);
 
 herr_t bufr_introspect_opt_query(void *obj, H5VL_subclass_t subcls, int opt_type, uint64_t *flags);
 

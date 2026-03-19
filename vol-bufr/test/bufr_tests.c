@@ -99,14 +99,15 @@ error:
 /* Verify that BUFR dataset open/close operations work properly */
 int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
 {
-    hid_t vol_id = H5I_INVALID_HID;
-    hid_t fapl_id = H5I_INVALID_HID;
-    hid_t file_id = H5I_INVALID_HID;
-    hid_t dset_id = H5I_INVALID_HID;
-    hid_t dapl_id = H5I_INVALID_HID;
+    hid_t vol_id   = H5I_INVALID_HID;
+    hid_t fapl_id  = H5I_INVALID_HID;
+    hid_t file_id  = H5I_INVALID_HID;
+    hid_t group_id = H5I_INVALID_HID;
+    hid_t dset_id  = H5I_INVALID_HID;
+    hid_t dapl_id  = H5I_INVALID_HID;
     hid_t space_id = H5I_INVALID_HID;
-    hid_t type_id = H5I_INVALID_HID;
-    hid_t attr_id = H5I_INVALID_HID;
+    hid_t type_id  = H5I_INVALID_HID;
+    hid_t attr_id  = H5I_INVALID_HID;
     hsize_t dims[1];
     int ndims;
     long *data = NULL;
@@ -151,13 +152,16 @@ int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
         printf("Failed to open BUFR file\n");
         goto error;
     }
-
+    /* Open first group; index is 0-based */ 
+    if ((group_id = H5Gopen2(file_id, "/message_0", H5P_DEFAULT)) < 0) {
+        printf("Failed to open a group \n");
+        goto error;
+    }
     /* Open the BUFR dataset */
-    if ((dset_id = H5Dopen(file_id, dsetname, dapl_id)) < 0) {
+    if ((dset_id = H5Dopen(group_id, dsetname, dapl_id)) < 0) {
         printf("Failed to open BUFR dataset\n");
         goto error;
     }
-
     /* Get dataspace */
     if ((space_id = H5Dget_space(dset_id)) < 0) {
         printf("Failed to get dataspace\n");
@@ -204,7 +208,7 @@ int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
     }
 
     /* Get attribute */
-    if ((attr_id = H5Aopen(file_id, "/message_1/masterTablesVersionNumber", H5P_DEFAULT)) < 0) {
+    if ((attr_id = H5Aopen(group_id, "masterTablesVersionNumber", H5P_DEFAULT)) < 0) {
         printf("Failed to open  masterTablesVersionNumber attribute\n");
         goto error;
     }
@@ -223,26 +227,36 @@ int OpenBUFRDatasetTest(const char *filename, const char *dsetname)
 
     /* Close the BUFR dataset */
     free(data);
+
     if (H5Aclose(attr_id) < 0) {
         printf("Failed to close attr\n");
         goto error;
     }
     attr_id = H5I_INVALID_HID;
+
     if (H5Tclose(type_id) < 0) {
         printf("Failed to close datatype\n");
         goto error;
     }
     type_id = H5I_INVALID_HID;
+
     if (H5Sclose(space_id) < 0) {
         printf("Failed to close dataspace\n");
         goto error;
     }
     space_id = H5I_INVALID_HID;
+
     if (H5Dclose(dset_id) < 0) {
         printf("Failed to close dataset\n");
         goto error;
     }
     dset_id = H5I_INVALID_HID;
+    if (H5Gclose(group_id) < 0) {
+        printf("Failed to close group\n");
+        goto error;
+    }
+    group_id = H5I_INVALID_HID;
+
     if (H5Fclose(file_id) < 0) {
         printf("Failed to close file\n");
         goto error;
@@ -272,6 +286,7 @@ error:
         H5Pclose(dapl_id);
         H5Aclose(attr_id);
         H5Dclose(dset_id);
+        H5Gclose(group_id);
         H5Fclose(file_id);
         if (vol_id != H5I_INVALID_HID)
             H5VLunregister_connector(vol_id);
