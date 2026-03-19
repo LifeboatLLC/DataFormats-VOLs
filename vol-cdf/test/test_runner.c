@@ -22,13 +22,13 @@ int main(int argc, char **argv)
 
     if (run_all || strcmp(test_name, "check_existence_and_open") == 0)
         num_failures += (CheckExistenceAndOpenTest() != 0 ? 1 : 0);
-        
+
     if (run_all || strcmp(test_name, "multi_links_exist") == 0)
         num_failures += (MultiLinksExistTest() != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "link_attr_iterate_test") == 0)
         num_failures += (LinkAttrIterateTest() != 0 ? 1 : 0);
-        
+
     if (run_all || strcmp(test_name, "read_variable") == 0)
         num_failures += (ReadCDFVariableTest() != 0 ? 1 : 0);
 
@@ -45,7 +45,7 @@ int main(int argc, char **argv)
         num_failures += (ReadIndexedGlobalAttributeTest() != 0 ? 1 : 0);
 
     if (run_all || strcmp(test_name, "read_basic_rVariable_and_rEntry") == 0)
-        num_failures += (ReadBasicRVariableAndREntryTest() != 0 ? 1 : 0); 
+        num_failures += (ReadBasicRVariableAndREntryTest() != 0 ? 1 : 0);
 
     if (num_failures == 0) {
         printf("\n%s: All tests completed successfully\n", test_name);

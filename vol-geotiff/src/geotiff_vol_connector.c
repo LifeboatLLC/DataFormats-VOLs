@@ -81,10 +81,10 @@ static const H5VL_class_t geotiff_class_g = {
     },
     {
         /* attribute_cls */
-        NULL,              /* create       */
-        geotiff_attr_open, /* open         */
-        geotiff_attr_read, /* read         */
-        NULL,              /* write        */
+        NULL,                  /* create       */
+        geotiff_attr_open,     /* open         */
+        geotiff_attr_read,     /* read         */
+        NULL,                  /* write        */
         geotiff_attr_get,      /* get          */
         geotiff_attr_specific, /* specific     */
         NULL,                  /* optional     */
@@ -1949,10 +1949,10 @@ herr_t geotiff_introspect_get_conn_cls(void __attribute__((unused)) * obj,
 }
 
 /* cppcheck-suppress constParameterCallback */
-herr_t geotiff_attr_specific(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
-                              H5VL_attr_specific_args_t *args,
-                              hid_t __attribute__((unused)) dxpl_id,
-                              void __attribute__((unused)) * *req)
+herr_t geotiff_attr_specific(void *obj,
+                             const H5VL_loc_params_t __attribute__((unused)) * loc_params,
+                             H5VL_attr_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                             void __attribute__((unused)) * *req)
 {
     herr_t ret_value = SUCCEED;
 
@@ -2029,8 +2029,7 @@ herr_t geotiff_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
         case H5VL_LINK_EXISTS: {
             geotiff_object_t *exists_obj = (geotiff_object_t *) obj;
             geotiff_file_t *file =
-                &(exists_obj->obj_type == H5I_FILE ? exists_obj : exists_obj->parent_file)
-                     ->u.file;
+                &(exists_obj->obj_type == H5I_FILE ? exists_obj : exists_obj->parent_file)->u.file;
 
             /* Get the link name from loc_params */
             if (loc_params->type == H5VL_OBJECT_BY_NAME) {
@@ -2136,8 +2135,8 @@ done:
  *
  * Return:      Pointer to opened object on success, NULL on failure
  *---------------------------------------------------------------------------*/
-void *geotiff_object_open(void *obj, const H5VL_loc_params_t *loc_params,
-                          H5I_type_t *opened_type, hid_t dxpl_id, void **req)
+void *geotiff_object_open(void *obj, const H5VL_loc_params_t *loc_params, H5I_type_t *opened_type,
+                          hid_t dxpl_id, void **req)
 {
     geotiff_object_t *o = (geotiff_object_t *) obj;
     void *ret_value = NULL;
@@ -2171,8 +2170,7 @@ void *geotiff_object_open(void *obj, const H5VL_loc_params_t *loc_params,
             n++;
 
         if (sscanf(n, "image%d", &image_index) == 1 && image_index >= 0) {
-            ret_value =
-                geotiff_dataset_open(file_obj, loc_params, name, H5P_DEFAULT, dxpl_id, req);
+            ret_value = geotiff_dataset_open(file_obj, loc_params, name, H5P_DEFAULT, dxpl_id, req);
             if (ret_value && opened_type)
                 *opened_type = H5I_DATASET;
         } else {
@@ -2226,8 +2224,8 @@ herr_t geotiff_object_get(void *obj, const H5VL_loc_params_t *loc_params,
                     if (sscanf(n, "image%d", &idx) == 1 && idx >= 0) {
                         oinfo->type = H5O_TYPE_DATASET;
                     } else {
-                        FUNC_GOTO_ERROR(H5E_OHDR, H5E_NOTFOUND, FAIL,
-                                        "Unknown object name '%s'", name);
+                        FUNC_GOTO_ERROR(H5E_OHDR, H5E_NOTFOUND, FAIL, "Unknown object name '%s'",
+                                        name);
                     }
                 }
             } else {
