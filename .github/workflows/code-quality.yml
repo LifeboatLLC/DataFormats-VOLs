@@ -33,6 +33,8 @@ jobs:
           --suppress=preprocessorErrorDirective \
           --suppress=unusedLabel \
           --suppress=unusedStructMember \
+          --suppress=checkLevelNormal \
+          --suppress=checkersReport \
           --inline-suppr \
           -Isrc \
           src/ test/
