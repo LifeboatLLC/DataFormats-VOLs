@@ -42,7 +42,7 @@ Representing this information as HDF5 attributes allows applications to access m
 BUFR element values are mapped to HDF5 datatypes according to their decoded representation. Integer values are mapped to appropriate HDF5 integer types, while floating-point values are mapped to HDF5 floating-point types.
 Missing BUFR values are represented using standard missing-value conventions supported by the decoding library.
 
-| ecCodes Type           | Meaning                                | Typical HDF5 Mapping          |
+| ecCodes Type           | Meaning                                | HDF5 Datatype                 |
 | ---------------------- | -------------------------------------- | ----------------------------- |
 | `CODES_TYPE_LONG`      | Integer (scaled/packed)                | `H5T_NATIVE_LONG`             |
 | `CODES_TYPE_DOUBLE`    | Floating point (scaled physical value) | `H5T_NATIVE_DOUBLE`           |
@@ -50,7 +50,8 @@ Missing BUFR values are represented using standard missing-value conventions sup
 | `CODES_TYPE_BYTES`     | Raw binary blob                        | `H5T_NATIVE_UCHAR` (array)    |
 | `CODES_TYPE_UNDEFINED` | Missing/invalid                        | skip or map to attribute flag |
 
-
+---
+# HDF5 Programming Model for BUFR
 
 ## 2. Opening BUFR file
 
@@ -92,12 +93,12 @@ H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, file_info, &num_groups);
 ```  
 For detailed example see `usage.md` file.
 
-## 4. Reading BUFR Variables
+## 4. Datasets
 
 BUFR variables are opened and read as HDF5 Datasets. Dataset name is a BUFR key name, where the key has replication count bigger than 1 or the size of the key bigger than 1. 
 Currently, datasets are always one-dimensional. In the future, we may create two-dimensional datasets for replicated keys with the sizes bigger than 1. 
 
-### 4.1 BUFR Variable (Dataset) Opening
+### 4.1 Accessing Datasets
 
 Datasets are opened by passing the dataset name to `H5Dopen2` and using **group identifier** as a location identifier.
 
@@ -106,17 +107,17 @@ Datasets are opened by passing the dataset name to `H5Dopen2` and using **group 
 dset_id = H5Dopen2(group_id, "pressure", H5P_DEFAULT);
 ```
 
-### 4.2 Dataset datatype and read semantics
+### 4.2 Discovering Dataset datatype and Dataset read semantics
 
 Each dataset has an HDF5 datatype that corresponds to the BUFR key type.
 
 If `H5Dread` is called with a memory datatype different from the dataset datatype, the connector will fail. Datatype conversion will be implemented in the 
-next version of the connector. To discover dataset's datatype and dimensionality use `H5Dget_tyep()` and `H5Dget_space` functions. See examples in `usage.md` 
+next version of the connector. To discover dataset's datatype and dimensionality use `H5Dget_type()` and `H5Dget_space` functions. See examples in `usage.md` 
 file for more details.
 
-### 4.3 Selection and data handling
+### 4.3 Handling Selection 
 
-The connector reads all data provided by the BUFR library. No spacial subsetting is implemented yet.
+The connector reads **all** data provided by the BUFR library. No spacial subsetting is implemented yet.
 
 ## 5. Attributes
 
@@ -126,7 +127,7 @@ BUFR keys are exposed as HDF5 attributes and can be accessed using standard HDF5
 
 The corresponding HDF5 datatype and size of the attribute should be found by using `H5Aget_type` and `H5Aget_size` calls. See example in the `usage.md` for more details.
 
-### 5.1 Discovery of datasets attributes
+### 5.1 Discovering of datasets attributes
 
 Use `H5Aiterate` function on dataset location identier to discover names and total number of dataset attributes as shown:
 ```
@@ -134,7 +135,7 @@ H5Aiterate2(obj_id, H5_INDEX_NAME, H5_ITER_INC, &idx, attr_info, &num_attrs);
 ```
 For detailed example see `usage.md` file.
 
-### 5.2 Dataset Attributes 
+### 5.2 Accessing Dataset Attributes 
 
 To open attribute `units` on dataset `pressure` and find its type and dimensionality the following calls are used:
 ```
@@ -144,9 +145,9 @@ type_id  = H5Aget_type(attr_id);
 space_id = H5Aget_space(attr_id);
 hsize_t adims[1] = {0};
 H5Sget_simple_extent_dims(space_id, adims, NULL);
-
+H5Aread(attr_id, type_id, buf);
 ```
-### 5.3 Discovery of group attributes
+### 5.3 Discovering of Group Attributes
 
 Use `H5Aiterate` function on group location identier to discover names and total number of group attributes as shown:
 ```
@@ -154,17 +155,17 @@ H5Aiterate2(group_id, H5_INDEX_NAME, H5_ITER_INC, &idx, group_info, &num_attrs);
 ```
 For detailed example see `usage.md` file.
 
-### 5.4 Group Attributes 
+### 5.4 Accessing Group Attributes 
 
-To open group attributes use group identifier and attribute name.  
+To open group attributes use group identifier and attribute name, discover datatype and allocate `buf` based on datatype and dataspace information:  
 ```
 hid_t attr_id = H5Aopen(group_id, "typicalDate", H5P_DEFAULT);
 hid_t type_id = H5Aget_type(attr_id);
 hid_t space_id = H5Aget_space(attr_id);
-
+H5Aread(attr_id, type_id, buf);
 ```
 
-## 7. Handling BUFR STRING type for attributes and datasets
+## 6. Handling BUFR STRING type for attributes and datasets
 
 BUFR `CODES_TYPE_STRING` type is mapped to the HDF5 VL string. To avoid resource leaks use `H5Treclaim()" for scalar values or `H5Dvlen_reclaim` for array 
 values to release resources as shown below. For complete example see `usage.md` file.
