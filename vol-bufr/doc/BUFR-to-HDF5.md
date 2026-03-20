@@ -1,23 +1,7 @@
-This work-in-progress document describes current functionality of the BUFR VOL connector and the mapping between BUFR file data and metadata and HDF5-level objects.
-
----
-# Functionality
-
-Current code implements HDF5 file open/close on BUFR files and HDF5 dataset open/close on BUFR key values.
-
-# Files
-
-The top-level BUFR file maps to an HDF5 file.
-
-# Dataset Naming
-
-Key values are exposed as HDF5 datasets using the following conveention for dataset name '/message_<N>/<key_path>', where N is a message number and <key_path> is BUFR key. Dataset names provided to `H5Dopen` must be of the form above until we support passing group ID to 'H5Dopen'.
-
----
 
 # BUFR to HDF5 Mapping Specification 
 
-Draft specification details the conceptual mapping between the **BUFR (Binary Universal Form for the Representation of meteorological data)** format and the **HDF5 (Hierarchical Data Format, Version 5)** and is subject to change. It will be used to covert BUFR files to HDF5 format.
+This document gives an overview of conceptual mapping between the **BUFR (Binary Universal Form for the Representation of meteorological data)** format and the **HDF5 (Hierarchical Data Format, Version 5)** and is subject to change. In the future it will be used to covert BUFR files to HDF5 format.
 
 ## Structural and Data Mapping
 
