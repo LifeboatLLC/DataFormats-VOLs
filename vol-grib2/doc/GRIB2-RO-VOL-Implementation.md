@@ -1,6 +1,6 @@
 
 
-# GRIB2 VOL Connector HDF5 View: Object Model and Read Semantics
+# GRIB2 VOL Connector HDF5: Object Model and Read Semantics
 
 This document defines the stable, read-only HDF5 object layout exposed by the GRIB2 VOL connector and the semantics of H5Dread vs H5Aread. The connector provides message-centric access under `/message_*` paths and supports both “materialized” data products and computed, on-demand views derived from the GRIB grid definition.
 
