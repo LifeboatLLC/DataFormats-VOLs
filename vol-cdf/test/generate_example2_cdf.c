@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     CDFstatus status;
     long char_rVar_num, float_rVar_num, char_zVar_num, epoch16_zVar_num, tt2000_zVar_num;
     long vAttr1_num, vAttr2_num, vAttr3_num, gAttr1_num, gAttr2_num, gAttr3_num;
-    
+
     long rVarNDims = 2;
     long rVarDimSizes[2] = {2, 2}; /* 2x2 array for rVariables */
     long host_encoding = HOST_ENCODING;
@@ -206,7 +206,8 @@ int main(int argc, char *argv[])
     // -----------------------------
     // Add a gEntry with Epoch16 data to gAttribute using CDFputAttrgEntry
     // -----------------------------
-    double epoch16_values[4] = {epoch16_values2[0], epoch16_values2[1], epoch16_values1[0], epoch16_values1[1]};
+    double epoch16_values[4] = {epoch16_values2[0], epoch16_values2[1], epoch16_values1[0],
+                                epoch16_values1[1]};
     status = CDFputAttrgEntry(id, gAttr1_num, 3, CDF_EPOCH16, 2, epoch16_values);
     CHECK(status, "CDFputAttrgEntry with epoch16 failed");
 
@@ -243,7 +244,6 @@ int main(int argc, char *argv[])
     status = CDFputAttrgEntry(id, gAttr3_num, 0, CDF_TIME_TT2000, 1, &tt2000_value);
     CHECK(status, "CDFputAttrgEntry failed - adding double gEntry to gAttribute");
 
-
     // -----------------------------
     // Create vAttribute1
     // -----------------------------
@@ -267,21 +267,26 @@ int main(int argc, char *argv[])
     // -----------------------------
     int16_t int16_value[2] = {-12345, 6789};
     status = CDFputAttrzEntry(id, vAttr1_num, char_zVar_num, CDF_INT2, 2, int16_value);
-    CHECK(status, "CDFputAttrzEntry failed - adding int16 zEntry to vAttribute1 for char zVariable");
+    CHECK(status,
+          "CDFputAttrzEntry failed - adding int16 zEntry to vAttribute1 for char zVariable");
 
     // -----------------------------
     // Add a string type rEntry to vAttribute1 for rVar_char rVariable
     //------------------------------
     char *rEntry_string = "String rEntry for rVar_char";
-    status = CDFputAttrrEntry(id, vAttr1_num, char_rVar_num, CDF_CHAR, strlen(rEntry_string), rEntry_string);
-    CHECK(status, "CDFputAttrrEntry failed - adding string rEntry to vAttribute1 for rVar_char rVariable");
+    status = CDFputAttrrEntry(id, vAttr1_num, char_rVar_num, CDF_CHAR, strlen(rEntry_string),
+                              rEntry_string);
+    CHECK(status,
+          "CDFputAttrrEntry failed - adding string rEntry to vAttribute1 for rVar_char rVariable");
 
     // -----------------------------
-    // Add a different type numerical zEntry to vAttribute2 for Epoch16 zVariable using CDFputAttrzEntry
+    // Add a different type numerical zEntry to vAttribute2 for Epoch16 zVariable using
+    // CDFputAttrzEntry
     // -----------------------------
     /* Use the double value defined earlier */
     status = CDFputAttrzEntry(id, vAttr2_num, epoch16_zVar_num, CDF_REAL8, 1, &double_value);
-    CHECK(status, "CDFputAttrzEntry failed - adding double zEntry to vAttribute2 for Epoch16 zVariable");
+    CHECK(status,
+          "CDFputAttrzEntry failed - adding double zEntry to vAttribute2 for Epoch16 zVariable");
 
     // -----------------------------
     // Add string zEntry to vAttribute3 for Epoch16 zVariable using CDFputAttrStrzEntry

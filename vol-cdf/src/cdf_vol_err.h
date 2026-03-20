@@ -61,8 +61,8 @@ extern hid_t H5_cdf_obj_err_maj_g;
         (void) H5Eget_auto2(H5E_DEFAULT, &err_func, NULL);                                         \
         if (err_func) {                                                                            \
             if (H5_cdf_err_class_g >= 0) {                                                         \
-                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_cdf_err_class_g,            \
-                         err_major, err_minor, __VA_ARGS__);                                       \
+                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_cdf_err_class_g, err_major, \
+                         err_minor, __VA_ARGS__);                                                  \
             } else {                                                                               \
                 fprintf(stderr, __VA_ARGS__);                                                      \
                 fprintf(stderr, "\n");                                                             \
@@ -87,9 +87,9 @@ extern hid_t H5_cdf_obj_err_maj_g;
         /* Check whether automatic error reporting has been disabled */                            \
         (void) H5Eget_auto2(H5E_DEFAULT, &err_func, NULL);                                         \
         if (err_func) {                                                                            \
-            if (H5_cdf_err_class_g >= 0)                                                            \
-                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_cdf_err_class_g,            \
-                         err_major, err_minor, __VA_ARGS__);                                       \
+            if (H5_cdf_err_class_g >= 0)                                                           \
+                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_cdf_err_class_g, err_major, \
+                         err_minor, __VA_ARGS__);                                                  \
             else {                                                                                 \
                 fprintf(stderr, __VA_ARGS__);                                                      \
                 fprintf(stderr, "\n");                                                             \
@@ -125,8 +125,8 @@ extern hid_t H5_cdf_obj_err_maj_g;
         /* Check whether automatic error reporting has been disabled */                            \
         if ((is_v2_err && err_func.err_func_v2) || (!is_v2_err && err_func.err_func_v1)) {         \
             if (H5_cdf_err_class_g >= 0) {                                                         \
-                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_cdf_err_class_g,            \
-                         err_major, err_minor, __VA_ARGS__);                                       \
+                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_cdf_err_class_g, err_major, \
+                         err_minor, __VA_ARGS__);                                                  \
             } else {                                                                               \
                 fprintf(stderr, __VA_ARGS__);                                                      \
                 fprintf(stderr, "\n");                                                             \
@@ -164,8 +164,8 @@ extern hid_t H5_cdf_obj_err_maj_g;
         /* Check whether automatic error reporting has been disabled */                            \
         if ((is_v2_err && err_func.err_func_v2) || (!is_v2_err && err_func.err_func_v1)) {         \
             if (H5_cdf_err_class_g >= 0) {                                                         \
-                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_cdf_err_class_g,            \
-                         err_major, err_minor, __VA_ARGS__);                                       \
+                H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__, H5_cdf_err_class_g, err_major, \
+                         err_minor, __VA_ARGS__);                                                  \
             } else {                                                                               \
                 fprintf(stderr, __VA_ARGS__);                                                      \
                 fprintf(stderr, "\n");                                                             \

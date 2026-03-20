@@ -8,21 +8,18 @@
 #define BUFR_VOL_PLUGIN_PATH "<path_to_the_connector>"
 */
 
-static void
-print_header(const char *title)
+static void print_header(const char *title)
 {
     printf("\n=== %s ===\n", title);
 }
 
-static void
-print_attr_table_header(void)
+static void print_attr_table_header(void)
 {
     printf("%-50.50s%s\n", "Attribute Name", "HDF5 Datatype");
     printf("%-50.50s%s\n", "==============", "=============");
 }
 
-static const char *
-datatype_name(hid_t type_id)
+static const char *datatype_name(hid_t type_id)
 {
     if (H5Tequal(type_id, H5T_NATIVE_LONG) > 0)
         return "H5T_NATIVE_LONG";
@@ -35,50 +32,46 @@ datatype_name(hid_t type_id)
             return "HDF5 variable-length string";
         else
             return "HDF5 fixed-length string";
-    }
-    else
+    } else
         return "Other";
 }
 
 /* Callback to find number of groups in the file */
-static herr_t
-file_info(hid_t loc_id, const char *name, const H5L_info2_t *finfo, void *opdata)
-{   
-    size_t *count    = (size_t *)opdata;
-    (void)loc_id;
-    (void)name;
-    (void)finfo;
+static herr_t file_info(hid_t loc_id, const char *name, const H5L_info2_t *finfo, void *opdata)
+{
+    size_t *count = (size_t *) opdata;
+    (void) loc_id;
+    (void) name;
+    (void) finfo;
 
-    printf (" Group name \"%s\" \n", name);   
+    printf(" Group name \"%s\" \n", name);
     (*count)++;
 
     return 0;
 }
 
 /* Callback to find number of datasets in the group */
-static herr_t
-group_info(hid_t loc_id, const char *name, const H5L_info2_t *ginfo, void *opdata)
-{   
-    size_t *count    = (size_t *)opdata;
-    (void)loc_id;
-    (void)name;
-    (void)ginfo;
+static herr_t group_info(hid_t loc_id, const char *name, const H5L_info2_t *ginfo, void *opdata)
+{
+    size_t *count = (size_t *) opdata;
+    (void) loc_id;
+    (void) name;
+    (void) ginfo;
 
-    printf (" Dataset name \"%s\" \n", name);   
+    printf(" Dataset name \"%s\" \n", name);
     (*count)++;
 
     return 0;
 }
 
 /* Callback executed for each attribute */
-static herr_t
-attr_info(hid_t loc_id, const char *name, const H5A_info_t *ainfo, void *opdata)
+static herr_t attr_info(hid_t loc_id, const char *name, const H5A_info_t *ainfo, void *opdata)
 {
-    hid_t   attr_id  = H5I_INVALID_HID;
-    hid_t   type_id  = H5I_INVALID_HID;
-    size_t *count    = (size_t *)opdata;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    size_t *count = (size_t *) opdata;
 
-    (void)ainfo;
+    (void) ainfo;
 
     attr_id = H5Aopen(loc_id, name, H5P_DEFAULT);
     if (attr_id < 0) {
@@ -102,11 +95,10 @@ attr_info(hid_t loc_id, const char *name, const H5A_info_t *ainfo, void *opdata)
     return 0; /* continue iteration */
 }
 
-static int
-read_long_attribute(hid_t obj_id, const char *attr_name, long *value)
+static int read_long_attribute(hid_t obj_id, const char *attr_name, long *value)
 {
     hid_t attr_id = H5I_INVALID_HID;
-    int   ret     = -1;
+    int ret = -1;
 
     if (H5Aexists(obj_id, attr_name) <= 0)
         return -1;
@@ -122,13 +114,12 @@ read_long_attribute(hid_t obj_id, const char *attr_name, long *value)
     return ret;
 }
 
-static int
-read_scalar_vl_string_attribute(hid_t obj_id, const char *attr_name, char **value)
+static int read_scalar_vl_string_attribute(hid_t obj_id, const char *attr_name, char **value)
 {
-    hid_t attr_id  = H5I_INVALID_HID;
-    hid_t type_id  = H5I_INVALID_HID;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
     hid_t space_id = H5I_INVALID_HID;
-    int   ret      = -1;
+    int ret = -1;
 
     *value = NULL;
 
@@ -168,14 +159,13 @@ done:
     return ret;
 }
 
-static int
-print_double_dataset(hid_t group_id, const char *dset_name, hid_t *dset_out)
+static int print_double_dataset(hid_t group_id, const char *dset_name, hid_t *dset_out)
 {
-    hid_t    dset_id  = H5I_INVALID_HID;
-    hid_t    space_id = H5I_INVALID_HID;
-    hid_t    type_id  = H5I_INVALID_HID;
-    double  *data     = NULL;
-    hsize_t  dims[1]  = {0};
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    double *data = NULL;
+    hsize_t dims[1] = {0};
 
     dset_id = H5Dopen(group_id, dset_name, H5P_DEFAULT);
     if (dset_id < 0)
@@ -197,7 +187,7 @@ print_double_dataset(hid_t group_id, const char *dset_name, hid_t *dset_out)
     if (type_id < 0)
         goto error;
 
-    data = (double *)malloc((size_t)dims[0] * sizeof(*data));
+    data = (double *) malloc((size_t) dims[0] * sizeof(*data));
     if (!data) {
         fprintf(stderr, "Memory allocation failed for dataset '%s'\n", dset_name);
         goto error;
@@ -206,9 +196,9 @@ print_double_dataset(hid_t group_id, const char *dset_name, hid_t *dset_out)
     if (H5Dread(dset_id, type_id, H5S_ALL, H5S_ALL, H5P_DEFAULT, data) < 0)
         goto error;
 
-    printf("Dataset '%s' has %llu elements:\n", dset_name, (unsigned long long)dims[0]);
+    printf("Dataset '%s' has %llu elements:\n", dset_name, (unsigned long long) dims[0]);
     for (hsize_t i = 0; i < dims[0]; i++)
-        printf("  [%llu] %f\n", (unsigned long long)i, data[i]);
+        printf("  [%llu] %f\n", (unsigned long long) i, data[i]);
 
     free(data);
     H5Tclose(type_id);
@@ -230,14 +220,13 @@ error:
     return -1;
 }
 
-static void
-print_vl_string_dataset(hid_t group_id, const char *dset_name)
+static void print_vl_string_dataset(hid_t group_id, const char *dset_name)
 {
-    hid_t   dset_id  = H5I_INVALID_HID;
-    hid_t   space_id = H5I_INVALID_HID;
-    hid_t   type_id  = H5I_INVALID_HID;
-    char  **data     = NULL;
-    hsize_t dims[1]  = {0};
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    char **data = NULL;
+    hsize_t dims[1] = {0};
 
     dset_id = H5Dopen(group_id, dset_name, H5P_DEFAULT);
     if (dset_id < 0) {
@@ -246,7 +235,7 @@ print_vl_string_dataset(hid_t group_id, const char *dset_name)
     }
 
     space_id = H5Dget_space(dset_id);
-    type_id  = H5Dget_type(dset_id);
+    type_id = H5Dget_type(dset_id);
 
     if (space_id < 0 || type_id < 0) {
         fprintf(stderr, "Failed to inspect dataset '%s'\n", dset_name);
@@ -268,7 +257,7 @@ print_vl_string_dataset(hid_t group_id, const char *dset_name)
         goto done;
     }
 
-    data = (char **)malloc((size_t)dims[0] * sizeof(*data));
+    data = (char **) malloc((size_t) dims[0] * sizeof(*data));
     if (!data) {
         fprintf(stderr, "Memory allocation failed for '%s'\n", dset_name);
         goto done;
@@ -279,12 +268,9 @@ print_vl_string_dataset(hid_t group_id, const char *dset_name)
         goto done;
     }
 
-    printf("Dataset '%s' contains %llu VL strings:\n",
-           dset_name, (unsigned long long)dims[0]);
+    printf("Dataset '%s' contains %llu VL strings:\n", dset_name, (unsigned long long) dims[0]);
     for (hsize_t i = 0; i < dims[0]; i++)
-        printf("  [%llu] %s\n",
-               (unsigned long long)i,
-               data[i] ? data[i] : "(null)");
+        printf("  [%llu] %s\n", (unsigned long long) i, data[i] ? data[i] : "(null)");
 
 done:
     if (data) {
@@ -299,11 +285,10 @@ done:
         H5Dclose(dset_id);
 }
 
-static void
-print_attribute_count(hid_t obj_id, const char *title)
+static void print_attribute_count(hid_t obj_id, const char *title)
 {
-    hsize_t idx       = 0;
-    size_t  num_attrs = 0;
+    hsize_t idx = 0;
+    size_t num_attrs = 0;
 
     print_header(title);
     print_attr_table_header();
@@ -312,17 +297,16 @@ print_attribute_count(hid_t obj_id, const char *title)
     printf("Number of attributes: %zu\n", num_attrs);
 }
 
-int
-main(void)
+int main(void)
 {
-    hid_t vol_id   = H5I_INVALID_HID;
-    hid_t fapl_id  = H5I_INVALID_HID;
-    hid_t file_id  = H5I_INVALID_HID;
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
     hid_t group_id = H5I_INVALID_HID;
-    hid_t dset_id  = H5I_INVALID_HID;
-    hsize_t idx       = 0;
+    hid_t dset_id = H5I_INVALID_HID;
+    hsize_t idx = 0;
 
-    int   ret = EXIT_FAILURE;
+    int ret = EXIT_FAILURE;
 
     /* Tell the library where to find the BUFR VOL connector library */
     /* H5PLappend(BUFR_VOL_PLUGIN_PATH); */
@@ -353,13 +337,13 @@ main(void)
     /* ------------------------------------------------------------------ */
     /* Find number of groupsinthe file and print their names              */
     /* ------------------------------------------------------------------ */
-    size_t  num_groups = 0;
+    size_t num_groups = 0;
     if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, file_info, &num_groups) < 0) {
         fprintf(stderr, "Failed to find number of groups in 'temp.bufr'\n");
         goto done;
     }
-    printf ("Number of group in the file 'temp.bufr' is %zu \n", num_groups);
-    
+    printf("Number of group in the file 'temp.bufr' is %zu \n", num_groups);
+
     group_id = H5Gopen2(file_id, "message_0", H5P_DEFAULT);
     if (group_id < 0) {
         fprintf(stderr, "Failed to open group 'message_0'\n");
@@ -370,13 +354,12 @@ main(void)
     /* ------------------------------------------------------------------ */
 
     idx = 0;
-    size_t  num_dsets = 0;
+    size_t num_dsets = 0;
     if (H5Literate2(group_id, H5_INDEX_NAME, H5_ITER_INC, &idx, group_info, &num_dsets) < 0) {
         fprintf(stderr, "Failed to find number of datasets in 'message_0'\n");
         goto done;
     }
-    printf ("Number of datasets in the group 'message_0' is %zu \n", num_dsets);
-    
+    printf("Number of datasets in the group 'message_0' is %zu \n", num_dsets);
 
     /* ------------------------------------------------------------------ */
     /* Read a numeric group attribute                                     */
@@ -399,12 +382,11 @@ main(void)
 
         print_header("Group attribute: typicalDate");
         if (read_scalar_vl_string_attribute(group_id, "typicalDate", &typical_date) == 0) {
-            printf("Value of 'typicalDate' = \"%s\"\n",
-                   typical_date ? typical_date : "(null)");
+            printf("Value of 'typicalDate' = \"%s\"\n", typical_date ? typical_date : "(null)");
 
             /* Re-open type/space for reclaim in this simple helper-based example */
-            hid_t attr_id  = H5Aopen(group_id, "typicalDate", H5P_DEFAULT);
-            hid_t type_id  = H5Aget_type(attr_id);
+            hid_t attr_id = H5Aopen(group_id, "typicalDate", H5P_DEFAULT);
+            hid_t type_id = H5Aget_type(attr_id);
             hid_t space_id = H5Aget_space(attr_id);
 
             H5Treclaim(type_id, space_id, H5P_DEFAULT, &typical_date);
@@ -412,8 +394,7 @@ main(void)
             H5Sclose(space_id);
             H5Tclose(type_id);
             H5Aclose(attr_id);
-        }
-        else
+        } else
             printf("Attribute 'typicalDate' not found or could not be read\n");
     }
 
@@ -431,18 +412,16 @@ main(void)
     /* ------------------------------------------------------------------ */
     print_header("Dataset attribute: pressure/units");
     if (H5Aexists(dset_id, "units") > 0) {
-        hid_t   attr_id   = H5Aopen(dset_id, "units", H5P_DEFAULT);
-        hid_t   aspace_id = H5Aget_space(attr_id);
-        hsize_t adims[1]  = {0};
+        hid_t attr_id = H5Aopen(dset_id, "units", H5P_DEFAULT);
+        hid_t aspace_id = H5Aget_space(attr_id);
+        hsize_t adims[1] = {0};
 
         H5Sget_simple_extent_dims(aspace_id, adims, NULL);
-        printf("Attribute 'units' is an array of %llu elements\n",
-               (unsigned long long)adims[0]);
+        printf("Attribute 'units' is an array of %llu elements\n", (unsigned long long) adims[0]);
 
         H5Sclose(aspace_id);
         H5Aclose(attr_id);
-    }
-    else
+    } else
         printf("Attribute 'units' not found\n");
 
     /* ------------------------------------------------------------------ */
@@ -458,7 +437,7 @@ main(void)
     /* Iterate over attributes                                            */
     /* ------------------------------------------------------------------ */
     print_attribute_count(group_id, "Attributes on group message_0");
-    print_attribute_count(dset_id,   "Attributes on dataset pressure");
+    print_attribute_count(dset_id, "Attributes on dataset pressure");
 
     ret = EXIT_SUCCESS;
 

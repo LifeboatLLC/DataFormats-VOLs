@@ -35,28 +35,28 @@ typedef struct cdf_attr_cache_t {
 
 /* CDF VOL file object structure */
 typedef struct cdf_file_t {
-    CDFid id;             /* CDF file ID */
-    char *filename;       /* File name */
-    long encoding;        /* CDF data encoding */
-    long majority;        /* ROW_MAJOR or COLUMN_MAJOR */
-    long maxzRec;         /* Maximum record number among zVariables in the CDF */
-    long numzVars;        /* Number of zVariables in the CDF */
-    long numAttrs;        /* Total number of attibutes (global + variable) */
-    long numgAttrs;       /* Number of global attributes in the CDF */
-    long numvAttrs;       /* Number of variable attributes in the CDF */
+    CDFid id;                     /* CDF file ID */
+    char *filename;               /* File name */
+    long encoding;                /* CDF data encoding */
+    long majority;                /* ROW_MAJOR or COLUMN_MAJOR */
+    long maxzRec;                 /* Maximum record number among zVariables in the CDF */
+    long numzVars;                /* Number of zVariables in the CDF */
+    long numAttrs;                /* Total number of attibutes (global + variable) */
+    long numgAttrs;               /* Number of global attributes in the CDF */
+    long numvAttrs;               /* Number of variable attributes in the CDF */
     cdf_attr_cache_t *gAttrCache; /* Cache array for gAttribute info filled at file open */
     cdf_attr_cache_t *vAttrCache; /* Cache array for vAttribute info filled at file open */
-    unsigned int flags;   /* File access flags */
-    hid_t plist_id;       /* Property list ID */
+    unsigned int flags;           /* File access flags */
+    hid_t plist_id;               /* Property list ID */
 } cdf_file_t;
 
 typedef struct cdf_dataset_t {
-    void *parent;        /* Parent object (dataset, group, or file) */
-    char *name;          /* Dataset name */
-    long var_num;        /* CDF variable number */
-    long num_records;    /* Number of records in the variable */
-    long num_elements;   /* Number of elements in a record */
-    long num_dims;       /* Number of dimensions */
+    void *parent;                 /* Parent object (dataset, group, or file) */
+    char *name;                   /* Dataset name */
+    long var_num;                 /* CDF variable number */
+    long num_records;             /* Number of records in the variable */
+    long num_elements;            /* Number of elements in a record */
+    long num_dims;                /* Number of dimensions */
     long dim_sizes[CDF_MAX_DIMS]; /* Sizes of each dimension */
     long rec_vary;                /* Does the variable have record variance */
     long dim_varys[CDF_MAX_DIMS]; /* Does each dimension vary */
@@ -70,18 +70,18 @@ typedef struct cdf_group_t {
 } cdf_group_t;
 
 typedef struct cdf_attr_t {
-    void *parent;       /* Parent object (dataset, group, or file) */
-    char *name;         /* Attribute name */
-    long attrNum;       /* CDF attribute number */
-    long scope;         /* Attribute scope (global or variable) */
-    long datatype;      /* CDF data type */
-    long num_elements;  /* Number of elements in the attribute */
-    hid_t type_id;      /* HDF5 datatype */
-    hid_t space_id;     /* HDF5 dataspace */
+    void *parent;      /* Parent object (dataset, group, or file) */
+    char *name;        /* Attribute name */
+    long attrNum;      /* CDF attribute number */
+    long scope;        /* Attribute scope (global or variable) */
+    long datatype;     /* CDF data type */
+    long num_elements; /* Number of elements in the attribute */
+    hid_t type_id;     /* HDF5 datatype */
+    hid_t space_id;    /* HDF5 dataspace */
     /* Members specific to gAttributes */
-    bool indexed;            /* Whether the user asked for a specific indexed attribute */
-    long index;              /* The index passed with the attribute name (only used if indexed=true;) */
-    long *gEntry_indices;    /* For non-indexed gAttributes, list of usable gEntry indices */
+    bool indexed; /* Whether the user asked for a specific indexed attribute */
+    long index;   /* The index passed with the attribute name (only used if indexed=true;) */
+    long *gEntry_indices; /* For non-indexed gAttributes, list of usable gEntry indices */
 } cdf_attr_t;
 
 /* Forward declaration for unified object type */
@@ -131,7 +131,7 @@ void *cdf_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *
                     hid_t dxpl_id, void **req);
 herr_t cdf_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req);
 herr_t cdf_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req);
-herr_t cdf_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, 
+herr_t cdf_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
                          H5VL_attr_specific_args_t *args, hid_t dxpl_id, void **req);
 herr_t cdf_attr_close(void *attr, hid_t dxpl_id, void **req);
 

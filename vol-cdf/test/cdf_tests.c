@@ -97,7 +97,8 @@ error:
     return -1;
 } /* end OpenCDFTest() */
 
-/* Verify that CDF open/close operations work properly with HDF5 file, group, dataset, and attribute id's */
+/* Verify that CDF open/close operations work properly with HDF5 file, group, dataset, and attribute
+ * id's */
 int CheckExistenceAndOpenTest(void)
 {
     hid_t vol_id = H5I_INVALID_HID;
@@ -181,7 +182,7 @@ int CheckExistenceAndOpenTest(void)
     }
 
     /* Test if "UNITS" attribute exists for "/Time" dataset */
-    if((exists = H5Aexists(dset_id, "UNITS")) < 0) {
+    if ((exists = H5Aexists(dset_id, "UNITS")) < 0) {
         printf("Failed to check existence of dataset attribute\n");
         goto error;
     }
@@ -351,16 +352,12 @@ error:
     return 1;
 } /* end MultiLinksExistTest() */
 
-/* Helper function used in link iteration callback functions to verify link information from example2.cdf */
+/* Helper function used in link iteration callback functions to verify link information from
+ * example2.cdf */
 static herr_t verify_link(const char *name, const H5L_info2_t *info)
 {
-    const char *expected_names[] = {
-        "rVar_char",
-        "rVar_float2x2",
-        "zVar_char",
-        "zVar_epoch16",
-        "zVar_tt2000"
-    };
+    const char *expected_names[] = {"rVar_char", "rVar_float2x2", "zVar_char", "zVar_epoch16",
+                                    "zVar_tt2000"};
     const int expected_count = 5;
 
     int found = 0;
@@ -386,12 +383,12 @@ static herr_t verify_link(const char *name, const H5L_info2_t *info)
 } /* end verify_link() */
 
 /* Helper function to use as callback function for link iteration with early stop capability */
-static herr_t early_stop_link_iterate_cb(hid_t loc_id, const char *name,
-                                         const H5L_info2_t *info, void *op_data)
+static herr_t early_stop_link_iterate_cb(hid_t loc_id, const char *name, const H5L_info2_t *info,
+                                         void *op_data)
 {
-    int *iteration_count = (int *)op_data;
+    int *iteration_count = (int *) op_data;
 
-    (void)loc_id;
+    (void) loc_id;
 
     if (verify_link(name, info) < 0) {
         return -1;
@@ -400,50 +397,52 @@ static herr_t early_stop_link_iterate_cb(hid_t loc_id, const char *name,
     (*iteration_count)++;
 
     if (*iteration_count == 3) {
-        return 1;  /* stop iteration */
+        return 1; /* stop iteration */
     }
 
     return 0;
 } /* end early_stop_link_iterate_cb */
 
 /* Helper function to use as callback function for global attribute iteration */
-static herr_t gAttr_iteration_cb(hid_t loc_id, const char *name, 
-                                 const H5A_info_t *info, void *op_data)
+static herr_t gAttr_iteration_cb(hid_t loc_id, const char *name, const H5A_info_t *info,
+                                 void *op_data)
 {
     int *iteration_count = (int *) op_data;
 
     (void) loc_id; /* Unused */
 
     int n = 0;
-    if (sscanf(name, "gAttr%d", &n) == 1 &&
-        n >= 1 && n <= 3)
-    {
+    if (sscanf(name, "gAttr%d", &n) == 1 && n >= 1 && n <= 3) {
         (*iteration_count)++;
         printf("Found global attribute: gAttr%d\n", n);
     } else {
-        fprintf(stderr, "VERIFICATION FAILED: link name '%s' shouldn't exist \n", name); 
+        fprintf(stderr, "VERIFICATION FAILED: link name '%s' shouldn't exist \n", name);
         return -1;
     }
 
     return 0;
 } /* end gAttr_iteration_cb() */
 
-static const char* type_class_name(H5T_class_t c)
+static const char *type_class_name(H5T_class_t c)
 {
     switch (c) {
-        case H5T_INTEGER:   return "INTEGER";
-        case H5T_FLOAT:     return "FLOAT";
-        case H5T_STRING:    return "STRING";
-        default:            return "OTHER";
+        case H5T_INTEGER:
+            return "INTEGER";
+        case H5T_FLOAT:
+            return "FLOAT";
+        case H5T_STRING:
+            return "STRING";
+        default:
+            return "OTHER";
     }
 } /* end type_class_name() */
 
-/* Attribute iteration callback helper function that does simple verification specifically 
+/* Attribute iteration callback helper function that does simple verification specifically
  * for example2.cdf vAttributes */
-static herr_t vAttr_iteration_cb(hid_t loc_id, const char *name, 
-                                 const H5A_info_t *ainfo, void *op_data)
+static herr_t vAttr_iteration_cb(hid_t loc_id, const char *name, const H5A_info_t *ainfo,
+                                 void *op_data)
 {
-    (void)ainfo;
+    (void) ainfo;
     int *iteration_count = (int *) op_data;
 
     hid_t attr_id = H5Aopen(loc_id, name, H5P_DEFAULT);
@@ -451,7 +450,7 @@ static herr_t vAttr_iteration_cb(hid_t loc_id, const char *name,
         fprintf(stderr, "  [attr] Failed to open attribute '%s'\n", name);
         return -1;
     }
-    
+
     (*iteration_count)++;
     hid_t type_id = H5Aget_type(attr_id);
     if (type_id < 0) {
@@ -461,9 +460,7 @@ static herr_t vAttr_iteration_cb(hid_t loc_id, const char *name,
     }
 
     H5T_class_t tclass = H5Tget_class(type_id);
-    printf("    @%s  (class=%s)\n",
-           name,
-           type_class_name(tclass));
+    printf("    @%s  (class=%s)\n", name, type_class_name(tclass));
 
     H5Tclose(type_id);
     H5Aclose(attr_id);
@@ -471,16 +468,17 @@ static herr_t vAttr_iteration_cb(hid_t loc_id, const char *name,
     return 0; /* continue iteration */
 } /* end vAttr_iteration_cb() */
 
-/* Link iteration callback helper function that iterates all of the attributes associated with that link */
+/* Link iteration callback helper function that iterates all of the attributes associated with that
+ * link */
 static herr_t link_iterate_attrs_cb(hid_t loc_id, const char *name, const H5L_info2_t *info,
                                     void *op_data)
 {
     hid_t dset_id = H5I_INVALID_HID;
-    int *iteration_count = (int *)op_data;
+    int *iteration_count = (int *) op_data;
     hsize_t idx = 0;
     int attr_iteration_count = 0;
 
-    (void)loc_id;
+    (void) loc_id;
 
     if (verify_link(name, info) < 0) {
         return -1;
@@ -495,7 +493,8 @@ static herr_t link_iterate_attrs_cb(hid_t loc_id, const char *name, const H5L_in
     }
 
     /* Iterate over all attributes attached to this dataset */
-    if (H5Aiterate2(dset_id, H5_INDEX_NAME, H5_ITER_INC, &idx, vAttr_iteration_cb, &attr_iteration_count) < 0) {
+    if (H5Aiterate2(dset_id, H5_INDEX_NAME, H5_ITER_INC, &idx, vAttr_iteration_cb,
+                    &attr_iteration_count) < 0) {
         fprintf(stderr, "Failed attribute iteration on dataset link");
         return -1;
     }
@@ -582,8 +581,8 @@ int LinkAttrIterateTest(void)
     }
 
     /* Iterate over file id links using basic link iteration callback */
-    if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, early_stop_link_iterate_cb, &iteration_count) <
-        0) {
+    if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, early_stop_link_iterate_cb,
+                    &iteration_count) < 0) {
         printf("Failed to iterate over links\n");
         goto error;
     }
@@ -602,8 +601,8 @@ int LinkAttrIterateTest(void)
     }
 
     /* Resume iteration after early stop */
-    if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, early_stop_link_iterate_cb, &iteration_count) <
-        0) {
+    if (H5Literate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, early_stop_link_iterate_cb,
+                    &iteration_count) < 0) {
         printf("Failed to iterate over links\n");
         goto error;
     }
@@ -628,10 +627,10 @@ int LinkAttrIterateTest(void)
     }
 
     /* Test gAttribute iteration with root group */
-    idx = 0; 
+    idx = 0;
     iteration_count = 0;
-    if (H5Aiterate2(group_id, H5_INDEX_NAME, H5_ITER_INC, &idx, gAttr_iteration_cb, &iteration_count) <
-        0) {
+    if (H5Aiterate2(group_id, H5_INDEX_NAME, H5_ITER_INC, &idx, gAttr_iteration_cb,
+                    &iteration_count) < 0) {
         printf("Failed to iterate over links\n");
         goto error;
     }
@@ -649,10 +648,11 @@ int LinkAttrIterateTest(void)
         goto error;
     }
 
-    idx = 0; 
+    idx = 0;
     iteration_count = 0;
     /* Test vAttribute iteration by iterating all attributes of all links */
-    if (H5Literate2(group_id, H5_INDEX_NAME, H5_ITER_INC, &idx, link_iterate_attrs_cb, &iteration_count)) {
+    if (H5Literate2(group_id, H5_INDEX_NAME, H5_ITER_INC, &idx, link_iterate_attrs_cb,
+                    &iteration_count)) {
         printf("Failed link iteration with internal attribute iteration\n");
         goto error;
     }
@@ -695,7 +695,6 @@ error:
     printf("FAILED\n");
     return 1;
 } /* end LinkAttrIterateTest*/
-
 
 /* Test ability to read a simple CDF variable by specifically opening the
  * 'Image' zVariable from file "example1.cdf" and verify its contents are

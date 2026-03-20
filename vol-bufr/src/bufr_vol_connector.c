@@ -16,13 +16,13 @@
 
 #include <H5PLextern.h>
 #include <assert.h>
+#include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
 #ifdef _MSC_VER
 #ifndef strdup
@@ -376,7 +376,7 @@ static codes_handle *bufr_open_message_by_index(bufr_file_t *bf, size_t msg_inde
 {
     if (!bf || !bf->bufr || !bf->msg_offsets)
         return NULL;
-    if (msg_index_0based < 0 || msg_index_0based > (bf->nmsgs-1))
+    if (msg_index_0based < 0 || msg_index_0based > (bf->nmsgs - 1))
         return NULL;
 
     long saved = ftell(bf->bufr);
@@ -544,8 +544,7 @@ done:
 }
 
 /* Helper function to free cached data */
-static void
-bufr_free_cached_data(bufr_dataset_t *dset)
+static void bufr_free_cached_data(bufr_dataset_t *dset)
 {
     assert(dset);
 
@@ -556,10 +555,9 @@ bufr_free_cached_data(bufr_dataset_t *dset)
         if (dset->nvals <= 1) {
             /* scalar string: data is char * */
             H5free_memory(dset->data);
-        }
-        else {
+        } else {
             /* array of strings: data is char ** */
-            char **arr = (char **)dset->data;
+            char **arr = (char **) dset->data;
 
             for (size_t i = 0; i < dset->nvals; i++) {
                 if (arr[i])
@@ -567,8 +565,7 @@ bufr_free_cached_data(bufr_dataset_t *dset)
             }
             free(arr);
         }
-    }
-    else {
+    } else {
         free(dset->data);
     }
 
@@ -704,8 +701,7 @@ done:
  *    true if  N   0 <= N <= K-1
  *    false  otherwise
  */
-static bool
-is_group_name(const char *s, size_t K, size_t *idx_out)
+static bool is_group_name(const char *s, size_t K, size_t *idx_out)
 {
     static const char prefix[] = "message_";
     const size_t prefix_len = sizeof(prefix) - 1;
@@ -723,11 +719,11 @@ is_group_name(const char *s, size_t K, size_t *idx_out)
 
     p += prefix_len;
 
-    if (!isdigit((unsigned char)*p))
+    if (!isdigit((unsigned char) *p))
         return false;
 
-    while (isdigit((unsigned char)*p)) {
-        size_t digit = (size_t)(*p - '0');
+    while (isdigit((unsigned char) *p)) {
+        size_t digit = (size_t) (*p - '0');
 
         if (n > (SIZE_MAX - digit) / 10)
             return false;
@@ -747,7 +743,6 @@ is_group_name(const char *s, size_t K, size_t *idx_out)
     return true;
 }
 
-
 /*-------------------------------------------------------------------------
  * Function:    bufr_make_hdf5_type_for_codes_type
  *
@@ -763,8 +758,7 @@ is_group_name(const char *s, size_t K, size_t *idx_out)
  *
  *-------------------------------------------------------------------------
  */
-static hid_t
-bufr_make_hdf5_type_for_codes_type(int codes_type, bool is_vlen_string)
+static hid_t bufr_make_hdf5_type_for_codes_type(int codes_type, bool is_vlen_string)
 {
     hid_t new_type = H5I_INVALID_HID;
 
@@ -816,8 +810,8 @@ error:
 
 /* Group operations */
 void *bufr_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
-                       const char *name, hid_t __attribute__((unused)) gapl_id,
-                       hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
+                      const char *name, hid_t __attribute__((unused)) gapl_id,
+                      hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
     bufr_object_t *o = (bufr_object_t *) obj;
     bufr_object_t *file = (bufr_object_t *) obj;
@@ -826,15 +820,14 @@ void *bufr_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused))
     bufr_group_t *grp = NULL; /* Convenience pointer */
 
     size_t n = 0;
-    inv_t *inv; /* Group inventory structure */ 
+    inv_t *inv; /* Group inventory structure */
     codes_handle *h = NULL;
     bufr_message_t *msg = NULL;
 
     if (!o || !name)
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file identifier or group name");
-    if (o->obj_type != H5I_FILE) 
+    if (o->obj_type != H5I_FILE)
         FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid file identifier");
-        
 
     /* Check for valid group name; it can be 'message_<N>' or '/message_<N>', where N is between
        0 and (number of messages - 1) in the BUFR file stored in file->nmsgs.
@@ -881,14 +874,14 @@ void *bufr_group_open(void *obj, const H5VL_loc_params_t __attribute__((unused))
         FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, NULL,
                         "Failed to initialize inventory structure for group object");
     }
-    if (bufr_build_group_inventory(h, inv) !=0)
+    if (bufr_build_group_inventory(h, inv) != 0)
         FUNC_GOTO_ERROR(H5E_SYM, H5E_CANTALLOC, NULL, "Failed to create group inventory");
 
 #ifdef BUFR_DEBUG
     bufr_inv_print(inv);
 #endif
 
-    grp->inv = inv;    
+    grp->inv = inv;
 
     ret_value = grp_obj;
 done:
@@ -903,8 +896,8 @@ done:
     return ret_value;
 }
 
-herr_t bufr_group_get(void *obj, H5VL_group_get_args_t *args,
-                       hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
+herr_t bufr_group_get(void *obj, H5VL_group_get_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                      void __attribute__((unused)) * *req)
 {
     bufr_object_t *o = (bufr_object_t *) obj;
     const bufr_group_t *grp = (const bufr_group_t *) &o->u.group; /* Convenience pointer */
@@ -925,7 +918,7 @@ herr_t bufr_group_get(void *obj, H5VL_group_get_args_t *args,
 
             /* Fill in group info structure */
             ginfo->storage_type = H5G_STORAGE_TYPE_COMPACT;
-            ginfo->nlinks = grp->inv->ndatasets; 
+            ginfo->nlinks = grp->inv->ndatasets;
             break;
         }
 
@@ -973,7 +966,7 @@ herr_t bufr_group_close(void *grp, hid_t dxpl_id, void **req)
             g->msg = NULL;
         }
         if (g->inv)
-            bufr_inv_free (g->inv);
+            bufr_inv_free(g->inv);
 
         /* Decrement parent file's reference count */
         if (bufr_file_close(o->parent_file, dxpl_id, req) < 0)
@@ -986,8 +979,7 @@ done:
 }
 
 /* Helper function to read dataset data from resolved spec */
-static herr_t
-bufr_read_data_spec(bufr_dataset_t *dset, bufr_dataset_spec_t *spec)
+static herr_t bufr_read_data_spec(bufr_dataset_t *dset, bufr_dataset_spec_t *spec)
 {
     herr_t ret_value = SUCCEED;
     codes_handle *h = NULL;
@@ -1005,53 +997,45 @@ bufr_read_data_spec(bufr_dataset_t *dset, bufr_dataset_spec_t *spec)
 
     if (dset->codes_type == CODES_TYPE_DOUBLE) {
         double *buf = NULL;
-        size_t  n   = 0;
+        size_t n = 0;
 
         if (bufr_read_double_dataset(h, spec, &buf, &n) != 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
-                            "Failed to read dataset of doubles");
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to read dataset of doubles");
 
-        dset->data      = buf;
-        dset->nvals     = n;
+        dset->data = buf;
+        dset->nvals = n;
         dset->data_size = n * sizeof(double);
-    }
-    else if (dset->codes_type == CODES_TYPE_LONG) {
-        long   *buf = NULL;
-        size_t  n   = 0;
+    } else if (dset->codes_type == CODES_TYPE_LONG) {
+        long *buf = NULL;
+        size_t n = 0;
 
         if (bufr_read_long_dataset(h, spec, &buf, &n) != 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
-                            "Failed to read dataset of longs");
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to read dataset of longs");
 
-        dset->data      = buf;
-        dset->nvals     = n;
+        dset->data = buf;
+        dset->nvals = n;
         dset->data_size = n * sizeof(long);
-    }
-    else if (dset->codes_type == CODES_TYPE_STRING) {
-        char  **arr = NULL;
-        size_t  n   = 0;
+    } else if (dset->codes_type == CODES_TYPE_STRING) {
+        char **arr = NULL;
+        size_t n = 0;
 
         if (bufr_read_string_dataset(h, spec, &arr, &n) != 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
-                            "Failed to read dataset of strings");
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to read dataset of strings");
 
-        dset->data      = arr;
-        dset->nvals     = n;
+        dset->data = arr;
+        dset->nvals = n;
         dset->data_size = n * sizeof(char *);
-    }
-    else if (dset->codes_type == CODES_TYPE_BYTES) {
+    } else if (dset->codes_type == CODES_TYPE_BYTES) {
         unsigned char *buf = NULL;
-        size_t         n   = 0;
+        size_t n = 0;
 
         if (bufr_read_bytes_dataset(h, spec, &buf, &n) != 0)
-            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
-                            "Failed to read dataset of bytes");
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "Failed to read dataset of bytes");
 
-        dset->data      = buf;
-        dset->nvals     = n;
+        dset->data = buf;
+        dset->nvals = n;
         dset->data_size = n * sizeof(unsigned char);
-    }
-    else {
+    } else {
         FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, FAIL,
                         "Unsupported ecCodes datatype for dataset");
     }
@@ -1060,102 +1044,87 @@ done:
     return ret_value;
 }
 
-
 /* VOL dataset open callback */
 void *bufr_dataset_open(void *obj, const H5VL_loc_params_t __attribute__((unused)) * loc_params,
                         const char *name, hid_t __attribute__((unused)) dapl_id,
                         hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) * *req)
 {
-    bufr_object_t *o = (bufr_object_t *)obj;
+    bufr_object_t *o = (bufr_object_t *) obj;
     bufr_object_t *dset_obj = NULL;
     bufr_object_t *ret_value = NULL;
     bufr_dataset_t *dset = NULL;
     bufr_group_t *g = NULL;
-    bufr_dataset_spec_t  spec;
+    bufr_dataset_spec_t spec;
     codes_handle *h = NULL;
 
     if (!o || !name)
-        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL,
-                        "Invalid arguments to dataset open");
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Invalid arguments to dataset open");
 
     if (o->obj_type != H5I_GROUP)
-        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL,
-                        "Dataset open location must be a group");
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, NULL, "Dataset open location must be a group");
 
     g = &o->u.group;
 
-    if ((dset_obj = (bufr_object_t *)calloc(1, sizeof(bufr_object_t))) == NULL)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, NULL,
-                        "Failed to allocate BUFR dataset object");
+    if ((dset_obj = (bufr_object_t *) calloc(1, sizeof(bufr_object_t))) == NULL)
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTALLOC, NULL, "Failed to allocate BUFR dataset object");
 
     dset = &dset_obj->u.dataset;
     memset(&spec, 0, sizeof(spec));
 
-
     if (!g->inv)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL,
-                        "Failed to access group inventory");
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL, "Failed to access group inventory");
 
     if (!g->msg || !g->msg->h)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL,
-                        "Failed to access ecCodes handle");
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL, "Failed to access ecCodes handle");
 
     h = g->msg->h;
 
     if (bufr_parse_hdf5_dataset_name(name, &spec) != 0)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL,
-                        "bufr_parse_hdf5_dataset_name failed");
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL, "bufr_parse_hdf5_dataset_name failed");
 
     if (bufr_resolve_dataset_spec(h, &spec) != 0)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL,
-                        "bufr_resolve_dataset_spec failed");
-
+        FUNC_GOTO_ERROR(H5E_DATASET, H5E_BADVALUE, NULL, "bufr_resolve_dataset_spec failed");
 
     dset_obj->parent_file = o->parent_file;
     dset_obj->obj_type = H5I_DATASET;
     dset_obj->ref_count = 1;
 
-    dset->parent = o;   /* remember parent group */
-    o->ref_count++;             /* dataset holds one ref on group */
+    dset->parent = o; /* remember parent group */
+    o->ref_count++;   /* dataset holds one ref on group */
 
     dset->msg = g->msg;
     dset->inv = g->inv;
-
 
     dset->space_id = H5I_INVALID_HID;
     dset->type_id = H5I_INVALID_HID;
     dset->data = NULL;
     dset->data_size = 0; /* This value will be set by bufr_read_data function */
-    dset->nvals = 0; /* This value will be set by bufr_read_data function */
+    dset->nvals = 0;     /* This value will be set by bufr_read_data function */
     dset->is_vlen_string = false;
 
     if ((dset->name = bufr_strdup(name)) == NULL)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, NULL,
-                        "Failed to duplicate dataset name");
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTALLOC, NULL, "Failed to duplicate dataset name");
 
     dset->codes_type = spec.native_type;
     if (dset->codes_type == CODES_TYPE_STRING)
         dset->is_vlen_string = true;
 
-    dset->type_id =
-        bufr_make_hdf5_type_for_codes_type(dset->codes_type, dset->is_vlen_string);
+    dset->type_id = bufr_make_hdf5_type_for_codes_type(dset->codes_type, dset->is_vlen_string);
     if (dset->type_id == H5I_INVALID_HID)
         FUNC_GOTO_ERROR(H5E_VOL, H5E_BADVALUE, NULL,
                         "Failed to convert BUFR datatype to HDF5 datatype");
 
     if (bufr_read_data_spec(dset, &spec) != 0)
-        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL,
-                        "Failed to cache dataset data");
-    
+        FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTGET, NULL, "Failed to cache dataset data");
+
     if (dset->nvals == 1) {
         dset->space_id = H5Screate(H5S_SCALAR);
         if (dset->space_id == H5I_INVALID_HID)
             FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCREATE, NULL,
                             "Failed to create scalar dataspace for dataset");
-    }
-    else {
+    } else {
         hsize_t dims[1];
-        dims[0] = (hsize_t)dset->nvals;
+        dims[0] = (hsize_t) dset->nvals;
         dset->space_id = H5Screate_simple(1, dims, NULL);
         if (dset->space_id == H5I_INVALID_HID)
             FUNC_GOTO_ERROR(H5E_VOL, H5E_CANTCREATE, NULL,
@@ -1370,30 +1339,29 @@ herr_t bufr_dataset_read(size_t __attribute__((unused)) count, void *dset[], hid
                             "file and memory selections have different number of points");
     }
     if (d->is_vlen_string) {
-    char **dst = (char **)buf[0];
-    char **src = (char **)d->data;
-    size_t i;
+        char **dst = (char **) buf[0];
+        char **src = (char **) d->data;
+        size_t i;
 
-    if (H5Tequal(mem_type_id[0], d->type_id) <= 0)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL,
-                        "VL string datatype conversion not supported");
+        if (H5Tequal(mem_type_id[0], d->type_id) <= 0)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_UNSUPPORTED, FAIL,
+                            "VL string datatype conversion not supported");
 
-    if (!src)
-        FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL,
-                        "no cached VL string data");
+        if (!src)
+            FUNC_GOTO_ERROR(H5E_DATASET, H5E_CANTGET, FAIL, "no cached VL string data");
 
-    for (i = 0; i < (size_t)num_elements; i++) {
-        if (src[i]) {
-            size_t len = strlen(src[i]) + 1;
-            dst[i] = (char *)H5allocate_memory(len, 0);
-            memcpy(dst[i], src[i], len);
-        } else {
-            dst[i] = NULL;
+        for (i = 0; i < (size_t) num_elements; i++) {
+            if (src[i]) {
+                size_t len = strlen(src[i]) + 1;
+                dst[i] = (char *) H5allocate_memory(len, 0);
+                memcpy(dst[i], src[i], len);
+            } else {
+                dst[i] = NULL;
+            }
         }
-    }
 
-    FUNC_GOTO_DONE(SUCCEED);
-}
+        FUNC_GOTO_DONE(SUCCEED);
+    }
     /* Prepare source buffer with type conversion if needed.
      * If we have a non-trivial file selection, we need the full dataset in the source buffer
      * for H5Dgather to extract the selection from. Otherwise, we only need num_elements.
@@ -1503,18 +1471,16 @@ done:
 }
 
 /* VOL dataset close callback */
-herr_t
-bufr_dataset_close(void *dset, hid_t dxpl_id, void **req)
+herr_t bufr_dataset_close(void *dset, hid_t dxpl_id, void **req)
 {
-    bufr_object_t *d = (bufr_object_t *)dset;
+    bufr_object_t *d = (bufr_object_t *) dset;
     bufr_object_t *parent_obj = NULL;
-    herr_t         ret_value = SUCCEED;
+    herr_t ret_value = SUCCEED;
 
     assert(d);
 
     if (d->obj_type != H5I_DATASET)
-        FUNC_DONE_ERROR(H5E_DATASET, H5E_BADTYPE, FAIL,
-                        "Object is not a dataset");
+        FUNC_DONE_ERROR(H5E_DATASET, H5E_BADTYPE, FAIL, "Object is not a dataset");
 
     if (d->ref_count == 0)
         FUNC_DONE_ERROR(H5E_DATASET, H5E_CANTCLOSEOBJ, FAIL,
@@ -1550,7 +1516,7 @@ bufr_dataset_close(void *dset, hid_t dxpl_id, void **req)
         d->u.dataset.inv = NULL;
 
         /* Release parent group, not parent file */
-        parent_obj = (bufr_object_t *)d->u.dataset.parent;
+        parent_obj = (bufr_object_t *) d->u.dataset.parent;
         d->u.dataset.parent = NULL;
 
         if (parent_obj) {
@@ -1565,8 +1531,6 @@ bufr_dataset_close(void *dset, hid_t dxpl_id, void **req)
 done:
     return ret_value;
 }
-
-
 
 /* Helper functions to check valid attribute name */
 
@@ -1637,13 +1601,11 @@ static bool reject_key(const char *key)
 }
 /* Attribute operations */
 
-
 /* --------------------------------------------------------------------------
  * Helpers for reading attributes data (see VOL bufr_attr_open callback )
  * -------------------------------------------------------------------------- */
 
-static size_t
-bufr_codes_type_elem_size(int codes_type)
+static size_t bufr_codes_type_elem_size(int codes_type)
 {
     switch (codes_type) {
         case CODES_TYPE_LONG:
@@ -1657,8 +1619,7 @@ bufr_codes_type_elem_size(int codes_type)
     }
 }
 
-static void
-bufr_free_attr_cached_data(bufr_attr_t *attr)
+static void bufr_free_attr_cached_data(bufr_attr_t *attr)
 {
     if (!attr || !attr->data)
         return;
@@ -1666,15 +1627,13 @@ bufr_free_attr_cached_data(bufr_attr_t *attr)
     if (attr->is_vlen_string) {
         if (attr->nvals <= 1) {
             free(attr->data);
-        }
-        else {
-            char **arr = (char **)attr->data;
+        } else {
+            char **arr = (char **) attr->data;
             for (size_t i = 0; i < attr->nvals; i++)
                 free(arr[i]);
             free(arr);
         }
-    }
-    else {
+    } else {
         free(attr->data);
     }
 
@@ -1683,8 +1642,7 @@ bufr_free_attr_cached_data(bufr_attr_t *attr)
     attr->nvals = 0;
 }
 
-static void
-bufr_attr_reset_cache_fields(bufr_attr_t *attr)
+static void bufr_attr_reset_cache_fields(bufr_attr_t *attr)
 {
     if (!attr)
         return;
@@ -1695,13 +1653,13 @@ bufr_attr_reset_cache_fields(bufr_attr_t *attr)
     attr->is_vlen_string = false;
 }
 
-static int
-bufr_read_one_numeric_or_bytes(codes_handle *h, const char *key, int codes_type,
-    size_t hinted_nvals, void **out_data, size_t *out_nvals, size_t *out_nbytes)
+static int bufr_read_one_numeric_or_bytes(codes_handle *h, const char *key, int codes_type,
+                                          size_t hinted_nvals, void **out_data, size_t *out_nvals,
+                                          size_t *out_nbytes)
 {
-    int    err = 0;
-    size_t n   = hinted_nvals;
-    void  *tmp = NULL;
+    int err = 0;
+    size_t n = hinted_nvals;
+    void *tmp = NULL;
     size_t elem_size;
 
     if (!h || !key || !out_data || !out_nvals || !out_nbytes)
@@ -1727,17 +1685,17 @@ bufr_read_one_numeric_or_bytes(codes_handle *h, const char *key, int codes_type,
     switch (codes_type) {
         case CODES_TYPE_LONG:
             tmp = xmalloc(n * sizeof(long));
-            err = codes_get_long_array(h, key, (long *)tmp, &n);
+            err = codes_get_long_array(h, key, (long *) tmp, &n);
             break;
 
         case CODES_TYPE_DOUBLE:
             tmp = xmalloc(n * sizeof(double));
-            err = codes_get_double_array(h, key, (double *)tmp, &n);
+            err = codes_get_double_array(h, key, (double *) tmp, &n);
             break;
 
         case CODES_TYPE_BYTES:
             tmp = xmalloc(n * sizeof(unsigned char));
-            err = codes_get_bytes(h, key, (unsigned char *)tmp, &n);
+            err = codes_get_bytes(h, key, (unsigned char *) tmp, &n);
             break;
 
         default:
@@ -1749,19 +1707,18 @@ bufr_read_one_numeric_or_bytes(codes_handle *h, const char *key, int codes_type,
         return err;
     }
 
-    *out_data   = tmp;
-    *out_nvals  = n;
+    *out_data = tmp;
+    *out_nvals = n;
     *out_nbytes = n * elem_size;
 
     return CODES_SUCCESS;
 }
 
-static int
-bufr_read_one_string_attr(codes_handle *h, const char *key,
-    void **out_data, size_t *out_nvals, size_t *out_nbytes)
+static int bufr_read_one_string_attr(codes_handle *h, const char *key, void **out_data,
+                                     size_t *out_nvals, size_t *out_nbytes)
 {
-    int   err = 0;
-    char *s   = NULL;
+    int err = 0;
+    char *s = NULL;
 
     if (!h || !key || !out_data || !out_nvals || !out_nbytes)
         return -1;
@@ -1776,16 +1733,15 @@ bufr_read_one_string_attr(codes_handle *h, const char *key,
         return err;
     }
 
-    *out_data   = s;
-    *out_nvals  = 1;
+    *out_data = s;
+    *out_nvals = 1;
     *out_nbytes = sizeof(char *);
 
     return CODES_SUCCESS;
 }
 
-static int
-bufr_count_replicated_attr_values(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
-    size_t *total_nvals, size_t *num_defined_keys)
+static int bufr_count_replicated_attr_values(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
+                                             size_t *total_nvals, size_t *num_defined_keys)
 {
     int err = 0;
 
@@ -1796,7 +1752,7 @@ bufr_count_replicated_attr_values(codes_handle *h, inv_attr_t *a, inv_dataset_t 
     *num_defined_keys = 0;
 
     for (int i = 1; i <= d->rep_count; i++) {
-        char   key[1024];
+        char key[1024];
         size_t n = a->size;
 
         snprintf(key, sizeof(key), "#%d#%s->%s", i, d->name, a->name);
@@ -1809,8 +1765,7 @@ bufr_count_replicated_attr_values(codes_handle *h, inv_attr_t *a, inv_dataset_t 
         if (a->native_type == CODES_TYPE_STRING) {
             /* One string per defined occurrence */
             (*total_nvals)++;
-        }
-        else {
+        } else {
             if (n == 0) {
                 err = codes_get_size(h, key, &n);
                 if (err != CODES_SUCCESS)
@@ -1827,8 +1782,7 @@ bufr_count_replicated_attr_values(codes_handle *h, inv_attr_t *a, inv_dataset_t 
     return CODES_SUCCESS;
 }
 
-static void
-bufr_free_partial_string_array(char **arr, size_t used)
+static void bufr_free_partial_string_array(char **arr, size_t used)
 {
     if (!arr)
         return;
@@ -1839,13 +1793,13 @@ bufr_free_partial_string_array(char **arr, size_t used)
     free(arr);
 }
 
-static int
-bufr_read_replicated_numeric_or_bytes(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
-    void **out_data, size_t *out_nvals, size_t *out_nbytes)
+static int bufr_read_replicated_numeric_or_bytes(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
+                                                 void **out_data, size_t *out_nvals,
+                                                 size_t *out_nbytes)
 {
-    int    err = 0;
+    int err = 0;
     size_t total = 0, ndefined = 0, offset = 0, elem_size = 0;
-    void  *buf = NULL;
+    void *buf = NULL;
 
     if (!h || !a || !d || !out_data || !out_nvals || !out_nbytes)
         return -1;
@@ -1868,7 +1822,7 @@ bufr_read_replicated_numeric_or_bytes(codes_handle *h, inv_attr_t *a, inv_datase
     buf = xmalloc(total * elem_size);
 
     for (int i = 1; i <= d->rep_count; i++) {
-        char   key[1024];
+        char key[1024];
         size_t n = a->size;
 
         snprintf(key, sizeof(key), "#%d#%s->%s", i, d->name, a->name);
@@ -1889,15 +1843,15 @@ bufr_read_replicated_numeric_or_bytes(codes_handle *h, inv_attr_t *a, inv_datase
 
         switch (a->native_type) {
             case CODES_TYPE_LONG:
-                err = codes_get_long_array(h, key, ((long *)buf) + offset, &n);
+                err = codes_get_long_array(h, key, ((long *) buf) + offset, &n);
                 break;
 
             case CODES_TYPE_DOUBLE:
-                err = codes_get_double_array(h, key, ((double *)buf) + offset, &n);
+                err = codes_get_double_array(h, key, ((double *) buf) + offset, &n);
                 break;
 
             case CODES_TYPE_BYTES:
-                err = codes_get_bytes(h, key, ((unsigned char *)buf) + offset, &n);
+                err = codes_get_bytes(h, key, ((unsigned char *) buf) + offset, &n);
                 break;
 
             default:
@@ -1913,18 +1867,17 @@ bufr_read_replicated_numeric_or_bytes(codes_handle *h, inv_attr_t *a, inv_datase
         offset += n;
     }
 
-    *out_data   = buf;
-    *out_nvals  = total;
+    *out_data = buf;
+    *out_nvals = total;
     *out_nbytes = total * elem_size;
 
     return CODES_SUCCESS;
 }
 
-static int
-bufr_read_replicated_strings(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
-    void **out_data, size_t *out_nvals, size_t *out_nbytes)
+static int bufr_read_replicated_strings(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
+                                        void **out_data, size_t *out_nvals, size_t *out_nbytes)
 {
-    int    err = 0;
+    int err = 0;
     size_t total = 0, ndefined = 0, used = 0;
     char **arr = NULL;
 
@@ -1942,11 +1895,11 @@ bufr_read_replicated_strings(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
     if (ndefined == 0 || total == 0)
         return CODES_NOT_FOUND;
 
-    arr = (char **)xmalloc(total * sizeof(char *));
+    arr = (char **) xmalloc(total * sizeof(char *));
     memset(arr, 0, total * sizeof(char *));
 
     for (int i = 1; i <= d->rep_count; i++) {
-        char  key[1024];
+        char key[1024];
         char *s = NULL;
 
         snprintf(key, sizeof(key), "#%d#%s->%s", i, d->name, a->name);
@@ -1963,8 +1916,8 @@ bufr_read_replicated_strings(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
         arr[used++] = s;
     }
 
-    *out_data   = arr;
-    *out_nvals  = used;
+    *out_data = arr;
+    *out_nvals = used;
     *out_nbytes = used * sizeof(char *);
 
     return CODES_SUCCESS;
@@ -1973,11 +1926,10 @@ bufr_read_replicated_strings(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
 /* --------------------------------------------------------------------------
  * Read one group attribute from BUFR/ecCodes into attr cache.
  * -------------------------------------------------------------------------- */
-static int
-bufr_read_group_attr_inv(codes_handle *h, const char *key, bufr_attr_t *attr)
+static int bufr_read_group_attr_inv(codes_handle *h, const char *key, bufr_attr_t *attr)
 {
-    int    err = 0;
-    void  *tmp_data = NULL;
+    int err = 0;
+    void *tmp_data = NULL;
     size_t tmp_nvals = 0;
     size_t tmp_nbytes = 0;
 
@@ -1991,16 +1943,15 @@ bufr_read_group_attr_inv(codes_handle *h, const char *key, bufr_attr_t *attr)
         err = bufr_read_one_string_attr(h, key, &tmp_data, &tmp_nvals, &tmp_nbytes);
         if (err != CODES_SUCCESS)
             return err;
-    }
-    else {
-        err = bufr_read_one_numeric_or_bytes(h, key, attr->codes_type, 0,
-                                             &tmp_data, &tmp_nvals, &tmp_nbytes);
+    } else {
+        err = bufr_read_one_numeric_or_bytes(h, key, attr->codes_type, 0, &tmp_data, &tmp_nvals,
+                                             &tmp_nbytes);
         if (err != CODES_SUCCESS)
             return err;
     }
 
-    attr->data      = tmp_data;
-    attr->nvals     = tmp_nvals;
+    attr->data = tmp_data;
+    attr->nvals = tmp_nvals;
     attr->data_size = tmp_nbytes;
 
     return CODES_SUCCESS;
@@ -2010,12 +1961,12 @@ bufr_read_group_attr_inv(codes_handle *h, const char *key, bufr_attr_t *attr)
  * Read one dataset attribute from inventory/ecCodes into attr cache.
  * For replicated datasets, flatten all defined #i#dataset->attr values.
  * -------------------------------------------------------------------------- */
-static int
-bufr_read_dataset_attr_inv(codes_handle *h, inv_attr_t *a, inv_dataset_t *d, bufr_attr_t *attr)
+static int bufr_read_dataset_attr_inv(codes_handle *h, inv_attr_t *a, inv_dataset_t *d,
+                                      bufr_attr_t *attr)
 {
-    int    err = 0;
-    char   key[1024];
-    void  *tmp_data = NULL;
+    int err = 0;
+    char key[1024];
+    void *tmp_data = NULL;
     size_t tmp_nvals = 0;
     size_t tmp_nbytes = 0;
 
@@ -2023,7 +1974,7 @@ bufr_read_dataset_attr_inv(codes_handle *h, inv_attr_t *a, inv_dataset_t *d, buf
         return -1;
 
     bufr_attr_reset_cache_fields(attr);
-    attr->codes_type     = a->native_type;
+    attr->codes_type = a->native_type;
     attr->is_vlen_string = (a->native_type == CODES_TYPE_STRING);
 
     if (d->is_replicated) {
@@ -2031,14 +1982,13 @@ bufr_read_dataset_attr_inv(codes_handle *h, inv_attr_t *a, inv_dataset_t *d, buf
             err = bufr_read_replicated_strings(h, a, d, &tmp_data, &tmp_nvals, &tmp_nbytes);
             if (err != CODES_SUCCESS)
                 return err;
-        }
-        else {
-            err = bufr_read_replicated_numeric_or_bytes(h, a, d, &tmp_data, &tmp_nvals, &tmp_nbytes);
+        } else {
+            err =
+                bufr_read_replicated_numeric_or_bytes(h, a, d, &tmp_data, &tmp_nvals, &tmp_nbytes);
             if (err != CODES_SUCCESS)
                 return err;
         }
-    }
-    else {
+    } else {
         snprintf(key, sizeof(key), "%s->%s", d->name, a->name);
 
         if (!codes_is_defined(h, key))
@@ -2048,17 +1998,16 @@ bufr_read_dataset_attr_inv(codes_handle *h, inv_attr_t *a, inv_dataset_t *d, buf
             err = bufr_read_one_string_attr(h, key, &tmp_data, &tmp_nvals, &tmp_nbytes);
             if (err != CODES_SUCCESS)
                 return err;
-        }
-        else {
-            err = bufr_read_one_numeric_or_bytes(h, key, a->native_type, a->size,
-                                                 &tmp_data, &tmp_nvals, &tmp_nbytes);
+        } else {
+            err = bufr_read_one_numeric_or_bytes(h, key, a->native_type, a->size, &tmp_data,
+                                                 &tmp_nvals, &tmp_nbytes);
             if (err != CODES_SUCCESS)
                 return err;
         }
     }
 
-    attr->data      = tmp_data;
-    attr->nvals     = tmp_nvals;
+    attr->data = tmp_data;
+    attr->nvals = tmp_nvals;
     attr->data_size = tmp_nbytes;
 
     return CODES_SUCCESS;
@@ -2070,12 +2019,11 @@ bufr_read_dataset_attr_inv(codes_handle *h, inv_attr_t *a, inv_dataset_t *d, buf
  *   - group object:   o->u.group->inv, o->u.group->msg->h
  *   - dataset object: o->u.dataset->inv, o->u.dataset->msg->h, o->u.dataset->name
  * -------------------------------------------------------------------------- */
-void *
-bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
-                      hid_t __attribute__((unused)) aapl_id, hid_t __attribute__((unused)) dxpl_id,
-                      void __attribute__((unused)) * *req)
+void *bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
+                     hid_t __attribute__((unused)) aapl_id, hid_t __attribute__((unused)) dxpl_id,
+                     void __attribute__((unused)) * *req)
 {
-    bufr_object_t *o = (bufr_object_t *)obj;
+    bufr_object_t *o = (bufr_object_t *) obj;
     bufr_object_t *attr_obj = NULL;
     bufr_object_t *ret_value = NULL;
     bufr_attr_t *attr = NULL;
@@ -2092,13 +2040,12 @@ bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, NULL,
                         "attributes are supported only on BUFR groups and datasets");
 
-    if (NULL == (attr_obj = (bufr_object_t *)calloc(1, sizeof(bufr_object_t))))
+    if (NULL == (attr_obj = (bufr_object_t *) calloc(1, sizeof(bufr_object_t))))
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTALLOC, NULL, "failed to allocate BUFR attribute object");
 
     attr_obj->obj_type = H5I_ATTR;
     attr_obj->ref_count = 1;
     attr_obj->parent_file = o->parent_file;
-
 
     attr = &attr_obj->u.attr;
     memset(attr, 0, sizeof(*attr));
@@ -2113,16 +2060,15 @@ bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
 
     if (o->obj_type == H5I_GROUP) {
         const inv_attr_t *a = NULL;
-        
+
         bufr_group_t *g = NULL;
         g = &o->u.group;
-        
 
         if (!g || !g->msg || !g->msg->h || !g->inv)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "invalid BUFR group object");
 
         inv = g->inv;
-        h   = g->msg->h;
+        h = g->msg->h;
 
         for (size_t i = 0; i < inv->ngroup_attrs; i++) {
             if (strcmp(inv->group_attrs[i].name, name) == 0) {
@@ -2142,21 +2088,19 @@ bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
 
         if (bufr_read_group_attr_inv(h, name, attr) != CODES_SUCCESS)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, NULL, "failed to read group attribute");
-    }
-    else if (o->obj_type == H5I_DATASET) {
+    } else if (o->obj_type == H5I_DATASET) {
         const inv_dataset_t *d = NULL;
-        const char          *dataset_name = NULL;
+        const char *dataset_name = NULL;
         const inv_dset_attr_t *a = NULL;
 
         bufr_dataset_t *ds = NULL;
         ds = &o->u.dataset;
 
-        if (!ds || !ds->msg || !ds->msg->h ||
-            !ds->inv || !ds->name)
+        if (!ds || !ds->msg || !ds->msg->h || !ds->inv || !ds->name)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, NULL, "invalid BUFR dataset object");
 
         inv = ds->inv;
-        h   = ds->msg->h;
+        h = ds->msg->h;
         dataset_name = ds->name;
 
         for (size_t i = 0; i < inv->ndatasets; i++) {
@@ -2177,24 +2121,26 @@ bufr_attr_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
         }
 
         if (!a)
-            FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL, "dataset attribute not found in inventory");
+            FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, NULL,
+                            "dataset attribute not found in inventory");
 
-        if (bufr_read_dataset_attr_inv(h, (inv_attr_t *)a, (inv_dataset_t *)d, attr) != CODES_SUCCESS)
+        if (bufr_read_dataset_attr_inv(h, (inv_attr_t *) a, (inv_dataset_t *) d, attr) !=
+            CODES_SUCCESS)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTGET, NULL, "failed to read dataset attribute");
     }
 
     attr->type_id = bufr_make_hdf5_type_for_codes_type(attr->codes_type, attr->is_vlen_string);
     if (attr->type_id == H5I_INVALID_HID)
-        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL, "failed to create HDF5 datatype for attribute");
+        FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL,
+                        "failed to create HDF5 datatype for attribute");
 
     if (attr->nvals <= 1) {
         attr->space_id = H5Screate(H5S_SCALAR);
         if (attr->space_id == H5I_INVALID_HID)
             FUNC_GOTO_ERROR(H5E_ATTR, H5E_CANTCREATE, NULL, "failed to create scalar dataspace");
-    }
-    else {
+    } else {
         hsize_t dims[1];
-        dims[0] = (hsize_t)attr->nvals;
+        dims[0] = (hsize_t) attr->nvals;
 
         attr->space_id = H5Screate_simple(1, dims, NULL);
         if (attr->space_id == H5I_INVALID_HID)
@@ -2221,7 +2167,6 @@ done:
     return ret_value;
 }
 
-
 /* --------------------------------------------------------------------------
  * Local helpers for attr_specific function
  * -------------------------------------------------------------------------- */
@@ -2229,8 +2174,7 @@ done:
 /* Best-effort size to report through H5A_info_t::data_size from inventory.
  * For VL strings we report pointer payload size, not character heap bytes.
  */
-static size_t
-bufr_attr_info_data_size_from_group_attr(const inv_attr_t *a)
+static size_t bufr_attr_info_data_size_from_group_attr(const inv_attr_t *a)
 {
     size_t n = 0;
 
@@ -2257,8 +2201,8 @@ bufr_attr_info_data_size_from_group_attr(const inv_attr_t *a)
     }
 }
 
-static size_t
-bufr_attr_info_data_size_from_dset_attr(const inv_dset_attr_t *a, const inv_dataset_t *d)
+static size_t bufr_attr_info_data_size_from_dset_attr(const inv_dset_attr_t *a,
+                                                      const inv_dataset_t *d)
 {
     size_t n = 0;
 
@@ -2267,7 +2211,7 @@ bufr_attr_info_data_size_from_dset_attr(const inv_dset_attr_t *a, const inv_data
 
     if (a->native_type == CODES_TYPE_STRING) {
         if (a->per_occurrence && d && d->is_replicated)
-            return ((a->rep_count > 0) ? (size_t)a->rep_count : (size_t)1) * sizeof(char *);
+            return ((a->rep_count > 0) ? (size_t) a->rep_count : (size_t) 1) * sizeof(char *);
         else
             return sizeof(char *);
     }
@@ -2275,7 +2219,7 @@ bufr_attr_info_data_size_from_dset_attr(const inv_dset_attr_t *a, const inv_data
     n = (a->size > 0) ? a->size : 1;
 
     if (a->per_occurrence && d && d->is_replicated) {
-        size_t rep = (a->rep_count > 0) ? (size_t)a->rep_count : (size_t)1;
+        size_t rep = (a->rep_count > 0) ? (size_t) a->rep_count : (size_t) 1;
         n *= rep;
     }
 
@@ -2294,8 +2238,7 @@ bufr_attr_info_data_size_from_dset_attr(const inv_dset_attr_t *a, const inv_data
     }
 }
 
-static const inv_dataset_t *
-bufr_find_inventory_dataset(const inv_t *inv, const char *dataset_name)
+static const inv_dataset_t *bufr_find_inventory_dataset(const inv_t *inv, const char *dataset_name)
 {
     if (!inv || !dataset_name)
         return NULL;
@@ -2308,8 +2251,7 @@ bufr_find_inventory_dataset(const inv_t *inv, const char *dataset_name)
     return NULL;
 }
 
-static bool
-bufr_group_attr_exists_in_inventory(const inv_t *inv, const char *attr_name)
+static bool bufr_group_attr_exists_in_inventory(const inv_t *inv, const char *attr_name)
 {
     if (!inv || !attr_name)
         return false;
@@ -2322,8 +2264,7 @@ bufr_group_attr_exists_in_inventory(const inv_t *inv, const char *attr_name)
     return false;
 }
 
-static bool
-bufr_dataset_attr_exists_in_inventory(const inv_dataset_t *d, const char *attr_name)
+static bool bufr_dataset_attr_exists_in_inventory(const inv_dataset_t *d, const char *attr_name)
 {
     if (!d || !attr_name)
         return false;
@@ -2340,17 +2281,16 @@ bufr_dataset_attr_exists_in_inventory(const inv_dataset_t *d, const char *attr_n
  * VOL attribute specific callback
  * -------------------------------------------------------------------------- */
 /* cppcheck-suppress constParameterCallback */
-herr_t
-bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_specific_args_t *args,
-                   hid_t __attribute__((unused)) dxpl_id, void __attribute__((unused)) **req)
+herr_t bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                          H5VL_attr_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                          void __attribute__((unused)) * *req)
 {
-    bufr_object_t *o = (bufr_object_t *)obj;
-    herr_t         ret_value = SUCCEED;
+    bufr_object_t *o = (bufr_object_t *) obj;
+    herr_t ret_value = SUCCEED;
     hid_t loc_id = H5I_INVALID_HID;
 
     if (!obj || !loc_params || !args)
-        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL,
-                        "Invalid arguments to attr_specific");
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to attr_specific");
 
     if ((o->obj_type != H5I_GROUP) && (o->obj_type != H5I_DATASET))
         FUNC_GOTO_ERROR(H5E_ATTR, H5E_UNSUPPORTED, FAIL,
@@ -2361,14 +2301,12 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
             const char *attr_name = args->args.exists.name;
 
             if (!args->args.exists.exists)
-                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
-                                "NULL exists output pointer");
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "NULL exists output pointer");
 
             *args->args.exists.exists = false;
 
             if (!attr_name)
-                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
-                                "No attribute name provided");
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "No attribute name provided");
 
             if (loc_params->type != H5VL_OBJECT_BY_SELF)
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
@@ -2380,10 +2318,8 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
                     FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
                                     "Invalid group object or missing inventory");
 
-                *args->args.exists.exists =
-                    bufr_group_attr_exists_in_inventory(g->inv, attr_name);
-            }
-            else if (o->obj_type == H5I_DATASET) {
+                *args->args.exists.exists = bufr_group_attr_exists_in_inventory(g->inv, attr_name);
+            } else if (o->obj_type == H5I_DATASET) {
                 const inv_dataset_t *d = NULL;
                 bufr_dataset_t *ds = &o->u.dataset;
 
@@ -2396,10 +2332,8 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
                     FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, FAIL,
                                     "Failed to find dataset in inventory");
 
-                *args->args.exists.exists =
-                    bufr_dataset_attr_exists_in_inventory(d, attr_name);
-            }
-            else {
+                *args->args.exists.exists = bufr_dataset_attr_exists_in_inventory(d, attr_name);
+            } else {
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid object type");
             }
 
@@ -2413,8 +2347,7 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
             hsize_t start_idx = 0;
 
             if (!iter_args || !iter_args->op || !iter_args->idx)
-                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
-                                "Invalid iterate arguments");
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid iterate arguments");
 
             if (loc_params->type != H5VL_OBJECT_BY_SELF)
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
@@ -2437,17 +2370,17 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
 
                 inv = g->inv;
 
-                for (size_t i = (size_t)start_idx; i < inv->ngroup_attrs; i++) {
+                for (size_t i = (size_t) start_idx; i < inv->ngroup_attrs; i++) {
                     const inv_attr_t *a = &inv->group_attrs[i];
 
                     memset(&attr_info, 0, sizeof(attr_info));
                     attr_info.corder_valid = true;
-                    attr_info.corder = (int64_t)i;
+                    attr_info.corder = (int64_t) i;
                     attr_info.cset = H5T_CSET_ASCII;
                     attr_info.data_size = bufr_attr_info_data_size_from_group_attr(a);
 
                     cb_ret = iter_args->op(loc_id, a->name, &attr_info, iter_args->op_data);
-                    *iter_args->idx = (hsize_t)(i + 1);
+                    *iter_args->idx = (hsize_t) (i + 1);
 
                     if (cb_ret < 0)
                         FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADITER, FAIL,
@@ -2457,8 +2390,7 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
                         goto done;
                     }
                 }
-            }
-            else if (o->obj_type == H5I_DATASET) {
+            } else if (o->obj_type == H5I_DATASET) {
                 const inv_dataset_t *d = NULL;
                 bufr_dataset_t *ds = &o->u.dataset;
 
@@ -2471,17 +2403,17 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
                     FUNC_GOTO_ERROR(H5E_ATTR, H5E_NOTFOUND, FAIL,
                                     "Failed to find dataset in inventory for attribute iteration");
 
-                for (size_t i = (size_t)start_idx; i < d->nattrs; i++) {
+                for (size_t i = (size_t) start_idx; i < d->nattrs; i++) {
                     const inv_dset_attr_t *a = &d->attrs[i];
 
                     memset(&attr_info, 0, sizeof(attr_info));
                     attr_info.corder_valid = true;
-                    attr_info.corder = (int64_t)i;
+                    attr_info.corder = (int64_t) i;
                     attr_info.cset = H5T_CSET_ASCII;
                     attr_info.data_size = bufr_attr_info_data_size_from_dset_attr(a, d);
 
                     cb_ret = iter_args->op(loc_id, a->name, &attr_info, iter_args->op_data);
-                    *iter_args->idx = (hsize_t)(i + 1);
+                    *iter_args->idx = (hsize_t) (i + 1);
 
                     if (cb_ret < 0)
                         FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADITER, FAIL,
@@ -2491,8 +2423,7 @@ bufr_attr_specific(void *obj, const H5VL_loc_params_t *loc_params, H5VL_attr_spe
                         goto done;
                     }
                 }
-            }
-            else {
+            } else {
                 FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Invalid object type");
             }
 
@@ -2514,13 +2445,13 @@ done:
 }
 herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req)
 {
-    bufr_object_t *o = (bufr_object_t *)attr;
-    bufr_attr_t   *a = &o->u.attr;
+    bufr_object_t *o = (bufr_object_t *) attr;
+    bufr_attr_t *a = &o->u.attr;
     bufr_object_t *parent_obj = NULL;
-    herr_t         ret_value = SUCCEED;
+    herr_t ret_value = SUCCEED;
 
-    (void)dxpl_id;
-    (void)req;
+    (void) dxpl_id;
+    (void) req;
 
     assert(a);
 
@@ -2554,7 +2485,7 @@ herr_t bufr_attr_close(void *attr, hid_t dxpl_id, void **req)
         /* Release only the reference this attribute holds on its parent.
          * Do not recursively close the parent object here.
          */
-        parent_obj = (bufr_object_t *)a->parent;
+        parent_obj = (bufr_object_t *) a->parent;
         a->parent = NULL;
 
         if (parent_obj) {
@@ -2596,28 +2527,27 @@ herr_t bufr_attr_read(void *attr, hid_t mem_type_id, void *buf,
     if (a->is_vlen_string) {
         /* Scalar VL string */
         if (a->nvals <= 1) {
-            char *src = (char *)a->data;
-            char **dst = (char **)buf;
+            char *src = (char *) a->data;
+            char **dst = (char **) buf;
             if (!src) {
                 *dst = NULL;
                 FUNC_GOTO_DONE(SUCCEED);
             }
             size_t len = strlen(src) + 1;
-            *dst = (char *)H5allocate_memory(len, 0);
+            *dst = (char *) H5allocate_memory(len, 0);
             if (!*dst)
-                FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL,
-                            "VL attr: allocation failed");
+                FUNC_GOTO_ERROR(H5E_RESOURCE, H5E_CANTALLOC, FAIL, "VL attr: allocation failed");
             memcpy(*dst, src, len);
             FUNC_GOTO_DONE(SUCCEED);
         }
         /* Array of VL strings */
         else {
-            char **src = (char **)a->data;
-            char **dst = (char **)buf;
+            char **src = (char **) a->data;
+            char **dst = (char **) buf;
             for (size_t i = 0; i < a->nvals; i++) {
                 if (src[i]) {
                     size_t len = strlen(src[i]) + 1;
-                    dst[i] = (char *)H5allocate_memory(len, 0);
+                    dst[i] = (char *) H5allocate_memory(len, 0);
                     if (!dst[i]) {
                         /* rollback */
                         for (size_t j = 0; j < i; j++) {
@@ -2630,15 +2560,14 @@ herr_t bufr_attr_read(void *attr, hid_t mem_type_id, void *buf,
                                         "VL attr array: allocation failed");
                     }
                     memcpy(dst[i], src[i], len);
-                }
-                else {
+                } else {
                     dst[i] = NULL;
                 }
             }
             FUNC_GOTO_DONE(SUCCEED);
         }
     }
-/* ===== END VL STRING HANDLING ===== */
+    /* ===== END VL STRING HANDLING ===== */
     memcpy(buf, a->data, a->data_size);
 
 done:
@@ -2684,20 +2613,17 @@ done:
  *---------------------------------------------------------------------------
  */
 /* cppcheck-suppress constParameterCallback */
-herr_t
-bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
-                   H5VL_link_specific_args_t *args,
-                   hid_t __attribute__((unused)) dxpl_id,
-                   void __attribute__((unused)) **req)
+herr_t bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+                          H5VL_link_specific_args_t *args, hid_t __attribute__((unused)) dxpl_id,
+                          void __attribute__((unused)) * *req)
 {
-    herr_t         ret_value = SUCCEED;
-    const char    *link_name = NULL;
+    herr_t ret_value = SUCCEED;
+    const char *link_name = NULL;
     hid_t loc_id = H5I_INVALID_HID;
-    bufr_object_t *o         = (bufr_object_t *)obj;
+    bufr_object_t *o = (bufr_object_t *) obj;
 
     if (!o || !loc_params || !args)
-        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL,
-                        "Invalid arguments to link_specific");
+        FUNC_GOTO_ERROR(H5E_ARGS, H5E_BADVALUE, FAIL, "Invalid arguments to link_specific");
 
     /* Only file and group objects expose links in this connector */
     if ((o->obj_type != H5I_FILE) && (o->obj_type != H5I_GROUP))
@@ -2707,8 +2633,7 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
     switch (args->op_type) {
         case H5VL_LINK_EXISTS: {
             if (!args->args.exists.exists)
-                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
-                                "NULL exists output pointer");
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "NULL exists output pointer");
 
             *args->args.exists.exists = false;
 
@@ -2718,16 +2643,14 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
 
             link_name = loc_params->loc_data.loc_by_name.name;
             if (!link_name)
-                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
-                                "No link name provided");
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "No link name provided");
 
             if (o->obj_type == H5I_FILE) {
                 /* message_N at root */
                 size_t n;
-                if(is_group_name(link_name, o->u.file.nmsgs, &n))
+                if (is_group_name(link_name, o->u.file.nmsgs, &n))
                     *args->args.exists.exists = true;
-            }
-            else { /* Parent object is a BUFR group */
+            } else { /* Parent object is a BUFR group */
                 bufr_group_t *g = &o->u.group;
                 if (!g || !g->inv)
                     FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
@@ -2748,8 +2671,7 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
             H5VL_link_iterate_args_t *iter_args = &args->args.iterate;
 
             if (!iter_args || !iter_args->op || !iter_args->idx_p)
-                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
-                                "Invalid iterate arguments");
+                FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL, "Invalid iterate arguments");
 
             if (loc_params->type != H5VL_OBJECT_BY_SELF)
                 FUNC_GOTO_ERROR(H5E_LINK, H5E_BADVALUE, FAIL,
@@ -2768,12 +2690,12 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                     herr_t cb_ret;
                     char child_name[32];
 
-                    snprintf(child_name, sizeof(child_name), "message_%u", (unsigned)i);
+                    snprintf(child_name, sizeof(child_name), "message_%u", (unsigned) i);
 
                     memset(&link_info, 0, sizeof(link_info));
                     link_info.type = H5L_TYPE_HARD;
                     link_info.corder_valid = true;
-                    link_info.corder = (int64_t)i;
+                    link_info.corder = (int64_t) i;
                     link_info.cset = H5T_CSET_ASCII;
 
                     cb_ret = iter_args->op(loc_id, child_name, &link_info, iter_args->op_data);
@@ -2787,8 +2709,7 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                         goto done;
                     }
                 }
-            }
-            else { /* Object is a BUFR group */
+            } else { /* Object is a BUFR group */
                 size_t num_datasets = 0;
                 bufr_group_t *g = &o->u.group;
 
@@ -2803,13 +2724,12 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                     herr_t cb_ret;
                     char child_name[512];
 
-                    bufr_safe_strcpy(child_name, sizeof(child_name),
-                                     g->inv->datasets[i].name);
+                    bufr_safe_strcpy(child_name, sizeof(child_name), g->inv->datasets[i].name);
 
                     memset(&link_info, 0, sizeof(link_info));
                     link_info.type = H5L_TYPE_HARD;
                     link_info.corder_valid = true;
-                    link_info.corder = (int64_t)i;
+                    link_info.corder = (int64_t) i;
                     link_info.cset = H5T_CSET_ASCII;
 
                     cb_ret = iter_args->op(loc_id, child_name, &link_info, iter_args->op_data);
@@ -2834,8 +2754,7 @@ bufr_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
             break;
 
         default:
-            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL,
-                            "Unsupported link specific operation");
+            FUNC_GOTO_ERROR(H5E_LINK, H5E_UNSUPPORTED, FAIL, "Unsupported link specific operation");
     }
 
 done:
