@@ -1,11 +1,11 @@
-# DataFormats-VOLs
+# HDF5 VOL Connectors to Earth Sciences Binary Data Formats
 
 [![GeoTIFF VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-geotiff-ci.yml/badge.svg?branch=vol_ci)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-geotiff-ci.yml)
 [![CDF VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-cdf-ci.yml/badge.svg?branch=vol_ci)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-cdf-ci.yml)
 [![BUFR VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-bufr-ci.yml/badge.svg?branch=vol_ci)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-bufr-ci.yml)
 [![GRIB2 VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-grib2-ci.yml/badge.svg?branch=vol_ci)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-grib2-ci.yml)
 
-# DataFormats VOL Connectors
+
 <!--
 [![GitHub release](https://img.shields.io/github/v/release/LifeboatLLC/DataFormats-VOLs)](https://github.com/LifeboatLLC/DataFormats-VOLs/releases)
 [![License](https://img.shields.io/github/license/LifeboatLLC/DataFormats-VOLs)](https://github.com/LifeboatLLC/DataFormats-VOLs/blob/main/LICENSE)
@@ -14,7 +14,7 @@
 
 ## Overview
 
-The **DataFormats VOL Connectors** project provides a set of HDF5 Virtual Object Layer (VOL) connectors that enable unified access to multiple scientific data formats through standard HDF5 APIs.
+The **HDF5 VOL Connectors** project provides a set of HDF5 Virtual Object Layer (VOL) connectors that enable unified access to multiple scientific data formats through standard HDF5 APIs.
 
 Supported formats include:
 
