@@ -51,7 +51,6 @@ flowchart TD
 
 * Unified access to multiple scientific data formats via HDF5 APIs
 * Transparent mapping of heterogeneous data to HDF5 objects
-* Support for datasets and attributes
 * Cross-platform build system (CMake)
 * Integration with external libraries:
 
