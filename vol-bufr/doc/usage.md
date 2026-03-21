@@ -89,7 +89,17 @@ Usage:
 ./bufr_eccodes_demo <file.bufr> <msg_index> --gattr <attr_name>
 ./bufr_eccodes_demo <file.bufr> <msg_index> <dataset_name> <dataset_name>
 ```
-
+For example, the following commands print
+- content of message 0 (correspond to all HDF5 datasets and HDF5 attributes in group `message_0`)
+- values of windSpeed in messaage 0 (correspond to the values of HDF5 dataset `windSpeed`)
+- value of numberOfSubsets key (correspond to the attribute `numberOfSubsets` of HDF5 group `message_0`)
+- all values #k#windSpeed->percentConfidence (correspond to array attribute `percentConfidence` of the HDF5 `windSpeed` dataset) 
+```
+./bufr_eccodes_demo help.bufr 0
+./bufr_eccodes_demo help.bufr 0 windSpeed
+./bufr_eccodes_demo help.bufr 0 --gattr numberOfSubsets
+./bufr_eccodes_demo help.bufr 0 windSpeed percentConfidence
+```
 `bufr_example.c` program demonstrates functionality of the BUFR VOL connector. 
 
 The program 
