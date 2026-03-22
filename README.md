@@ -90,7 +90,7 @@ This project is an **initial release** intended for:
 * integration testing
 * research workflows
 
-Functionality and mappings will continue to evolve.
+Functionality and mappings will continue to evolve. For more details check documentation in the `doc` subdirectories of each connector repo.
 
 ---
 
@@ -100,6 +100,7 @@ Functionality and mappings will continue to evolve.
 * Partial support for complex structures (e.g., BUFR replication)
 * Limited selection and datatype conversion support
 * Performance optimizations ongoing
+* For CDF, BUFR and GRIB2 connector testing was performed only on a limited number of binary files. Testing is ongoing.
 
 ---
 <!--
