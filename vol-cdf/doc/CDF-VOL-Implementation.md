@@ -44,7 +44,7 @@ hid_t file_id = H5Fopen("example.cdf", H5F_ACC_RDONLY, fapl_id);
 ```
 It is also possible to open the file while excluding the `.cdf` file extension from the file name.
 
-> **Note:** Currently, only **ROW_MAJOR** CDF files are fully supported. Files stored in **COLUMN_MAJOR** layout may open, but doing so can result in undefined internal errors. 
+> **Note:** Currently, only **ROW_MAJOR** CDF files are fully supported. Files stored in **COLUMN_MAJOR** will fail to open.
 
 ## 3. Links and Groups
 The CDF VOL connector uses a very flat HDF5 layout:  
@@ -119,6 +119,10 @@ If `H5Dread` is called with a memory datatype different from the dataset datatyp
 The connector reads the full extent of the variable and returns the values provided by the CDF library.
 
 Standard HDF5 selection mechanisms (e.g., hyperslabs) may be used to read subsets of the data. Data is generated or converted on demand during the read operation. No additional interpretation, reshaping, or reordering is performed.
+
+### 4.4 Unsupported CDF Information
+
+Currently, there is no way to retrieve any information about a variable's pad value, allocated records, or blocking factor. Only the variable's datatype, dimensionality, and number of written records are reported.
 
 ## 5. Attributes
 

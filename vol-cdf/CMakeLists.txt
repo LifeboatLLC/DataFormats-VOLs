@@ -49,32 +49,40 @@ endif()
 # --------------------------
 # Find CDF library
 # --------------------------
+set(_CDF_FOUND FALSE)
+
 find_library(CDF_LIBRARY NAMES cdf HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib)
 find_path(CDF_INCLUDE_DIR NAMES cdf.h HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES include)
 
-if(NOT CDF_LIBRARY)
-    message(FATAL_ERROR "CDF library not found.")
-else()
-    message(STATUS "Found CDF library at: ${CDF_LIBRARY}")
+if (CDF_INCLUDE_DIR AND CDF_LIBRARY)
+    set(_CDF_FOUND TRUE)
+
+    if (NOT TARGET CDF::cdf)
+        add_library(CDF::cdf UNKNOWN IMPORTED)
+        set_target_properties(CDF::cdf PROPERTIES
+            IMPORTED_LOCATION "${CDF_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${CDF_INCLUDE_DIR}"
+        )
+    endif()
 endif()
 
-if(NOT CDF_INCLUDE_DIR)
-    message(FATAL_ERROR "CDF header not found.")
+if (NOT _CDF_FOUND)
+    message(FATAL_ERROR "CDF library or headers not found. Set CMAKE_PREFIX_PATH if needed.")
 else()
+    message(STATUS "Found CDF library at: ${CDF_LIBRARY}")
     message(STATUS "Found CDF header at: ${CDF_INCLUDE_DIR}")
 endif()
 
-# --------------------------
-# Create imported target for CDF
-# --------------------------
-add_library(cdf::cdf SHARED IMPORTED)
-set_target_properties(cdf::cdf PROPERTIES
-    IMPORTED_LOCATION "${CDF_LIBRARY}"
-    INTERFACE_INCLUDE_DIRECTORIES "${CDF_INCLUDE_DIR}"
-)
 
 # --------------------------
 # Add subdirectories
 # --------------------------
 add_subdirectory(src)
+add_subdirectory(tools)
 add_subdirectory(test)
+
+option (CDF_VOL_BUILD_EXAMPLES "Build example programs" ON)
+
+if (CDF_VOL_BUILD_EXAMPLES)
+    add_subdirectory (examples)
+endif()

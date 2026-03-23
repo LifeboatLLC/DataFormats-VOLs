@@ -13,7 +13,7 @@ set_target_properties(${CDF_VOL_NAME} PROPERTIES
 target_include_directories(${CDF_VOL_NAME} PRIVATE ${HDF5_INCLUDE_DIRS} ${CDF_INCLUDE_DIR})
 
 # Link HDF5 and CDF libraries
-target_link_libraries(${CDF_VOL_NAME} PRIVATE HDF5::HDF5 cdf::cdf)
+target_link_libraries(${CDF_VOL_NAME} PRIVATE HDF5::HDF5 CDF::cdf)
 
 # macOS-specific rpath settings
 if(APPLE)

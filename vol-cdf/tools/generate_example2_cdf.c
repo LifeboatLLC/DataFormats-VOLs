@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
 
     // Compute second epoch16 value with different date/time for variety
     double epoch16_values2[2];
-    status = computeEPOCH16(1990L, 1L, 1L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, epoch16_values2);
+    status = computeEPOCH16(1990L, 1L, 1L, 12L, 45L, 678L, 123L, 321L, 4L, 5L, epoch16_values2);
     CHECK(status, "computeEPOCH16 failed");
 
     // Add the second epoch16 value

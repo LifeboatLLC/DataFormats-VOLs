@@ -107,6 +107,7 @@ int CheckExistenceAndOpenTest(void)
     hid_t group_id = H5I_INVALID_HID;
     hid_t dset_id = H5I_INVALID_HID;
     hid_t attr_id = H5I_INVALID_HID;
+    H5G_info_t ginfo;
     hsize_t dims[1];
     int ndims;
     double *data = NULL;
@@ -146,6 +147,17 @@ int CheckExistenceAndOpenTest(void)
     /* Open the CDF file */
     if ((file_id = H5Fopen(filename, H5F_ACC_RDONLY, fapl_id)) < 0) {
         printf("Failed to open CDF file\n");
+        goto error;
+    }
+
+    if (H5Gget_info(file_id, &ginfo) < 0) {
+        printf("Failed to get group info\n");
+        goto error;
+    }
+
+    if (ginfo.storage_type != H5G_STORAGE_TYPE_COMPACT || ginfo.nlinks != 3 ||
+        ginfo.max_corder != 2 || ginfo.mounted) {
+        printf("Group info returned from H5Gget_info() is wrong\n");
         goto error;
     }
 
@@ -999,7 +1011,7 @@ int DatasetDatatypeConversionTest(void)
         }
 
         /* Verify converted values */
-        int verification_failed = 0;
+        bool verification_failed = false;
         for (size_t idx = 0; idx < num_elements; ++idx) {
             int expected_source = -90 + (int) idx; /* Latitude values from -90 to 90 */
 
@@ -1043,13 +1055,8 @@ int DatasetDatatypeConversionTest(void)
                 if (expected_source < 0) {
                     expected_converted = 0.0;
                 }
-            } else if (H5Tequal(mem_type_id, H5T_NATIVE_INT64)) {
+            } else if (H5Tequal(mem_type_id, H5T_NATIVE_INT)) {
                 actual_converted = (double) ((int64_t *) data)[idx];
-            } else if (H5Tequal(mem_type_id, H5T_NATIVE_UINT64)) {
-                actual_converted = (double) ((uint64_t *) data)[idx];
-                if (expected_source < 0) {
-                    expected_converted = 0.0;
-                }
             } else if (H5Tequal(mem_type_id, H5T_NATIVE_LONG)) {
                 actual_converted = (double) ((long *) data)[idx];
             } else if (H5Tequal(mem_type_id, H5T_NATIVE_LLONG)) {
@@ -1070,7 +1077,7 @@ int DatasetDatatypeConversionTest(void)
                 printf(
                     "\n    VERIFICATION FAILED at idx %zu: expected %.0f, got %.0f (source was %d)",
                     idx, expected_converted, actual_converted, expected_source);
-                verification_failed = 1;
+                verification_failed = true;
                 break;
             }
         }
@@ -1329,8 +1336,8 @@ int ReadUnindexedGlobalArrayAttributeTest(void)
     size_t num_entries;
     size_t type_size;
 
-    const char *filename = "example1.cdf";
-    const char *attr_name = "TITLE";
+    const char *filename = "example2.cdf";
+    const char *attr_name = "gAttr1";
     printf("Testing CDF VOL connector by reading '%s' gAttribute from file: %s\n", attr_name,
            filename);
 
@@ -1382,7 +1389,7 @@ int ReadUnindexedGlobalArrayAttributeTest(void)
         goto error;
     }
 
-    /* We expect this gAttribute to be a 1D array with 2 entries (based on `cdfdump example1.cdf`)
+    /* We expect this gAttribute to be a 1D array with 5 entries (based on `cdfdump example2.cdf`)
      */
     if (ndims != 1) {
         printf("Attribute dataspace rank mismatch - expected 1, got %d\n", ndims);
@@ -1395,7 +1402,7 @@ int ReadUnindexedGlobalArrayAttributeTest(void)
     }
 
     num_entries = dims[0];
-    if (num_entries != 2) {
+    if (num_entries != 5) {
         printf("Attribute dataspace dimension mismatch - expected 2 entries, got %llu\n",
                (unsigned long long) num_entries);
         goto error;
@@ -1406,13 +1413,8 @@ int ReadUnindexedGlobalArrayAttributeTest(void)
         goto error;
     }
 
-    if (type_size == 0) {
-        printf("Attribute has zero size\n");
-        goto error;
-    }
-
     /* Allocate buffer for attribute data */
-    attr_data = (char *) calloc(type_size * num_entries, sizeof(char));
+    attr_data = (char *) calloc(num_entries, type_size);
     if (!attr_data) {
         printf("Failed to allocate attribute data buffer\n");
         goto error;
@@ -1424,8 +1426,12 @@ int ReadUnindexedGlobalArrayAttributeTest(void)
         goto error;
     }
 
-    const char *expected_titles[] = {"0 (CDF_CHAR/9): CDF title", "1 (CDF_CHAR/11): Author: CDF"};
-    for (size_t i = 0; i < 2; i++) {
+    const char *expected_titles[] = {
+        "0 (CDF_CHAR/18): Second Example CDF", "1 (CDF_UCHAR/21): Author: Lifeboat, LLC",
+        "2 (CDF_DOUBLE/1): 3.141592653589793",
+        "3 (CDF_EPOCH16/2): [{6.2798418e+10, 1.23321e+11}, {6.3933885e+10, 1.2345679e+11}]",
+        "20 (CDF_TIME_TT2000/1): 1625097600000000000"};
+    for (size_t i = 0; i < 5; i++) {
         const char *s = attr_data + (i * type_size);
         size_t expected_len = strlen(expected_titles[i]);
 
@@ -1531,6 +1537,13 @@ int ReadIndexedGlobalAttributeTest(void)
         goto error;
     }
 
+    /* Test invalid gEntry index */
+    if ((attr_id = H5Aopen(file_id, "TITLE_5", H5P_DEFAULT)) >= 0) {
+        printf("Opened attribute that shouldnt exist!\n");
+        goto error;
+    }
+
+    /* Now test valid indices */
     for (size_t i = 0; i < 2; i++) {
         if ((attr_id = H5Aopen(file_id, attr_names[i], H5P_DEFAULT)) < 0) {
             printf("Failed to open attribute\n");
