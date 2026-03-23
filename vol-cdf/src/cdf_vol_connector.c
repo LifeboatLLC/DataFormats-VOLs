@@ -2502,8 +2502,8 @@ herr_t cdf_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
             cdf_attr_t tmp_attr;
             memset(&tmp_attr, 0, sizeof(tmp_attr));
             if (parse_attr_name(attr_name, &tmp_attr) < 0) {
-                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL,
-                                "Failed to parse attribute name '%s'", attr_name);
+                FUNC_GOTO_ERROR(H5E_ATTR, H5E_BADVALUE, FAIL, "Failed to parse attribute name '%s'",
+                                attr_name);
             }
 
             if (o->obj_type == H5I_FILE || o->obj_type == H5I_GROUP) {
