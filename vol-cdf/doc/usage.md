@@ -44,6 +44,7 @@ On macOS the CDF build is broken. Instead, install with the signed binary pkg fi
 curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/macosx/CDF3_9_1-binary_signed.pkg
 sudo installer -pkg CDF3_9_1-binary_signed.pkg -target /
 sudo chmod -R a+rX /Applications/cdf
+. /Applications/cdf/cdf39_1-dist/bin/definitions.B
 ```
 
 ## Building
