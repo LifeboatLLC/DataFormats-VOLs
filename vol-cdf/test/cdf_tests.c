@@ -490,6 +490,8 @@ static herr_t link_iterate_attrs_cb(hid_t loc_id, const char *name, const H5L_in
     hsize_t idx = 0;
     int attr_iteration_count = 0;
 
+    (void) loc_id;
+
     if (verify_link(name, info) < 0) {
         return -1;
     }

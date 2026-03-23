@@ -22,6 +22,9 @@ target_compile_definitions(cdf_example
         CDF_VOL_PLUGIN_PATH="${PROJECT_BINARY_DIR}/src"
 )
 
+# Ensure example2.cdf is generated before cdf_example tries to copy it
+add_dependencies(cdf_example generate_example2)
+
 # ------------------------------------------------------------
 # Copy example data next to the executable
 # ------------------------------------------------------------

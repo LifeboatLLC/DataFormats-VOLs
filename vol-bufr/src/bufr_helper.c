@@ -715,8 +715,12 @@ int bufr_build_group_inventory(codes_handle *h, inv_t *inv)
     codes_bufr_keys_iterator_delete(it);
 
     /* Pass 2 (ROBUST): synthesize meta datasets by PROBING codes_is_defined()
-     * for each dataset and each whitelisted meta attr, regardless of iterator output. */
-    for (size_t di = 0; di < inv->ndatasets; di++) {
+     * for each dataset and each whitelisted meta attr, regardless of iterator output.
+     * Only iterate over datasets collected in Pass 1 (save count before Pass 2 starts)
+     * to avoid processing the meta datasets we synthesize here. */
+    size_t pass1_ndatasets = inv->ndatasets;
+    for (size_t di = 0; di < pass1_ndatasets; di++) {
+        /* Re-read d each iteration: inv_get_or_add_dataset may realloc inv->datasets */
         inv_dataset_t *d = &inv->datasets[di];
 
         for (int ai = 0; g_known_meta_attrs[ai]; ai++) {
@@ -733,21 +737,32 @@ int bufr_build_group_inventory(codes_handle *h, inv_t *inv)
             if (!found)
                 continue;
 
-            /* Attach dataset-attr metadata to base dataset */
+            /* Attach dataset-attr metadata to base dataset.
+             * inv_get_or_add_dset_attr may realloc d->attrs but not inv->datasets,
+             * so d itself remains valid here. */
             inv_dset_attr_t *a = inv_get_or_add_dset_attr(d, attr, ntype, sz);
             if (d->is_replicated) {
                 /* mark per-occurrence; rep_count may be larger than found_rep_max */
                 inv_mark_attr_per_occurrence(a, (found_rep_max > 0) ? found_rep_max : d->rep_count);
             }
 
-            /* Synthesize parallel dataset base_attr */
+            /* Synthesize parallel dataset base_attr.
+             * inv_get_or_add_dataset may realloc inv->datasets, invalidating d.
+             * Save the values we need from d before this call. */
+            int d_is_replicated = d->is_replicated;
+            int d_rep_count = d->rep_count;
+
             char meta_name[1024];
             make_meta_dataset_name(d->name, attr, meta_name, sizeof(meta_name));
 
             inv_dataset_t *md = inv_get_or_add_dataset(inv, meta_name, ntype, sz);
-            if (d->is_replicated) {
+
+            /* Refresh d: the realloc above may have moved inv->datasets */
+            d = &inv->datasets[di];
+
+            if (d_is_replicated) {
                 /* replicate like base (or the max we actually found) */
-                inv_mark_dataset_replicated(md, (found_rep_max > 0) ? found_rep_max : d->rep_count);
+                inv_mark_dataset_replicated(md, (found_rep_max > 0) ? found_rep_max : d_rep_count);
             }
         }
     }

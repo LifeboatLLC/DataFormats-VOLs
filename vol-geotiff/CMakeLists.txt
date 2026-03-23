@@ -11,23 +11,45 @@ include (CTest)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 # === HDF5 setup ===
-# Find HDF5 and set up alias target
-find_package(HDF5 COMPONENTS C CONFIG)
+# Find HDF5 (prefer CONFIG mode). Try lowercase first (HDF5 develop installs 'hdf5'), then uppercase
+set(_HDF5_FOUND FALSE)
+find_package(hdf5 COMPONENTS C CONFIG QUIET)
+if(hdf5_FOUND)
+    set(_HDF5_FOUND TRUE)
+else()
+    find_package(HDF5 COMPONENTS C CONFIG QUIET)
+    if(HDF5_FOUND)
+        set(_HDF5_FOUND TRUE)
+    endif()
+endif()
 
-if(NOT HDF5_FOUND)
+if(NOT _HDF5_FOUND)
     message(FATAL_ERROR "HDF5 CONFIG package not found. Set CMAKE_PREFIX_PATH or HDF5_DIR to your HDF5 install.")
 endif()
 
-# For now, require shared library
-if (NOT TARGET hdf5-shared)
-    message(FATAL_ERROR "hdf5-shared target not found in HDF5 package.")
+# Normalize HDF5 target name so downstream can always link HDF5::HDF5
+if(NOT TARGET HDF5::HDF5)
+    if(TARGET hdf5::hdf5)
+        add_library(HDF5::HDF5 ALIAS hdf5::hdf5)
+    elseif(TARGET hdf5::hdf5-shared)
+        add_library(HDF5::HDF5 ALIAS hdf5::hdf5-shared)
+    elseif(TARGET HDF5::HDF5_C)
+        add_library(HDF5::HDF5 ALIAS HDF5::HDF5_C)
+    elseif(TARGET hdf5-shared)
+        add_library(HDF5::HDF5 ALIAS hdf5-shared)
+    elseif(TARGET hdf5-static)
+        add_library(HDF5::HDF5 ALIAS hdf5-static)
+    elseif(TARGET hdf5)
+        add_library(HDF5::HDF5 ALIAS hdf5)
+    else()
+        message(FATAL_ERROR "No usable HDF5 target found in HDF5 package.")
+    endif()
 endif()
 
-# Create alias target to paper over specific HDF5 provided
-add_library(HDF5::HDF5 ALIAS hdf5-shared)
-
 # Extract HDF5 include directories for use by targets/tests
-get_target_property(HDF5_INCLUDE_DIRS HDF5::HDF5 INTERFACE_INCLUDE_DIRECTORIES)
+if(TARGET HDF5::HDF5)
+    get_target_property(HDF5_INCLUDE_DIRS HDF5::HDF5 INTERFACE_INCLUDE_DIRECTORIES)
+endif()
 
 # === TIFF Setup ===
 # Find TIFF - try config first, then allow CMake's FindTIFF.cmake module
