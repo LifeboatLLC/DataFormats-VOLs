@@ -158,7 +158,8 @@ error:
     return -1;
 }
 
-/* Helper function to open, read, and print the raw value of an individual string type gEntry value */
+/* Helper function to open, read, and print the raw value of an individual string type gEntry value
+ */
 static int print_string_gentry(hid_t obj_id, const char *attr_name)
 {
     hid_t attr_id = H5I_INVALID_HID;
@@ -223,7 +224,8 @@ error:
     return -1;
 }
 
-/* Helper function to open, read, and print the raw value of an individual EPOCH16 type gEntry value */
+/* Helper function to open, read, and print the raw value of an individual EPOCH16 type gEntry value
+ */
 static int print_epoch16_gentry(hid_t obj_id, const char *attr_name)
 {
     hid_t attr_id = H5I_INVALID_HID;
@@ -383,7 +385,6 @@ error:
 
     return -1;
 }
-
 
 int main(void)
 {
