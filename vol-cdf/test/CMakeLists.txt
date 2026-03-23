@@ -1,6 +1,3 @@
-# Good for debugging.
-set(CMAKE_CTEST_ARGUMENTS --output-on-failure)
-
 # Build the CDF test (now includes test file generation)
 add_executable (test_runner test_runner.c cdf_tests.c)
 
@@ -14,28 +11,24 @@ target_compile_definitions (test_runner PRIVATE
 # Link test_runner with required libraries
 target_link_libraries (test_runner PRIVATE HDF5::HDF5) 
 
-# Copy the CDF data file "example1.cdf" to the build directory
-configure_file(
-    "${PROJECT_SOURCE_DIR}/test/example1.cdf"
-    "${CMAKE_CURRENT_BINARY_DIR}/example1.cdf"
-    COPYONLY
-)
 
 # Set default working directory for all tests in this CMakeLists.txt to be the "build/test" directory where the test CDF files are located
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PROPERTY TEST_WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-# Build executable to generate example2.cdf
-add_executable(generate_example2_cdf generate_example2_cdf.c)
-target_include_directories(generate_example2_cdf PRIVATE ${CDF_INCLUDE_DIR})
-target_link_libraries(generate_example2_cdf PRIVATE cdf::cdf)
+# Copy the CDF data file "example1.cdf" to the build directory
+configure_file(
+    "${PROJECT_SOURCE_DIR}/files/example1.cdf"
+    "${CMAKE_CURRENT_BINARY_DIR}/example1.cdf"
+    COPYONLY
+)
 
-# Add custom command to generate example2.cdf before running tests
+# # Add custom command to generate example2.cdf before running tests
 set(GENERATED_CDF "${CMAKE_CURRENT_BINARY_DIR}/example2.cdf")
 add_custom_command(
     OUTPUT ${GENERATED_CDF}
-    COMMAND generate_example2_cdf
+    COMMAND "$<TARGET_FILE:generate_example2_cdf>"
     DEPENDS generate_example2_cdf
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Generating example2.cdf"

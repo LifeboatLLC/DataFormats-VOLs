@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
 
     // Compute second epoch16 value with different date/time for variety
     double epoch16_values2[2];
-    status = computeEPOCH16(1990L, 1L, 1L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, epoch16_values2);
+    status = computeEPOCH16(1990L, 1L, 1L, 12L, 45L, 678L, 123L, 321L, 4L, 5L, epoch16_values2);
     CHECK(status, "computeEPOCH16 failed");
 
     // Add the second epoch16 value
@@ -137,8 +137,7 @@ int main(int argc, char *argv[])
     // Create an rVariable (char)
     // -----------------------------
     long char_rVar_dimVarys[2] = {NOVARY, NOVARY};
-    status =
-        CDFvarCreate(id, "rVar_char", CDF_CHAR, 28, NOVARY, char_rVar_dimVarys, &char_rVar_num);
+    status = CDFvarCreate(id, "rVar_char", CDF_CHAR, 28, NOVARY, char_rVar_dimVarys, &char_rVar_num);
     CHECK(status, "CDFcreaterVar failed - rVar_char");
     // -----------------------------
     // Add rEntry (char) to rVar
