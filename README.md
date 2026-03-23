@@ -1,9 +1,9 @@
 # HDF5 VOL Connectors to Earth Sciences Binary Data Formats
 
-[![GeoTIFF VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-geotiff-ci.yml/badge.svg?branch=vol_ci)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-geotiff-ci.yml)
-[![CDF VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-cdf-ci.yml/badge.svg?branch=vol_ci)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-cdf-ci.yml)
-[![BUFR VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-bufr-ci.yml/badge.svg?branch=vol_ci)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-bufr-ci.yml)
-[![GRIB2 VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-grib2-ci.yml/badge.svg?branch=vol_ci)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-grib2-ci.yml)
+[![GeoTIFF VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-geotiff-ci.yml/badge.svg?branch=main)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-geotiff-ci.yml)
+[![CDF VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-cdf-ci.yml/badge.svg?branch=main)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-cdf-ci.yml)
+[![BUFR VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-bufr-ci.yml/badge.svg?branch=main)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-bufr-ci.yml)
+[![GRIB2 VOL CI](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-grib2-ci.yml/badge.svg?branch=main)](https://github.com/LifeboatLLC/DataFormats-VOLs/actions/workflows/vol-grib2-ci.yml)
 
 
 <!--

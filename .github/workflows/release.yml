@@ -1,9 +1,20 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. vX.Y.Z)'
+        required: true
+        type: string
+      release_type:
+        description: 'Release type'
+        required: true
+        type: choice
+        options:
+          - pre-release
+          - release
+        default: pre-release
 
 jobs:
   create-release:
@@ -12,114 +23,173 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Create Release
-      id: create_release
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref_name }}
-        name: GeoTIFF VOL Connector ${{ github.ref_name }}
-        body: |
-          # GeoTIFF VOL Connector Release ${{ github.ref_name }}
-
-          ## What's New
-          - HDF5 Virtual Object Layer connector for GeoTIFF files
-          - Enables reading GeoTIFF files through HDF5 and netCDF tools
-          - Support for multiple data types and spatial metadata
-
-          ## Installation
-          Download the appropriate binary for your platform, or build from source using the instructions in the README.
-
-          ## Dependencies
-          - HDF5 develop branch (1.15.0+)
-          - libtiff
-          - libgeotiff
-
-          ## Usage
-          ```bash
-          export HDF5_PLUGIN_PATH=/path/to/vol-geotiff/lib
-          h5dump --vol-name=geotiff_vol_connector sample.tif
-          ncdump sample.tif
-          ```
-
-          See the [README](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md) for complete documentation.
+        tag_name: ${{ inputs.version }}
+        name: HDF5 VOL connectors ${{ inputs.version }}
+        body_path: RELEASE.md
         draft: false
-        prerelease: false
+        prerelease: ${{ inputs.release_type == 'pre-release' }}
 
   build-linux:
     needs: create-release
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: [x86_64]
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
           cmake \
+          gfortran \
+          zlib1g-dev \
+          libcurl4-openssl-dev \
+          libjpeg-dev \
+          libpng-dev \
+          libwebp-dev \
+          libzstd-dev \
+          liblzma-dev \
+          libopenjp2-7-dev \
+          libnetcdf-dev \
+          libaec-dev \
+          libncurses5-dev \
           libtiff5-dev \
           libgeotiff-dev \
-          zlib1g-dev
+          libproj-dev
 
-    - name: Build HDF5
+    - name: Install HDF5
       run: |
-        git clone --depth 1 --branch develop https://github.com/HDFGroup/hdf5.git hdf5-develop
-        cd hdf5-develop
+        cd ${{ github.workspace }}
+        wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-ubuntu-2404_gcc.tar.gz -O hdf5-release.tar.gz
+        tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Linux.tar.gz
+        tar xzf hdf5/HDF5-2.0.0-Linux.tar.gz
+        mv HDF5-2.0.0-Linux/HDF_Group/HDF5/2.0.0 hdf5-install
+
+    - name: Cache ecCodes
+      id: cache-eccodes
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/eccodes-install
+        key: >-
+          eccodes-2.38.3-ubuntu-latest-release-
+          ${{ hashFiles('.github/workflows/release.yml') }}
+        restore-keys: |
+          eccodes-2.38.3-ubuntu-latest-release-
+
+    - name: Build ecCodes
+      if: steps.cache-eccodes.outputs.cache-hit != 'true'
+      run: |
+        cd ${{ github.workspace }}
+        wget -q https://confluence.ecmwf.int/download/attachments/45757960/eccodes-2.38.3-Source.tar.gz
+        tar -xzf eccodes-2.38.3-Source.tar.gz
+        cd eccodes-2.38.3-Source
         mkdir build && cd build
         cmake .. \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/hdf5-install \
-          -DHDF5_ENABLE_PARALLEL=OFF \
-          -DHDF5_BUILD_TOOLS=ON \
-          -DHDF5_BUILD_EXAMPLES=OFF \
-          -DHDF5_BUILD_TESTS=OFF \
-          -DBUILD_SHARED_LIBS=ON
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/eccodes-install \
+          -DENABLE_FORTRAN=OFF \
+          -DENABLE_PYTHON=OFF \
+          -DENABLE_BUILD_TOOLS=ON \
+          -DENABLE_ECCODES_THREADS=ON
         make -j$(nproc)
         make install
 
-    - name: Build GeoTIFF VOL Connector
+    - name: Cache CDF library
+      id: cache-cdf
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/cdf-install
+        key: >-
+          cdf-3.9.1-ubuntu-latest-release-
+          ${{ hashFiles('.github/workflows/release.yml') }}
+        restore-keys: |
+          cdf-3.9.1-ubuntu-latest-release-
+
+    - name: Build CDF library
+      if: steps.cache-cdf.outputs.cache-hit != 'true'
+      run: |
+        cd ${{ github.workspace }}
+        wget -q https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/linux/cdf39_1-dist-all.tar.gz
+        tar -xzf cdf39_1-dist-all.tar.gz
+        cd cdf39_1-dist
+        make OS=linux ENV=gnu all
+        make INSTALLDIR=${{ github.workspace }}/cdf-install install
+
+    - name: Build vol-bufr
+      run: |
+        cd vol-bufr
+        mkdir build && cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${{ github.workspace }}/eccodes-install" \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install/vol-bufr
+        make -j$(nproc)
+        make install
+
+    - name: Build vol-cdf
+      run: |
+        cd vol-cdf
+        mkdir build && cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${{ github.workspace }}/cdf-install" \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install/vol-cdf
+        make -j$(nproc)
+        make install
+
+    - name: Build vol-geotiff
       run: |
         cd vol-geotiff
         mkdir build && cd build
         cmake .. \
           -DCMAKE_BUILD_TYPE=Release \
-          -DHDF5_DIR=${{ github.workspace }}/hdf5-install/share/cmake \
-          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/geotiff-vol-install
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install" \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install/vol-geotiff
+        make -j$(nproc)
+        make install
+
+    - name: Build vol-grib2
+      run: |
+        cd vol-grib2
+        mkdir build && cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${{ github.workspace }}/eccodes-install" \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install/vol-grib2
         make -j$(nproc)
         make install
 
     - name: Create package
       run: |
         cd ${{ github.workspace }}
-        mkdir -p geotiff-vol-connector-linux-${{ matrix.arch }}
-        cp -r geotiff-vol-install/* geotiff-vol-connector-linux-${{ matrix.arch }}/
-        cp README.md geotiff-vol-connector-linux-${{ matrix.arch }}/
-        cp COPYING geotiff-vol-connector-linux-${{ matrix.arch }}/LICENSE
+        PKG="dataformats-vol-connectors-linux-x86_64"
+        mkdir -p "$PKG"
+        cp -r install/* "$PKG/"
+        cp README.md "$PKG/"
 
-        # Create usage script
-        cat > geotiff-vol-connector-linux-${{ matrix.arch }}/setup.sh << 'EOF'
+        cat > "$PKG/setup.sh" << 'SETUPEOF'
         #!/bin/bash
         SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-        export HDF5_PLUGIN_PATH="${SCRIPT_DIR}/lib"
-        echo "GeoTIFF VOL Connector environment configured."
-        echo "You can now use: h5dump --vol-name=geotiff_vol_connector your_file.tif"
-        EOF
-        chmod +x geotiff-vol-connector-linux-${{ matrix.arch }}/setup.sh
+        export HDF5_PLUGIN_PATH="${SCRIPT_DIR}/vol-bufr/lib:${SCRIPT_DIR}/vol-cdf/lib:${SCRIPT_DIR}/vol-geotiff/lib:${SCRIPT_DIR}/vol-grib2/lib"
+        echo "HDF5 VOL connectors environment configured."
+        echo "HDF5_PLUGIN_PATH=${HDF5_PLUGIN_PATH}"
+        SETUPEOF
+        chmod +x "$PKG/setup.sh"
 
-        tar -czf geotiff-vol-connector-linux-${{ matrix.arch }}.tar.gz geotiff-vol-connector-linux-${{ matrix.arch }}
+        tar -czf "${PKG}.tar.gz" "$PKG"
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref_name }}
-        files: ./geotiff-vol-connector-linux-${{ matrix.arch }}.tar.gz
+        tag_name: ${{ inputs.version }}
+        files: ./dataformats-vol-connectors-linux-x86_64.tar.gz
 
   build-macos:
     needs: create-release
@@ -128,64 +198,141 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
-        brew install cmake libtiff libgeotiff
+        brew install \
+          cmake \
+          gcc \
+          zlib \
+          curl \
+          jpeg \
+          libpng \
+          webp \
+          zstd \
+          xz \
+          openjpeg \
+          netcdf \
+          libaec \
+          libtiff \
+          libgeotiff \
+          proj
 
-    - name: Build HDF5
+    - name: Install HDF5
       run: |
-        git clone --depth 1 --branch develop https://github.com/HDFGroup/hdf5.git hdf5-develop
-        cd hdf5-develop
+        cd ${{ github.workspace }}
+        wget -q https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5-2.0.0-macos14_clang.tar.gz -O hdf5-release.tar.gz
+        tar xzf hdf5-release.tar.gz hdf5/HDF5-2.0.0-Darwin.tar.gz
+        tar xzf hdf5/HDF5-2.0.0-Darwin.tar.gz
+        mv HDF5-2.0.0-Darwin/HDF_Group/HDF5/2.0.0 hdf5-install
+
+    - name: Cache ecCodes
+      id: cache-eccodes
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/eccodes-install
+        key: >-
+          eccodes-2.38.3-macos-latest-release-
+          ${{ hashFiles('.github/workflows/release.yml') }}
+        restore-keys: |
+          eccodes-2.38.3-macos-latest-release-
+
+    - name: Build ecCodes
+      if: steps.cache-eccodes.outputs.cache-hit != 'true'
+      run: |
+        cd ${{ github.workspace }}
+        wget -q https://confluence.ecmwf.int/download/attachments/45757960/eccodes-2.38.3-Source.tar.gz
+        tar -xzf eccodes-2.38.3-Source.tar.gz
+        cd eccodes-2.38.3-Source
         mkdir build && cd build
         cmake .. \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/hdf5-install \
-          -DHDF5_ENABLE_PARALLEL=OFF \
-          -DHDF5_BUILD_TOOLS=ON \
-          -DHDF5_BUILD_EXAMPLES=OFF \
-          -DHDF5_BUILD_TESTS=OFF \
-          -DBUILD_SHARED_LIBS=ON
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/eccodes-install \
+          -DENABLE_FORTRAN=OFF \
+          -DENABLE_PYTHON=OFF \
+          -DENABLE_BUILD_TOOLS=ON \
+          -DENABLE_ECCODES_THREADS=ON
         make -j$(sysctl -n hw.ncpu)
         make install
 
-    - name: Build GeoTIFF VOL Connector
+    - name: Install CDF library
       run: |
+        curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/macosx/CDF3_9_1-binary_signed.pkg
+        sudo installer -pkg CDF3_9_1-binary_signed.pkg -target /
+        sudo chmod -R a+rX /Applications/cdf
+
+    - name: Build vol-bufr
+      run: |
+        cd vol-bufr
         mkdir build && cd build
         cmake .. \
           -DCMAKE_BUILD_TYPE=Release \
-          -DHDF5_DIR=${{ github.workspace }}/hdf5-install/share/cmake \
-          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/geotiff-vol-install
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${{ github.workspace }}/eccodes-install" \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install/vol-bufr
+        make -j$(sysctl -n hw.ncpu)
+        make install
+
+    - name: Build vol-cdf
+      run: |
+        cd vol-cdf
+        mkdir build && cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;/Applications/cdf/cdf39_1-dist" \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install/vol-cdf
+        DYLD_LIBRARY_PATH=/Applications/cdf/cdf39_1-dist/lib:$DYLD_LIBRARY_PATH \
+        make -j$(sysctl -n hw.ncpu)
+        make install
+
+    - name: Build vol-geotiff
+      run: |
+        cd vol-geotiff
+        mkdir build && cd build
+        BREW_PREFIX=$(brew --prefix)
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${BREW_PREFIX}" \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install/vol-geotiff
+        make -j$(sysctl -n hw.ncpu)
+        make install
+
+    - name: Build vol-grib2
+      run: |
+        cd vol-grib2
+        mkdir build && cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/hdf5-install;${{ github.workspace }}/eccodes-install" \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install/vol-grib2
         make -j$(sysctl -n hw.ncpu)
         make install
 
     - name: Create package
       run: |
         cd ${{ github.workspace }}
-        mkdir -p geotiff-vol-connector-macos
-        cp -r geotiff-vol-install/* geotiff-vol-connector-macos/
-        cp README.md geotiff-vol-connector-macos/
-        cp COPYING geotiff-vol-connector-macos/LICENSE
+        PKG="dataformats-vol-connectors-macos"
+        mkdir -p "$PKG"
+        cp -r install/* "$PKG/"
+        cp README.md "$PKG/"
 
-        # Create usage script
-        cat > geotiff-vol-connector-macos/setup.sh << 'EOF'
+        cat > "$PKG/setup.sh" << 'SETUPEOF'
         #!/bin/bash
         SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-        export HDF5_PLUGIN_PATH="${SCRIPT_DIR}/lib"
-        export DYLD_LIBRARY_PATH="${SCRIPT_DIR}/lib:${DYLD_LIBRARY_PATH}"
-        echo "GeoTIFF VOL Connector environment configured."
-        echo "You can now use: h5dump --vol-name=geotiff_vol_connector your_file.tif"
-        EOF
-        chmod +x geotiff-vol-connector-macos/setup.sh
+        export HDF5_PLUGIN_PATH="${SCRIPT_DIR}/vol-bufr/lib:${SCRIPT_DIR}/vol-cdf/lib:${SCRIPT_DIR}/vol-geotiff/lib:${SCRIPT_DIR}/vol-grib2/lib"
+        export DYLD_LIBRARY_PATH="${HDF5_PLUGIN_PATH}:${DYLD_LIBRARY_PATH}"
+        echo "HDF5 VOL connectors environment configured."
+        echo "HDF5_PLUGIN_PATH=${HDF5_PLUGIN_PATH}"
+        SETUPEOF
+        chmod +x "$PKG/setup.sh"
 
-        tar -czf geotiff-vol-connector-macos.tar.gz geotiff-vol-connector-macos
+        tar -czf "${PKG}.tar.gz" "$PKG"
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref_name }}
-        files: ./geotiff-vol-connector-macos.tar.gz
+        tag_name: ${{ inputs.version }}
+        files: ./dataformats-vol-connectors-macos.tar.gz
 
   build-source:
     needs: create-release
@@ -197,20 +344,31 @@ jobs:
     - name: Create source package
       run: |
         cd ${{ github.workspace }}
-        mkdir -p geotiff-vol-connector-source
+        PKG="dataformats-vol-connectors-source"
+        mkdir -p "$PKG"
 
-        # Copy source files
-        cp -r src test geotiff-vol-connector-source/
-        cp README.md COPYING AUTHORS version.txt geotiff-vol-connector-source/
-        cp CMakeLists.txt geotiff-vol-connector-source/
+        # Copy each connector directory
+        for vol in vol-bufr vol-cdf vol-geotiff vol-grib2; do
+          cp -r "$vol" "$PKG/"
+        done
 
-        # Create source tarball
-        tar -czf geotiff-vol-connector-source.tar.gz geotiff-vol-connector-source
+        # Copy top-level files
+        cp README.md "$PKG/"
+        cp RELEASE_BODY.md "$PKG/"
+        [ -f LICENSE ] && cp LICENSE "$PKG/"
+        [ -f COPYING ] && cp COPYING "$PKG/"
+        [ -f AUTHORS ] && cp AUTHORS "$PKG/"
+
+        tar -czf "${PKG}.tar.gz" \
+          --exclude='*/build/*' \
+          --exclude='*/_tmp_*' \
+          --exclude='*/.vscode/*' \
+          "$PKG"
 
     - name: Upload Source Asset
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref_name }}
-        files: ./geotiff-vol-connector-source.tar.gz
+        tag_name: ${{ inputs.version }}
+        files: ./dataformats-vol-connectors-source.tar.gz
