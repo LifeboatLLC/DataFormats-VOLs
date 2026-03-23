@@ -9,6 +9,8 @@ The connector exposes a flat HDF5 namespace:
 
 All objects are read-only.
 
+An example program demonstrating the CDF VOL connector's use can be found at the bottom of the `usage.md` document, or otherwise can be found in `vol-cdf/examples/cdf_example.c`.
+
 ## 1. HDF5 Object Model for CDF 
 **Namespace and groups**  
 
@@ -31,7 +33,7 @@ Dataset names must match the CDF variable name exactly and **must not include a 
 CDF files are accessed through the **HDF5 API** using the CDF VOL connector. Before opening a file with `H5Fopen`, the VOL connector must be registered and a file access property list (FAPL) must be created and configured to use that connector. Once that is done, the file can be opened in read-only mode as a standard HDF5 file. 
 
 **Example:** 
-```
+```c
 /* Register the CDF VOL connector and create a FAPL */
 hid_t vol_id  = H5VLregister_connector_by_name(CDF_VOL_CONNECTOR_NAME, H5P_DEFAULT);
 /* Create FAPL */
@@ -75,7 +77,7 @@ The `H5Lexists()` function can be used with the CDF VOL connector to check if a 
 * The function returns a positive value if the variable exists, zero if it does not, and a negative value in case of errors.
 
 **Example:**
-```
+```c
 htri_t exists = H5Lexists(root_group_id, "UNITS");
 /* Then check 'exists' to see if that attribute exists on that dataset */
 ```
@@ -102,7 +104,7 @@ CDF
 Datasets are opened by passing the dataset name to `H5Dopen2`.
 
 **Example:**  
-```
+```c
 dset_id = H5Dopen2(file_id, "Image", H5P_DEFAULT);
 ```
 Using a leading slash (for example `"/Image"`) is also supported - Datasets are considered to be attached to root group.
@@ -135,7 +137,7 @@ CDF variable attributes (`vAttributes`) are exposed as HDF5 attributes attached 
 A single `vAttribute` may contain multiple `zEntries`. Each `zEntry` belongs to exactly one CDF variable. The connector exposes each `zEntry` as a separate HDF5 attribute on that variable’s dataset.
 
 **For Example:** to open attribute `FIELDNAM` on dataset `Image`:
-```
+```c
 dset_id  = H5Dopen2(file_id, "Image", H5P_DEFAULT);
 attr_id  = H5Aopen(dset_id, "FIELDNAM", H5P_DEFAULT);
 ```
@@ -150,7 +152,7 @@ The corresponding HDF5 datatype and size of the attribute should be found by usi
 CDF global attributes (`gAttributes`) are exposed as HDF5 attributes attached to the file object (not to datasets). Like `vAttributes`, which store a single entry per variable, a single `gAttribute` can contain multiple `gEntries` (each with a different datatype) for the file as a whole. Because HDF5 attributes do not natively support multiple entries under the same name, the connector provides two access methods:
 
 **1. Open a specific gEntry by index**  
-```
+```c
 attr_id = H5Aopen(file_id, "TITLE_k", H5P_DEFAULT);
 ```
 This opens the `gEntry` with index `k` from `gAttribute` "TITLE", `0` \=\< `k` \<\= `M`, where `M` is the maximum `gEntry` index in the `gAttribute`. The HDF5 attribute datatype will correspond to the CDF datatype of the gEntry at index `k`.
@@ -158,7 +160,7 @@ This opens the `gEntry` with index `k` from `gAttribute` "TITLE", `0` \=\< `k` \
 **Note:** We specifically state that `k` must be less than or equal to the max `gEntry` index because `gAttributes` can have sparse `gEntry` lists, meaning that some intermediate indices may not actually exist, so attempting to open a `gEntry` at a non-existent index will result in an error.
 
 **2. Open the entire gAttribute as an array of strings:**  
-```
+```c
 attr_id = H5Aopen(file_id, "UNITS", H5P_DEFAULT);
 ```
 When opened without an index, the attribute is returned as a 1D fixed-length string array, where each element corresponds to one `gEntry`.
@@ -176,9 +178,16 @@ The `H5Aexists()` function can be used with the CDF VOL connector to check if an
 * The function returns a positive value if the variable exists, zero if it does not, and a negative value in case of errors.
 
 **Example:**
-```
+```c
 htri_t exists = H5Aexists(dset_id, "UNITS");
 /* Then check 'exists' to see if that attribute exists on that dataset */
+```
+
+**Indexed global attributes can also be passed to `H5Aexists()` to check if individual gEntries exist within an attribute:**
+**Example:**
+```c
+htri_t exists = H5Aexists(group_id, "TITLE_1");
+/* Then check 'exists' to see if gEntry #1 exists in that specific global attribute */
 ```
 
 ### 5.4 Attribute Iteration
@@ -191,7 +200,7 @@ HDF5 provides the `H5Aiterate2()` API to walk through attributes attached to a g
 * Deletion of attributes is **not supported**.
 
 **Example:**
-```
+```c
 hsize_t idx = 0;
 H5Aiterate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, attr_iteration_cb, &op_data);
 ```
@@ -199,6 +208,10 @@ H5Aiterate2(file_id, H5_INDEX_NAME, H5_ITER_INC, &idx, attr_iteration_cb, &op_da
 * `op_data` is a user-defined structure for passing context to the callback.
 
 This method allows the user to discover all *available attributes* without needing to know their names in advance. For indexed access to individual attribute entries, use `H5Aopen()` with the appropriate suffix (e.g., 'TITLE_0').
+
+### 5.5 Attribute Limitations
+* The only way to find the valid gEntry indices for a specific gAttribute is to read the gAttribute an study the first number in each string in the returned stringified gEntry array. gEntry indices are not reported in any other way.
+* While `H5Aexists()` can be used to determine the existence of individual gEntries in a gAttribute (as mentioned in 5.4), `H5Aiterate2()` will not iterate over individual gEntries. Only the gAttribute names will be iterated.
 
 ## 6. Ordering and Consistency Guarantees
 

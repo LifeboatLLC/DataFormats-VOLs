@@ -84,6 +84,7 @@ static herr_t file_info(hid_t loc_id, const char *name, const H5L_info2_t *finfo
     return 0;
 }
 
+/* Helper function to open, read, and print a gAttribute gEntry list */
 static int print_gAttribute_gentry_list(hid_t obj_id, const char *attr_name)
 {
     hid_t attr_id = H5I_INVALID_HID;
@@ -157,6 +158,7 @@ error:
     return -1;
 }
 
+/* Helper function to open, read, and print the raw value of an individual string type gEntry value */
 static int print_string_gentry(hid_t obj_id, const char *attr_name)
 {
     hid_t attr_id = H5I_INVALID_HID;
@@ -221,6 +223,7 @@ error:
     return -1;
 }
 
+/* Helper function to open, read, and print the raw value of an individual EPOCH16 type gEntry value */
 static int print_epoch16_gentry(hid_t obj_id, const char *attr_name)
 {
     hid_t attr_id = H5I_INVALID_HID;
@@ -298,6 +301,7 @@ error:
     return -1;
 }
 
+/* Helper function to open, read, and print the raw value of an EPOCH16 type dataset */
 static int print_epoch16_dataset(hid_t obj_id, const char *dset_name)
 {
     hid_t dset_id = H5I_INVALID_HID;
@@ -379,6 +383,7 @@ error:
 
     return -1;
 }
+
 
 int main(void)
 {
