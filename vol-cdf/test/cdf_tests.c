@@ -155,11 +155,8 @@ int CheckExistenceAndOpenTest(void)
         goto error;
     }
 
-    if (ginfo.storage_type != H5G_STORAGE_TYPE_COMPACT
-        || ginfo.nlinks != 3
-        || ginfo.max_corder != 2
-        || ginfo.mounted) 
-    {
+    if (ginfo.storage_type != H5G_STORAGE_TYPE_COMPACT || ginfo.nlinks != 3 ||
+        ginfo.max_corder != 2 || ginfo.mounted) {
         printf("Group info returned from H5Gget_info() is wrong\n");
         goto error;
     }
@@ -1427,11 +1424,11 @@ int ReadUnindexedGlobalArrayAttributeTest(void)
         goto error;
     }
 
-    const char *expected_titles[] = {"0 (CDF_CHAR/18): Second Example CDF", 
-                                     "1 (CDF_UCHAR/21): Author: Lifeboat, LLC",
-                                     "2 (CDF_DOUBLE/1): 3.141592653589793",
-                                     "3 (CDF_EPOCH16/2): [{6.2798418e+10, 1.23321e+11}, {6.3933885e+10, 1.2345679e+11}]",
-                                     "20 (CDF_TIME_TT2000/1): 1625097600000000000"};
+    const char *expected_titles[] = {
+        "0 (CDF_CHAR/18): Second Example CDF", "1 (CDF_UCHAR/21): Author: Lifeboat, LLC",
+        "2 (CDF_DOUBLE/1): 3.141592653589793",
+        "3 (CDF_EPOCH16/2): [{6.2798418e+10, 1.23321e+11}, {6.3933885e+10, 1.2345679e+11}]",
+        "20 (CDF_TIME_TT2000/1): 1625097600000000000"};
     for (size_t i = 0; i < 5; i++) {
         const char *s = attr_data + (i * type_size);
         size_t expected_len = strlen(expected_titles[i]);

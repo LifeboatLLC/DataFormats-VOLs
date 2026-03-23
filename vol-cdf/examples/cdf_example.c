@@ -3,8 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static const char *
-datatype_name(hid_t type_id)
+static const char *datatype_name(hid_t type_id)
 {
     if (H5Tequal(type_id, H5T_NATIVE_LONG) > 0)
         return "H5T_NATIVE_LONG";
@@ -19,20 +18,18 @@ datatype_name(hid_t type_id)
             return "HDF5 variable-length string";
         else
             return "HDF5 fixed-length string";
-    }
-    else
+    } else
         return "Other";
 }
 
 /* Callback executed for each attribute */
-static herr_t
-attr_info(hid_t loc_id, const char *name, const H5A_info_t *ainfo, void *opdata)
+static herr_t attr_info(hid_t loc_id, const char *name, const H5A_info_t *ainfo, void *opdata)
 {
-    hid_t   attr_id  = H5I_INVALID_HID;
-    hid_t   type_id  = H5I_INVALID_HID;
-    size_t *count    = (size_t *)opdata;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    size_t *count = (size_t *) opdata;
 
-    (void)ainfo;
+    (void) ainfo;
 
     attr_id = H5Aopen(loc_id, name, H5P_DEFAULT);
     if (attr_id < 0) {
@@ -57,16 +54,15 @@ attr_info(hid_t loc_id, const char *name, const H5A_info_t *ainfo, void *opdata)
 }
 
 /* Callback to find number of groups in the file */
-static herr_t
-file_info(hid_t loc_id, const char *name, const H5L_info2_t *finfo, void *opdata)
-{   
-    size_t *count = (size_t *)opdata;
+static herr_t file_info(hid_t loc_id, const char *name, const H5L_info2_t *finfo, void *opdata)
+{
+    size_t *count = (size_t *) opdata;
     hid_t dset_id = H5I_INVALID_HID;
 
-    (void)name;
-    (void)finfo;
+    (void) name;
+    (void) finfo;
 
-    printf ("Dataset name \"%s\" \n", name);   
+    printf("Dataset name \"%s\" \n", name);
     (*count)++;
 
     if ((dset_id = H5Dopen2(loc_id, name, H5P_DEFAULT)) < 0) {
@@ -81,27 +77,26 @@ file_info(hid_t loc_id, const char *name, const H5L_info2_t *finfo, void *opdata
         fprintf(stderr, "Failed to find number of attributes attached to dataset '%s'\n", name);
         return 0; /* continue iteration */
     }
-    printf ("Number of attributes attached to dataset '%s' is %zu \n", name, num_attrs);
+    printf("Number of attributes attached to dataset '%s' is %zu \n", name, num_attrs);
 
     H5Dclose(dset_id);
 
     return 0;
 }
 
-static int
-print_gAttribute_gentry_list(hid_t obj_id, const char *attr_name)
+static int print_gAttribute_gentry_list(hid_t obj_id, const char *attr_name)
 {
-    hid_t    attr_id  = H5I_INVALID_HID;
-    hid_t    space_id = H5I_INVALID_HID;
-    hid_t    type_id  = H5I_INVALID_HID;
-    char    *data     = NULL;
-    hsize_t  dims[1]  = {0};
-    size_t   type_size;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    char *data = NULL;
+    hsize_t dims[1] = {0};
+    size_t type_size;
 
     attr_id = H5Aopen(obj_id, attr_name, H5P_DEFAULT);
     if (attr_id < 0)
         goto error;
-    
+
     space_id = H5Aget_space(attr_id);
     if (space_id < 0)
         goto error;
@@ -119,7 +114,7 @@ print_gAttribute_gentry_list(hid_t obj_id, const char *attr_name)
         goto error;
 
     type_size = H5Tget_size(type_id);
-    if (type_size <= 0) 
+    if (type_size <= 0)
         goto error;
 
     data = (char *) calloc(dims[0], type_size);
@@ -144,7 +139,7 @@ print_gAttribute_gentry_list(hid_t obj_id, const char *attr_name)
     H5Tclose(type_id);
     H5Sclose(space_id);
     H5Aclose(attr_id);
-    
+
     return 0;
 error:
     if (data) {
@@ -162,81 +157,78 @@ error:
     return -1;
 }
 
-static int
-print_string_gentry(hid_t obj_id, const char *attr_name)
+static int print_string_gentry(hid_t obj_id, const char *attr_name)
 {
-    hid_t    attr_id  = H5I_INVALID_HID;
-    hid_t    space_id = H5I_INVALID_HID;
-    hid_t    type_id  = H5I_INVALID_HID;
-    char    *data     = NULL;
-    size_t   type_size;
-    
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    char *data = NULL;
+    size_t type_size;
+
     attr_id = H5Aopen(obj_id, attr_name, H5P_DEFAULT);
     if (attr_id < 0)
         return -1;
-    
+
     space_id = H5Aget_space(attr_id);
     if (space_id < 0)
         goto error;
-    
+
     if (H5Sget_simple_extent_ndims(space_id) != 0) {
         fprintf(stderr, "Attribute '%s' is not scalar\n", attr_name);
         goto error;
     }
-    
+
     type_id = H5Aget_type(attr_id);
     if (type_id < 0)
         goto error;
-    
+
     type_size = H5Tget_size(type_id);
-    if (type_size <= 0) 
+    if (type_size <= 0)
         goto error;
-    
-    
+
     /* Only allocate for a single element of this type since attr is scalar */
     data = (char *) malloc(type_size);
     if (!data) {
         fprintf(stderr, "Memory allocation failed for attribute '%s'\n", attr_name);
         goto error;
     }
-    
+
     if (H5Aread(attr_id, type_id, data) < 0)
         goto error;
-    
+
     printf("Value of attribute '%s':  %s\n", attr_name, data);
-    
+
     free(data);
-    
+
     H5Tclose(type_id);
     H5Sclose(space_id);
     H5Aclose(attr_id);
-    
+
     return 0;
 error:
     if (data) {
         free(data);
         data = NULL;
     }
-    
+
     if (type_id >= 0)
         H5Tclose(type_id);
     if (space_id >= 0)
         H5Sclose(space_id);
     if (attr_id >= 0)
         H5Aclose(attr_id);
-    
+
     return -1;
 }
 
-static int
-print_epoch16_gentry(hid_t obj_id, const char *attr_name)
+static int print_epoch16_gentry(hid_t obj_id, const char *attr_name)
 {
-    hid_t    attr_id  = H5I_INVALID_HID;
-    hid_t    space_id = H5I_INVALID_HID;
-    hid_t    type_id  = H5I_INVALID_HID;
-    double  *data     = NULL;
-    hsize_t  dims[1]  = {0};
-    size_t   type_size;
+    hid_t attr_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    double *data = NULL;
+    hsize_t dims[1] = {0};
+    size_t type_size;
 
     attr_id = H5Aopen(obj_id, attr_name, H5P_DEFAULT);
     if (attr_id < 0)
@@ -259,7 +251,7 @@ print_epoch16_gentry(hid_t obj_id, const char *attr_name)
         goto error;
 
     type_size = H5Tget_size(type_id);
-    if (type_size != 2 * sizeof(double)) 
+    if (type_size != 2 * sizeof(double))
         goto error;
 
     /* Allocate buffer for all epoch16 values in attribute */
@@ -279,8 +271,8 @@ print_epoch16_gentry(hid_t obj_id, const char *attr_name)
     for (hsize_t i = 0; i < dims[0]; i++) {
         double first = data[DOUBLES_IN_EPOCH16 * i];
         double second = data[DOUBLES_IN_EPOCH16 * i + 1];
-        printf("Attribute '%s', element %llu: [%f, %f]\n",
-               attr_name, (unsigned long long)i, first, second);
+        printf("Attribute '%s', element %llu: [%f, %f]\n", attr_name, (unsigned long long) i, first,
+               second);
     }
 
     free(data);
@@ -288,7 +280,7 @@ print_epoch16_gentry(hid_t obj_id, const char *attr_name)
     H5Tclose(type_id);
     H5Sclose(space_id);
     H5Aclose(attr_id);
-    
+
     return 0;
 error:
     if (data) {
@@ -306,15 +298,14 @@ error:
     return -1;
 }
 
-static int
-print_epoch16_dataset(hid_t obj_id, const char *dset_name)
+static int print_epoch16_dataset(hid_t obj_id, const char *dset_name)
 {
-    hid_t    dset_id  = H5I_INVALID_HID;
-    hid_t    space_id = H5I_INVALID_HID;
-    hid_t    type_id  = H5I_INVALID_HID;
-    double  *data     = NULL;
-    hsize_t  dims[2]  = {0};
-    size_t   type_size;
+    hid_t dset_id = H5I_INVALID_HID;
+    hid_t space_id = H5I_INVALID_HID;
+    hid_t type_id = H5I_INVALID_HID;
+    double *data = NULL;
+    hsize_t dims[2] = {0};
+    size_t type_size;
 
     dset_id = H5Dopen2(obj_id, dset_name, H5P_DEFAULT);
     if (dset_id < 0)
@@ -337,7 +328,7 @@ print_epoch16_dataset(hid_t obj_id, const char *dset_name)
         goto error;
 
     type_size = H5Tget_size(type_id);
-    if (type_size != 2 * sizeof(double)) 
+    if (type_size != 2 * sizeof(double))
         goto error;
 
     /* Allocate buffer for all epoch16 values in dataset */
@@ -358,15 +349,12 @@ print_epoch16_dataset(hid_t obj_id, const char *dset_name)
         for (hsize_t j = 0; j < dims[0]; j++) {
             size_t idx = (i * 2 + j) * 2;
 
-            double first  = data[idx];
+            double first = data[idx];
             double second = data[idx + 1];
 
-            printf("Dataset '%s', record %llu, epoch16 %llu: [%f, %f]\n",
-                dset_name,
-                (unsigned long long)i,
-                (unsigned long long)j,
-                first, second);
-            }
+            printf("Dataset '%s', record %llu, epoch16 %llu: [%f, %f]\n", dset_name,
+                   (unsigned long long) i, (unsigned long long) j, first, second);
+        }
     }
 
     free(data);
@@ -374,7 +362,7 @@ print_epoch16_dataset(hid_t obj_id, const char *dset_name)
     H5Tclose(type_id);
     H5Sclose(space_id);
     H5Dclose(dset_id);
-    
+
     return 0;
 error:
     if (data) {
@@ -392,18 +380,17 @@ error:
     return -1;
 }
 
-int
-main(void)
+int main(void)
 {
-    hid_t vol_id   = H5I_INVALID_HID;
-    hid_t fapl_id  = H5I_INVALID_HID;
-    hid_t file_id  = H5I_INVALID_HID;
+    hid_t vol_id = H5I_INVALID_HID;
+    hid_t fapl_id = H5I_INVALID_HID;
+    hid_t file_id = H5I_INVALID_HID;
     hid_t group_id = H5I_INVALID_HID;
-    hid_t dset_id  = H5I_INVALID_HID;
-    hsize_t idx    = 0;
-    htri_t exists  = 0;
+    hid_t dset_id = H5I_INVALID_HID;
+    hsize_t idx = 0;
+    htri_t exists = 0;
 
-    int   ret = EXIT_FAILURE;
+    int ret = EXIT_FAILURE;
 
 #ifdef CDF_VOL_PLUGIN_PATH
     if (H5PLappend(CDF_VOL_PLUGIN_PATH) < 0) {
@@ -431,7 +418,7 @@ main(void)
         fprintf(stderr, "Failed to set VOL connector on FAPL\n");
         goto done;
     }
-    
+
     /* Open a file */
     file_id = H5Fopen("example2.cdf", H5F_ACC_RDONLY, fapl_id);
     if (file_id < 0) {
@@ -451,7 +438,7 @@ main(void)
         fprintf(stderr, "Failed to find number of datasets in 'example2.cdf'\n");
         goto done;
     }
-    printf ("Number of global attributes in the file 'example2.cdf' is %zu \n", num_gAttrs);
+    printf("Number of global attributes in the file 'example2.cdf' is %zu \n", num_gAttrs);
 
     /* Check existence of and print global attribute */
     exists = H5Aexists(group_id, "gAttr1");
@@ -473,7 +460,8 @@ main(void)
             goto done;
         }
     } else {
-        fprintf(stderr, "Failed existence check for attribute 'gAttr1_1' from file 'example2.cdf'\n");
+        fprintf(stderr,
+                "Failed existence check for attribute 'gAttr1_1' from file 'example2.cdf'\n");
         goto done;
     }
 
@@ -485,7 +473,8 @@ main(void)
             goto done;
         }
     } else {
-        fprintf(stderr, "Failed existence check for attribute 'gAttr1_3' from file 'example2.cdf'\n");
+        fprintf(stderr,
+                "Failed existence check for attribute 'gAttr1_3' from file 'example2.cdf'\n");
         goto done;
     }
 

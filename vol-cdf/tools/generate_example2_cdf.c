@@ -137,7 +137,8 @@ int main(int argc, char *argv[])
     // Create an rVariable (char)
     // -----------------------------
     long char_rVar_dimVarys[2] = {NOVARY, NOVARY};
-    status = CDFvarCreate(id, "rVar_char", CDF_CHAR, 28, NOVARY, char_rVar_dimVarys, &char_rVar_num);
+    status =
+        CDFvarCreate(id, "rVar_char", CDF_CHAR, 28, NOVARY, char_rVar_dimVarys, &char_rVar_num);
     CHECK(status, "CDFcreaterVar failed - rVar_char");
     // -----------------------------
     // Add rEntry (char) to rVar
