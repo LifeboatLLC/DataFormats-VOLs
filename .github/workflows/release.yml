@@ -355,6 +355,21 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Determine release tag
+      id: tag
+      run: |
+        BASE="${{ inputs.version }}"
+        if [ "${{ inputs.release_type }}" = "release" ]; then
+          echo "tag=${BASE}" >> "$GITHUB_OUTPUT"
+        else
+          # Find next available preN suffix
+          N=1
+          while git ls-remote --tags origin "refs/tags/${BASE}-pre${N}" | grep -q .; do
+            N=$((N + 1))
+          done
+          echo "tag=${BASE}-pre${N}" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
@@ -366,8 +381,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ inputs.version }}
-        name: HDF5 VOL connectors ${{ inputs.version }}
+        tag_name: ${{ steps.tag.outputs.tag }}
+        name: HDF5 VOL connectors ${{ steps.tag.outputs.tag }}
         body_path: RELEASE.md
         draft: false
         prerelease: ${{ inputs.release_type == 'pre-release' }}
