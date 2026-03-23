@@ -32,21 +32,33 @@ brew install cmake pkg-config
 ```
 
 #### CDF installation:
-<!-- TODO: Write CDF install instructions and test them -->
+On Ubuntu/Debian/fedora/RHEL (build from source):
+```bash
+curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest-release/cdf39_1-dist-all.tar.gz
+tar xzf cdf39_1-dist-all.tar.gz && cd cdf39_1-dist
+make -j$(nproc) OS=linux ENV=gnu CURSES=no all && sudo make install
+```
+
+On macOS the CDF build is broken. Instead, install with the signed binary pkg file (CDF installation will be placed in `/Applications/cdf`):
+```bash
+curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest_cdf/macosx/CDF3_9_1-binary_signed.pkg
+sudo installer -pkg CDF3_9_1-binary_signed.pkg -target /
+sudo chmod -R a+rX /Applications/cdf
+```
 
 ## Building
 
 This project uses CMake as the build system.
 
 ### CMake Build
-1. Create a build directory:
+1. Create a build directory (inside `vol-cdf/`):
    ```bash
    mkdir build && cd build
    ```
 
 2. Configure with CMake (point to HDF5 installation and CDF installed location). 
    ```bash
-   cmake .. -DCMAKE_PREFIX_PATH="/opt/hdf5-develop/;/path/of/installed/cdf"
+   cmake .. -DCMAKE_PREFIX_PATH="/opt/hdf5-develop/;/path/of/installed/cdf39_1-dist/"
    ```
 
 3. Build the connector:
