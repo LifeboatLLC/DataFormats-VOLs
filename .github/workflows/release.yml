@@ -354,7 +354,7 @@ jobs:
 
         # Copy top-level files
         cp README.md "$PKG/"
-        cp RELEASE_BODY.md "$PKG/"
+        cp RELEASE.md "$PKG/"
         [ -f LICENSE ] && cp LICENSE "$PKG/"
         [ -f COPYING ] && cp COPYING "$PKG/"
         [ -f AUTHORS ] && cp AUTHORS "$PKG/"
