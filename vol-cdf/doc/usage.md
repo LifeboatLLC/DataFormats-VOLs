@@ -37,6 +37,8 @@ On Ubuntu/Debian/fedora/RHEL (build from source):
 curl -sLO https://spdf.gsfc.nasa.gov/pub/software/cdf/dist/latest-release/cdf39_1-dist-all.tar.gz
 tar xzf cdf39_1-dist-all.tar.gz && cd cdf39_1-dist
 make -j$(nproc) OS=linux ENV=gnu CURSES=no all && sudo make install
+# The output from the last command will give instructions for another command to run based on your shell.
+# Follow those instructions
 ```
 
 On macOS the CDF build is broken. Instead, install with the signed binary pkg file (CDF installation will be placed in `/Applications/cdf`):
