@@ -17,24 +17,7 @@ on:
         default: pre-release
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ inputs.version }}
-        name: HDF5 VOL connectors ${{ inputs.version }}
-        body_path: RELEASE.md
-        draft: false
-        prerelease: ${{ inputs.release_type == 'pre-release' }}
-
   build-linux:
-    needs: create-release
     runs-on: ubuntu-latest
 
     steps:
@@ -183,16 +166,13 @@ jobs:
 
         tar -czf "${PKG}.tar.gz" "$PKG"
 
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
-        tag_name: ${{ inputs.version }}
-        files: ./dataformats-vol-connectors-linux-x86_64.tar.gz
+        name: linux-package
+        path: ./dataformats-vol-connectors-linux-x86_64.tar.gz
 
   build-macos:
-    needs: create-release
     runs-on: macos-latest
 
     steps:
@@ -326,16 +306,13 @@ jobs:
 
         tar -czf "${PKG}.tar.gz" "$PKG"
 
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
-        tag_name: ${{ inputs.version }}
-        files: ./dataformats-vol-connectors-macos.tar.gz
+        name: macos-package
+        path: ./dataformats-vol-connectors-macos.tar.gz
 
   build-source:
-    needs: create-release
     runs-on: ubuntu-latest
 
     steps:
@@ -365,10 +342,36 @@ jobs:
           --exclude='*/.vscode/*' \
           "$PKG"
 
-    - name: Upload Source Asset
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: source-package
+        path: ./dataformats-vol-connectors-source.tar.gz
+
+  create-release:
+    needs: [build-linux, build-macos, build-source]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: true
+
+    - name: Create Release
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ inputs.version }}
-        files: ./dataformats-vol-connectors-source.tar.gz
+        name: HDF5 VOL connectors ${{ inputs.version }}
+        body_path: RELEASE.md
+        draft: false
+        prerelease: ${{ inputs.release_type == 'pre-release' }}
+        files: |
+          artifacts/dataformats-vol-connectors-linux-x86_64.tar.gz
+          artifacts/dataformats-vol-connectors-macos.tar.gz
+          artifacts/dataformats-vol-connectors-source.tar.gz
