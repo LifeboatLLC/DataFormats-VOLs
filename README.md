@@ -62,12 +62,12 @@ flowchart TD
 
 ## Supported Formats
 
-| Format  | Description                       |
-| ------- | --------------------------------- |
-| BUFR    | Meteorological observational data |
-| GRIB2   | Gridded meteorological data       |
-| CDF     | Space science data                |
-| GeoTIFF | Geospatial raster imagery         |
+| Format  | Description                       | External Libraries|
+| ------- | --------------------------------- |-------------------|
+| BUFR    | Meteorological observational data | [ECMWF, ecCodes Home](https://confluence.ecmwf.int/display/ECC/ecCodes+Home) |
+| GRIB2   | Gridded meteorological data       |[ECMWF, ecCodes Home](https://confluence.ecmwf.int/display/ECC/ecCodes+Home) |
+| CDF     | Space science data                | [NASA Common Data Format ](https://cdf.gsfc.nasa.gov/)|
+| GeoTIFF | Geospatial raster imagery         | [GeoTIFF](https://github.com/OSGeo/libgeotiff) and [TIFF libraries](https://github.com/libsdl-org/libtiff) |
 
 ---
 
