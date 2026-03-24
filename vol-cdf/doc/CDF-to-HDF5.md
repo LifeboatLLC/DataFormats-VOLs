@@ -1,5 +1,7 @@
 # CDF to HDF5 Mapping 
 
+**NOTE**: This document is outdated and much of the information contained is incorrect. It will be updated in time.
+
 This document specifies a practical, loss-minimizing mapping from **NASA CDF (Common Data Format)** objects to **HDF5** objects. It targets implementers of converters and readers who want predictable, interoperable HDF5 outputs that preserve CDF semantics.
 
 > Scope: This is a *logical* mapping independent of any specific C/Fortran library. Optional sections document recommended conventions for portability (chunking, filters, dimension scales, and attribute encoding).
