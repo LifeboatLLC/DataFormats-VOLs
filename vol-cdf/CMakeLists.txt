@@ -51,17 +51,20 @@ endif()
 # --------------------------
 set(_CDF_FOUND FALSE)
 
-# find_library(CDF_LIBRARY NAMES cdf HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib)
-find_library(CDF_STATIC_LIBRARY NAMES libcdf.a HINTS ${CMAKE_PREFIX_PATH}/lib)
+if (APPLE)
+    find_library(CDF_LIBRARY NAMES libcdf.a HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib)
+else ()
+    find_library(CDF_LIBRARY NAMES cdf HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib)
+endif()
 find_path(CDF_INCLUDE_DIR NAMES cdf.h HINTS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES include)
 
-if (CDF_INCLUDE_DIR AND CDF_STATIC_LIBRARY)
+if (CDF_INCLUDE_DIR AND CDF_LIBRARY)
     set(_CDF_FOUND TRUE)
 
     if (NOT TARGET CDF::cdf)
-        add_library(CDF::cdf STATIC IMPORTED)
+        add_library(CDF::cdf UNKNOWN IMPORTED)
         set_target_properties(CDF::cdf PROPERTIES
-            IMPORTED_LOCATION "${CDF_STATIC_LIBRARY}"
+            IMPORTED_LOCATION "${CDF_LIBRARY}"
             INTERFACE_INCLUDE_DIRECTORIES "${CDF_INCLUDE_DIR}"
         )
     endif()
@@ -70,7 +73,7 @@ endif()
 if (NOT _CDF_FOUND)
     message(FATAL_ERROR "CDF library or headers not found. Set CMAKE_PREFIX_PATH if needed.")
 else()
-    message(STATUS "Found CDF library at: ${CDF_STATIC_LIBRARY}")
+    message(STATUS "Found CDF library at: ${CDF_LIBRARY}")
     message(STATUS "Found CDF header at: ${CDF_INCLUDE_DIR}")
 endif()
 
