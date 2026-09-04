@@ -91,16 +91,12 @@ This project uses CMake as the build system.
 **Note:** This project requires HDF5 develop (1.14+/2.x). Ensure your `CMAKE_PREFIX_PATH` points to the HDF5 develop installation. On macOS with Homebrew, also include `$(brew --prefix)` in CMAKE_PREFIX_PATH to enable pkg-config discovery of system packages.
 
 ### Example Programs
-This distribution contains an example program `cdf_example.c`. 
-
-`bufr_eccodes_demo.c` builds group inventory using ecCodes library and prints names (ecCodes keys) of datasets and attributes. It can be useful in verification of the VOL functionality.
+This distribution contains an example program `cdf_example.c`. This program demonstrates functionality of the CDF VOL connector. 
 
 Usage:
 ```bash
 ./cdf_example # Make sure working directory is `vol-cdf/build/examples`
 ```
-
-`cdf_example.c` program demonstrates functionality of the CDF VOL connector. 
 
 The program 
  - registers CDF VOL connector and creates file access property list to use the connector
